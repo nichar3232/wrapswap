@@ -161,6 +161,7 @@ function App() {
       });
       const hash = await client.writeContract({
         ...simulation.request,
+        account: client.account || address,
         chain: null,
       });
       setToast("Submitted " + hash);

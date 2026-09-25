@@ -86,6 +86,20 @@ export async function catchup(rescan = false) {
   busy = true;
   try {
     const m = manifest();
+    const identity = [m.chainId,m.blockNumber,m.contracts.vault,m.contracts.parityHook,m.contracts.darkCrossHook].join(":").toLowerCase();
+    const identityClient=await db.connect();
+    try {
+      await identityClient.query("BEGIN");
+      await identityClient.query("SELECT pg_advisory_xact_lock(84532026)");
+      const old=await identityClient.query("SELECT identity FROM indexer_deployments WHERE chain_id=$1",[m.chainId]);
+      if(old.rows[0]?.identity!==identity){
+        // These tables are owned exclusively by this deployment's event indexer.
+        await identityClient.query("TRUNCATE chain_events,conversions,batches,orders,fills,backing_snapshots,hook_inventory,cursor");
+        await identityClient.query("INSERT INTO indexer_deployments VALUES($1,$2) ON CONFLICT(chain_id) DO UPDATE SET identity=EXCLUDED.identity",[m.chainId,identity]);
+      }
+      await identityClient.query("COMMIT");
+    } catch(error) { await identityClient.query("ROLLBACK");throw error; }
+    finally { identityClient.release(); }
     const latest = await publicClient.getBlockNumber();
     const curs = await db.query(
       "SELECT last_block FROM cursor WHERE chain_id=$1",

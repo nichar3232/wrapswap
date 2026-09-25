@@ -9,3 +9,6 @@
 - Normalize accrued wrapper fees into shares for the hook PnL metric; do not sum incompatible token units.
 - Bridge remains hidden while the optional Ethereum intent workstream is not implemented.
 - 2026-09-25: Fastify API, viem indexer, local crank, React transaction controls, 8 unit tests, TypeScript check, and Vite production build pass. Fork smoke requires deployed manifests and ABI exports from integration.
+- Deployment identity metadata resets only indexer-owned tables when a newly deployed manifest replaces the prior fork, preventing old batch IDs and cursors leaking into a fresh demo.
+- Crank polls each second and retries the prior unsettled batch; empty batches do not spend gas.
+- 2026-09-25: Nine unit/database tests and TypeScript pass. Fork Playwright smoke passes both all-tab/no-console-errors and real demo-burner ERC20 approval → ParityHook conversion → indexed history. Browser signing explicitly retains the local account object after simulation.

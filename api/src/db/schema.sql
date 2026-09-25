@@ -7,3 +7,5 @@ CREATE TABLE IF NOT EXISTS backing_snapshots(block NUMERIC(78,0),issuer TEXT,tok
 CREATE TABLE IF NOT EXISTS hook_inventory(block NUMERIC(78,0),pool_id TEXT,currency TEXT,amount NUMERIC(78,0),fee_accrued NUMERIC(78,0),PRIMARY KEY(block,pool_id,currency));
 CREATE TABLE IF NOT EXISTS intents(hash TEXT PRIMARY KEY,status TEXT,input_amount NUMERIC(78,0),min_out NUMERIC(78,0),filled_amount NUMERIC(78,0),filler TEXT,opened_tx TEXT,filled_tx TEXT,finalized_tx TEXT);
 CREATE TABLE IF NOT EXISTS cursor(chain_id INTEGER PRIMARY KEY,last_block NUMERIC(78,0));
+
+CREATE TABLE IF NOT EXISTS indexer_deployments(chain_id INTEGER PRIMARY KEY, identity TEXT NOT NULL);
