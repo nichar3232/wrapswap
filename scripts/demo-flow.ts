@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import {readFileSync} from 'node:fs';
+import {readFileSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 import {createPublicClient,createWalletClient,http,parseAbi,encodeAbiParameters,keccak256,decodeEventLog,type Hex,type Address} from 'viem';
 import {privateKeyToAccount} from 'viem/accounts';
@@ -12,7 +12,8 @@ const wallets=m.burners.map((b:any)=>createWalletClient({account:privateKeyToAcc
 const abi=(name:string)=>JSON.parse(readFileSync(`deployments/abis/${name}.json`,'utf8'));
 const erc=parseAbi(['function approve(address,uint256) returns(bool)','function balanceOf(address) view returns(uint256)']);
 const C=m.contracts,T=m.tokens;
-async function send(w:any,address:Address,contractAbi:any,functionName:string,args:any[]=[]){const hash=await w.writeContract({chain:null,address,abi:contractAbi,functionName,args});const r=await pc.waitForTransactionReceipt({hash});assert.equal(r.status,'success',`${functionName} failed ${hash}`);console.log(`${functionName}: ${hash}`);return r;}
+const receipts:{action:string,hash:string,block:string}[]=[];
+async function send(w:any,address:Address,contractAbi:any,functionName:string,args:any[]=[]){const hash=await w.writeContract({chain:null,address,abi:contractAbi,functionName,args});const r=await pc.waitForTransactionReceipt({hash});assert.equal(r.status,'success',`${functionName} failed ${hash}`);console.log(`${functionName}: ${hash}`);receipts.push({action:functionName,hash,block:r.blockNumber.toString()});return r;}
 async function read(address:Address,contractAbi:any,functionName:string,args:any[]=[]){return pc.readContract({address,abi:contractAbi,functionName,args}) as Promise<any>;}
 function events(r:any,name:string,event:string){return r.logs.flatMap((l:any)=>{try{const d=decodeEventLog({abi:abi(name),data:l.data,topics:l.topics});return d.eventName===event?[d.args]:[]}catch{return []}});}
 const request=(method:string,params:any[]=[])=>pc.request({method:method as any,params} as any);
@@ -47,5 +48,7 @@ try {
  assert(receipt,'crank did not settle demo batch');assert.equal(receipt.status,'success');
  assert(events(receipt,'DarkCrossHook','Crossed').length===3,'three crossing events required');assert(events(receipt,'DarkCrossHook','RoutedToLit').length>=1,'residual routing event required');
  console.log(`crank settle: ${receipt.transactionHash}`);
+ receipts.push({action:"crank settle",hash:receipt.transactionHash,block:receipt.blockNumber.toString()});
+ writeFileSync("deployments/demo-receipts.json",JSON.stringify({chainId:m.chainId,deploymentBlock:m.blockNumber,batchId:id.toString(),crossedEvents:events(receipt,"DarkCrossHook","Crossed").length,routedEvents:events(receipt,"DarkCrossHook","RoutedToLit").length,receipts},null,2)+"\n");
  console.log('DEMO GREEN: 10 mAAPLc minted; ERC6909 parity fill; curve fallback; three-wallet cross and residual routed in one crank settlement.');
 } finally {await request('anvil_setIntervalMining',[2]);}

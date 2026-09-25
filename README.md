@@ -17,9 +17,9 @@ The paragraph above is the product specification. The intent bridge is not imple
 | unlock/unlockCallback/swap residual routing | [contracts/src/DarkCrossHook.sol](contracts/src/DarkCrossHook.sol#L464-L547) | 464–547 | Settles residual swaps against escrow within the batch settlement transaction. |
 | Phase-gated beforeSwap | [contracts/src/DarkCrossHook.sol](contracts/src/DarkCrossHook.sol#L279-L290) | 279–290 | Rejects external lit swaps during Settle; hook routing uses the internal path. |
 | beforeInitialize pool validation | [contracts/src/ParityHook.sol](contracts/src/ParityHook.sol#L102-L115) | 102–115 | Checks the dynamic fee flag, canonical side, and registered active issuer. |
-| HookMiner + CREATE2 deploy | [contracts/script/Deploy.s.sol](contracts/script/Deploy.s.sol#L59-L59) | 59–59 | Mines permission bits using the CREATE2 proxy as deployer. |
-| PositionManager pool init + liquidity | [contracts/script/Seed.s.sol](contracts/script/Seed.s.sol#L53-L67) | 53–67 | Adds actual concentrated positions with MINT_POSITION and SETTLE_PAIR; Deploy initializes pools through PositionManager. |
-| V4Quoter/StateView in API | [api/src/routes/index.ts](api/src/routes/index.ts#L30-L180) | 30–180 | Reads state and simulates quotes against deployed contracts. |
+| HookMiner + CREATE2 deploy | [contracts/script/Deploy.s.sol](contracts/script/Deploy.s.sol#L112-L120) | 112–120 | Mines permission bits using the CREATE2 proxy as deployer. |
+| PositionManager pool init + liquidity | [contracts/script/Seed.s.sol](contracts/script/Seed.s.sol#L143-L168) | 143–168 | Adds actual concentrated positions with MINT_POSITION and SETTLE_PAIR; Deploy initializes pools through PositionManager. |
+| V4Quoter/StateView in API | [api/src/routes/index.ts](api/src/routes/index.ts#L31-L181) | 31–181 | Reads state and simulates quotes against deployed contracts. |
 | PoolSwapTest in frontend | [web/src/main.tsx](web/src/main.tsx#L406-L420) | 406–420 | Executes parity swaps through the deployed v4 test router on the local fork. |
 <!-- integrations:end -->
 
