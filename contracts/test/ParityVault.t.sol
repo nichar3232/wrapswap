@@ -48,6 +48,7 @@ contract ParityVaultTest is Test {
     PoolSwapTest router;
     PoolModifyLiquidityTest liquidity;
     PoolKey key;
+    bool useForkManager;
 
     function setUp() public {
         vm.warp(1784037600);
@@ -59,7 +60,8 @@ contract ParityVaultTest is Test {
         registry.add(address(new StaticAdapter(address(token2), "issuer2", 1e18, address(this))));
         vault = new CanonicalStock(registry, address(this));
         calendar = new NyseCalendar(address(this));
-        manager = new PoolManager(address(this));
+        manager =
+            useForkManager ? PoolManager(0x498581fF718922c3f8e6A244956aF099B2652b2b) : new PoolManager(address(this));
         router = new PoolSwapTest(manager);
         liquidity = new PoolModifyLiquidityTest(manager);
         bytes memory code = abi.encodePacked(
@@ -101,6 +103,15 @@ contract ParityVaultTest is Test {
             PoolSwapTest.TestSettings(false, false),
             ""
         );
+    }
+
+    function testForkDeployedBasePoolManagerParityFill() public {
+        vm.createSelectFork(vm.envOr("BASE_RPC", string("https://mainnet.base.org")));
+        useForkManager = true;
+        setUp();
+        assertEq(address(manager), 0x498581fF718922c3f8e6A244956aF099B2652b2b);
+        testExactInputBothDirections();
+        testExactOutputBothDirections();
     }
 
     function testEightDecimalHookExactInOutAndGuard() public {

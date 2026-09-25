@@ -7,3 +7,7 @@
 - Calendar searches session candidates by day; weekend nextTransition remains under 500k gas.
 - Adapter ratio reductions and registry removal remain privileged governance risks; mint/redeem/sweep/pull reject underbacking rather than silently allow it.
 - 17 real PoolManager/vault/calendar tests pass, including 1000-run backing fuzz, exact input/output both directions, fallthrough, manipulated-price guard, multiplier repricing and 8-decimal normalization.
+- 19 A tests now green including exact-input/output both directions against Base mainnet's actual deployed PoolManager on a fork.
+- 8-decimal hook test verifies both raw-unit normalization and zero-inventory fallback peg guard at decimal-adjusted price.
+- Gas snapshot includes all 19 A tests; fuzz backing uses 1000 runs.
+- Final `forge test` on A worktree: 20/20 green including root GroundTruth fork test; no skipped tests.
