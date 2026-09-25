@@ -19,3 +19,4 @@
 - Use the local deployer for crank signing, separate from UI burner accounts: avoid competing nonces during user actions and settlement.
 - Keep §5 unshipped while §7 testnet deployment is blocked by zero Sepolia ETH: honor the requested cut order rather than claim an unfinished bridge.
 - Install Undici 8.11.2's fixed dispatcher for Node clients: observed Node24.21/macOS QoS socket failure crashed the API during sustained use.
+- Keep separate fee rounding functions for hook output and vault redemption: they differ by one raw unit on dust amounts and quotes must match contract execution.

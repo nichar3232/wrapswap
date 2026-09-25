@@ -13,3 +13,7 @@
 - make testnet attempted: blocked before broadcast because deployer has zero Base Sepolia ETH; no addresses fabricated.
 - Verified Ethereum AAPLx issuer-published address, holder and non-unit rebasing multiplier; bridge remains gated by §7 completion.
 - Five browser transaction tests passed in C worktree; main repeat exposed upstream Node24 Undici EINVAL, fixed with upstream dispatcher and a forced-QoS-failure regression test.
+- Eleven app/database/runtime tests green after fixed Undici dispatcher integration; Solidity suite remains 36 tests.
+- Main live-fork browser suite green: five tests exercise every transaction panel, including auto-reveal (47.9s).
+- Main DarkCross suite against public Base fork green: 16 tests, including two 1000-run fuzz cases.
+- Captured real fork UI screenshot and structured demo transaction receipts.

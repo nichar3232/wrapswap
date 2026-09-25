@@ -1,0 +1,94 @@
+{
+  "chainId": 8453,
+  "blockNumber": "51782376",
+  "mockB20": true,
+  "demoMode": true,
+  "deployer": "0x094d5923EFC18a97E395b28a97BC4D5bD027dC0c",
+  "contracts": {
+    "calendar": "0x9411B8e36E6E32Dd7a6Aa6fBB96F8b91c0745096",
+    "darkCrossHook": "0xa9126AC32efD63736687dfA853badE9E5d65C8C0",
+    "eas": "0x4200000000000000000000000000000000000021",
+    "oracle": "0x787f13dEa48Db0897CbCDD985de77809D837F988",
+    "parityHook": "0xfC0AB218e1E4179c943E8806AA07e3A7C3f560c8",
+    "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+    "poolManager": "0x498581fF718922c3f8e6A244956aF099B2652b2b",
+    "positionManager": "0x7C5f5A4bBd8fD63184577525326123B519429bDc",
+    "quoter": "0x0d5e0F971ED27FBfF6c2837bf31316121532048D",
+    "registry": "0x821abDFEEb5d9270c08D1850EFC23e1779Fc7ec8",
+    "stateView": "0xA3c0c9b65baD0b08107Aa264b0f3dB444b867A71",
+    "swapRouter": "0xAd9e2246c90DB617c4C45757ba42d856f5c51aeb",
+    "universalRouter": "0xd6145b2D3F379919E8CdEda7B97e37c4b2Ca9c40",
+    "vault": "0x722C646f47C8fdb3BfD091Cc4DdEbE28309abf03"
+  },
+  "tokens": {
+    "uAAPL": {
+      "address": "0x722C646f47C8fdb3BfD091Cc4DdEbE28309abf03",
+      "symbol": "uAAPL",
+      "decimals": 18
+    },
+    "issuer1": {
+      "address": "0xc97c9eC374C46BB07fDdFb1E32077B00f21B108A",
+      "symbol": "mAAPLc",
+      "decimals": 8
+    },
+    "issuer2": {
+      "address": "0x9307D5E4104F5C31742b45602e5332d3724320C4",
+      "symbol": "mAAPLx",
+      "decimals": 18
+    },
+    "USDC": {
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "symbol": "USDC",
+      "decimals": 6
+    }
+  },
+  "pools": [
+    {
+      "id": "0x019bb942b75df7c4c4161aeac1e63227a93595563c755286481617ecc13894d0",
+      "kind": "parity",
+      "key": {
+        "currency0": "0x722C646f47C8fdb3BfD091Cc4DdEbE28309abf03",
+        "currency1": "0xc97c9eC374C46BB07fDdFb1E32077B00f21B108A",
+        "fee": 8388608,
+        "tickSpacing": 60,
+        "hooks": "0xfC0AB218e1E4179c943E8806AA07e3A7C3f560c8"
+      }
+    },
+    {
+      "id": "0x5f0507eaad34e72f4e140fc94016e9a576a5e158950150d9eefc05bb9066d313",
+      "kind": "parity",
+      "key": {
+        "currency0": "0x722C646f47C8fdb3BfD091Cc4DdEbE28309abf03",
+        "currency1": "0x9307D5E4104F5C31742b45602e5332d3724320C4",
+        "fee": 8388608,
+        "tickSpacing": 60,
+        "hooks": "0xfC0AB218e1E4179c943E8806AA07e3A7C3f560c8"
+      }
+    },
+    {
+      "id": "0x572babc2fd1798eb1123ad74e16d316f71f3946061e986cbdc938315d8ef7a7b",
+      "kind": "lit",
+      "key": {
+        "currency0": "0x722C646f47C8fdb3BfD091Cc4DdEbE28309abf03",
+        "currency1": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "fee": 500,
+        "tickSpacing": 1,
+        "hooks": "0xa9126AC32efD63736687dfA853badE9E5d65C8C0"
+      }
+    }
+  ],
+  "burners": [
+    {
+      "address": "0xD54186169C54C7BfeDB7Ad61b548a61764027C0A",
+      "privateKey": "0x82f00121aa2ef36f906df5b4c61a25bfaba29ccb90807722c139791ef4aad0bb"
+    },
+    {
+      "address": "0xBd2ef5A4b1658B4798C0e0A81dF533d5F6cCC040",
+      "privateKey": "0x7d61fd0f2df827a7b754cb828c96cc33c417393c4c64fae50f3acb7344b3596a"
+    },
+    {
+      "address": "0x3d56F6a022e11083ECD739820077F6411EacEe3e",
+      "privateKey": "0x2b3aef1556a33cb4b8b2a8e8395df584ff715ac12e38a6af65c1d93775f407f2"
+    }
+  ]
+}

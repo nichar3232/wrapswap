@@ -12,3 +12,4 @@
 - Deployment identity metadata resets only indexer-owned tables when a newly deployed manifest replaces the prior fork, preventing old batch IDs and cursors leaking into a fresh demo.
 - Crank polls each second and retries the prior unsettled batch; empty batches do not spend gas.
 - 2026-09-25: Nine unit/database tests and TypeScript pass. Fork Playwright smoke passes both all-tab/no-console-errors and real demo-burner ERC20 approval → ParityHook conversion → indexed history. Browser signing explicitly retains the local account object after simulation.
+- 2026-09-25: Expanded live-fork browser coverage passes all five tests: four-tab navigation, parity approval/conversion, backing mint/redeem, escrow deposit/withdraw, and sealed commit with automatic reveal after deterministic Anvil phase advancement. Tests assert actual token/escrow balances and persisted/indexed reveal state; mining is restored in finally.
