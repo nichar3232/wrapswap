@@ -3,6 +3,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 scripts/ensure-env.py
 source scripts/local-env.sh
+if [[ ! -d node_modules || ! -d lib/v4-core ]]; then make install; fi
+psql "$DATABASE_URL" -c "select 1" >/dev/null
 mkdir -p logs
 if lsof -nP -iTCP:8545 -sTCP:LISTEN >/dev/null 2>&1; then echo 'Port 8545 is occupied. Stop the existing fork before make demo.' >&2; exit 1; fi
 fork_pid=;apps_pid=

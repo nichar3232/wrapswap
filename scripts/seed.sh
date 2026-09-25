@@ -15,3 +15,4 @@ cast rpc anvil_setBalance "$holder" 0x56bc75e2d63100000 --rpc-url "$LOCAL_RPC" >
 cast send "$usdc" 'transfer(address,uint256)(bool)' "$owner" 2000000000000 --from "$holder" --unlocked --rpc-url "$LOCAL_RPC"
 cast rpc anvil_stopImpersonatingAccount "$holder" --rpc-url "$LOCAL_RPC" >/dev/null
 forge script contracts/script/Seed.s.sol:Seed --rpc-url "$LOCAL_RPC" --broadcast --slow
+python3 scripts/print-receipts.py Seed.s.sol 8453

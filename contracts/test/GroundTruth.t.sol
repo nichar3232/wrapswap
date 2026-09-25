@@ -9,10 +9,10 @@ contract GroundTruthTest is Test {
   vm.createSelectFork(vm.envOr('BASE_RPC',string('https://mainnet.base.org')));
   address recipient=address(new FreshReceiver());
   address holder=0xA3b1E3f9747065e2073722Ff4c9027d3eA4994F0;
-  (bool ok,bytes memory data)=AAPL.staticcall(abi.encodeWithSignature('decimals()'));
+  (bool ok,bytes memory data)=AAPL.staticcall{gas:100000}(abi.encodeWithSignature('decimals()'));
   if(!ok || data.length==0){
    emit log_string('B20 native precompile unsupported by generic Foundry EVM; live RPC confirms 8 decimals/multiplier=1e18. MockB20 required.');
-   vm.prank(holder); (bool transferred,bytes memory result)=AAPL.call(abi.encodeWithSignature('transfer(address,uint256)',recipient,1e8));
+   vm.prank(holder); (bool transferred,bytes memory result)=AAPL.call{gas:100000}(abi.encodeWithSignature('transfer(address,uint256)',recipient,1e8));
    assertTrue(!transferred || result.length!=32,'Unexpected transfer behavior; repeat ground truth');
   } else {
    assertEq(IB20Probe(AAPL).decimals(),8); assertGt(IB20Probe(AAPL).multiplier(),0);

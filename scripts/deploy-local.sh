@@ -5,3 +5,4 @@ scripts/fund-local.sh
 export FORK_DEMO=true
 forge script contracts/script/Deploy.s.sol:Deploy --rpc-url "$LOCAL_RPC" --broadcast --slow
 scripts/export-abis.sh
+python3 scripts/print-receipts.py Deploy.s.sol 8453

@@ -3,6 +3,7 @@ SHELL := /bin/bash
 install:
 	./scripts/install-contracts.sh
 	pnpm install --frozen-lockfile
+	pnpm exec playwright install chromium
 build:
 	forge build
 	./scripts/export-abis.sh
