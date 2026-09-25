@@ -49,10 +49,15 @@ contract Seed is Script {
  function _a(string memory path) internal view returns(address){return vm.parseJsonAddress(json,path);}
  function _burner(uint i) internal pure returns(address,uint256){uint pk=uint256(keccak256(abi.encode('WrapSwap PUBLIC LOCAL FORK ONLY burner',i)));return(vm.addr(pk),pk);}
  function _inventory(address token,uint amount) internal{ISeedToken(token).approve(parity,amount);ISeedParity(parity).depositInventory(Currency.wrap(token),amount);}
- function _pool(uint i) internal view returns(PoolKey memory){string memory p=string.concat('.pools[',vm.toString(i),'].key');return PoolKey(Currency.wrap(_a(string.concat(p,'.currency0'))),Currency.wrap(_a(string.concat(p,'.currency1'))),uint24(vm.parseJsonUint(json,string.concat(p,'.fee'))),60,IHooks(_a(string.concat(p,'.hooks'))));}
+ function _pool(uint i) internal view returns(PoolKey memory){string memory p=string.concat('.pools[',vm.toString(i),'].key');return PoolKey(Currency.wrap(_a(string.concat(p,'.currency0'))),Currency.wrap(_a(string.concat(p,'.currency1'))),uint24(vm.parseJsonUint(json,string.concat(p,'.fee'))),int24(int256(vm.parseJsonUint(json,string.concat(p,'.tickSpacing')))),IHooks(_a(string.concat(p,'.hooks'))));}
  function _liquidity(PoolKey memory key,uint256 vaultAmount,uint256 otherAmount,int24 width) internal {
   (uint160 sqrt,int24 tick,,)=ISeedState(stateView).getSlot0(key.toId());int24 center=(tick/60)*60;if(tick<0&&tick%60!=0)center-=60;
   int24 lower=center-width;int24 upper=center+width;
+  if(key.fee==500){
+   // sqrt(0.98), sqrt(1.02), rounded outward at tickSpacing=1.
+   lower=TickMath.getTickAtSqrtPrice(uint160(uint256(sqrt)*989949493661166534/1e18));
+   upper=TickMath.getTickAtSqrtPrice(uint160(uint256(sqrt)*1009950493836207795/1e18))+1;
+  }
   uint256 amount0=Currency.unwrap(key.currency0)==vault?vaultAmount:otherAmount;uint256 amount1=Currency.unwrap(key.currency1)==vault?vaultAmount:otherAmount;
   uint128 liquidity=LiquidityAmounts.getLiquidityForAmounts(sqrt,TickMath.getSqrtPriceAtTick(lower),TickMath.getSqrtPriceAtTick(upper),amount0,amount1);
   bytes memory actions=abi.encodePacked(uint8(Actions.MINT_POSITION),uint8(Actions.SETTLE_PAIR));bytes[] memory params=new bytes[](2);

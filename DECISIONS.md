@@ -11,3 +11,8 @@
 - Pin compatible current core/periphery commits instead of mixing stale core v4.0.0 with current periphery: the latter imports PoolOperation.sol absent from the tag.
 - Use official PositionManager and Permit2 for real fork liquidity; deploy only a PoolSwapTest convenience router locally.
 - Queue documentation agent D after one of A/B/C returns: only three child-agent slots are available.
+- Start the supervised crank before scripted dark settlement: the demo must prove a real service-initiated transaction.
+- Disable interval mining and enable automine only during scripted phase transitions: deterministic commits/reveals must fit their 12/6-block windows.
+- Use tickSpacing=1 in the lit pool and outward-rounded ±2% price ticks: a 240-tick range would incorrectly widen the requested position.
+- Use a fresh dedicated Postgres database for clone verification: concurrent indexers must not overwrite each other's projections.
+- Seed native USDC by impersonating the verified-balance Base Morpho holder only on loopback Anvil: preserve real USDC interface execution.

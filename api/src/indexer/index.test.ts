@@ -1,5 +1,53 @@
-import {it,expect} from 'vitest';import {projection} from './index';
-const event={tx:'0x1',log_index:2,chain_id:8453,block:'1',ts:'2',trader:'0xabc'};
-it('deduplicates fills by transaction and log index, retaining both sides',()=>{const p=projection('Crossed',{batchId:'1',trader:'0xABC',isBuy:true,qty:'100',mid:'200'},event)!;expect(p.sql).toContain('ON CONFLICT DO NOTHING');expect(p.values).toEqual(['1','0xabc',true,'100','200','cross','0x1',2]);const second=projection('Crossed',{batchId:'1',trader:'0xDEF',isBuy:false,qty:'100',mid:'200'},{...event,log_index:3})!;expect(second.values[7]).toBe(3)});
-it('reveal upsert preserves the commitment hash',()=>{const p=projection('Revealed',{batchId:'1',trader:'0xABC',isBuy:true,qty:'2',limitPx:'3',routeResidual:true},event)!;expect(p.sql).toContain('ON CONFLICT(batch_id,trader) DO UPDATE');expect(p.sql.split('DO UPDATE')[1]).not.toContain('commit_hash');expect(p.values).toEqual(['1','0xabc',true,'2','3',true])});
-it('unknown logs do not produce projections',()=>expect(projection('Transfer',{},event)).toBeNull());
+import { it, expect } from "vitest";
+import { projection } from "./index";
+const event = {
+  tx: "0x1",
+  log_index: 2,
+  chain_id: 8453,
+  block: "1",
+  ts: "2",
+  trader: "0xabc",
+};
+it("deduplicates fills by transaction and log index, retaining both sides", () => {
+  const p = projection(
+    "Crossed",
+    { batchId: "1", trader: "0xABC", isBuy: true, qty: "100", mid: "200" },
+    event,
+  )!;
+  expect(p.sql).toContain("ON CONFLICT DO NOTHING");
+  expect(p.values).toEqual([
+    "1",
+    "0xabc",
+    true,
+    "100",
+    "200",
+    "cross",
+    "0x1",
+    2,
+  ]);
+  const second = projection(
+    "Crossed",
+    { batchId: "1", trader: "0xDEF", isBuy: false, qty: "100", mid: "200" },
+    { ...event, log_index: 3 },
+  )!;
+  expect(second.values[7]).toBe(3);
+});
+it("reveal upsert preserves the commitment hash", () => {
+  const p = projection(
+    "Revealed",
+    {
+      batchId: "1",
+      trader: "0xABC",
+      isBuy: true,
+      qty: "2",
+      limitPx: "3",
+      routeResidual: true,
+    },
+    event,
+  )!;
+  expect(p.sql).toContain("ON CONFLICT(batch_id,trader) DO UPDATE");
+  expect(p.sql.split("DO UPDATE")[1]).not.toContain("commit_hash");
+  expect(p.values).toEqual(["1", "0xabc", true, "2", "3", true]);
+});
+it("unknown logs do not produce projections", () =>
+  expect(projection("Transfer", {}, event)).toBeNull());

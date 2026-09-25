@@ -24,4 +24,4 @@ fresh-clone-check:
 	./scripts/fresh-clone-check.sh
 clean:
 	forge clean
-	rm -rf web/dist
+	rm -rf dist/web

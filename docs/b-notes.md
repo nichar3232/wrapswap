@@ -25,3 +25,7 @@
 ## Progress
 - 13 DarkCross tests green with a real local PoolManager, including 1000 escrow/pro-rata fuzz runs.
 - Fork finding: prank accounts need ETH on this Foundry/Base fork; funding them with vm.deal fixes a zero-gas approve revert. Three-wallet Crossed+RoutedToLit test passes against deployed Base PoolManager 0x498581fF718922c3f8e6A244956aF099B2652b2b.
+- Full original 13-test suite, including 1000 fuzz runs, green against the deployed Base PoolManager on the localhost fork.
+- Expanded 16-test local suite green: liquidity EAS recipient/expiry/revocation, 64-swap TWAP history eviction/recovery, plus 1000 routed-escrow fuzz runs in addition to 1000 crossing/pro-rata fuzz runs. Source/tests formatted. Settle-phase guard requires both transient internal flag and hook sender; zero mid rejected.
+- Feedback source references: v4-core/src/libraries/Hooks.sol:253 and :293 suppress callbacks for the hook's own swaps. Document explicit oracle accumulation for self-routed residuals in the v4 hook guide.
+- Final 16-test suite green against deployed Base PoolManager, including both 1000-run fuzz tests and actual 64-swap TWAP history eviction/recovery. Commands: forge test --match-contract DarkCrossHookTest -vv; forge test --match-contract DarkCrossHookTest --fork-url http://127.0.0.1:8545 -vv.
