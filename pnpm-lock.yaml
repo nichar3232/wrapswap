@@ -32,6 +32,9 @@ importers:
       react-dom:
         specifier: ^19.1.0
         version: 19.3.0(react@19.3.0)
+      undici:
+        specifier: ^8.11.2
+        version: 8.11.2
       viem:
         specifier: ^2.37.0
         version: 2.56.8(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.5)
@@ -2649,6 +2652,10 @@ packages:
 
   undici-types@7.29.1:
     resolution: {integrity: sha512-2xO3p6gANwOmhSFwNy2MMYISbHTtM+K3bY0bqpD1gOGpUPIe+yFXCobxbz0s2jm7E0faMxIFcZUcCKa+N6Ozlg==}
+
+  undici@8.11.2:
+    resolution: {integrity: sha512-u4UB2/IrKdU6lFxumHmmo1a3fCQO5tzQllRorfoRS63txhrB7xTpSn1PftwC4qEHkOaqP95fCWW4lJzwErwzhQ==}
+    engines: {node: '>=22.19.0'}
 
   unstorage@1.17.5:
     resolution: {integrity: sha512-0i3iqvRfx29hkNntHyQvJTpf5W9dQ9ZadSoRU8+xVlhVtT7jAX57fazYO9EHvcRCfBCyi5YRya7XCDOsbTgkPg==}
@@ -6522,6 +6529,8 @@ snapshots:
   undici-types@7.18.2: {}
 
   undici-types@7.29.1: {}
+
+  undici@8.11.2: {}
 
   unstorage@1.17.5(idb-keyval@6.3.0):
     dependencies:

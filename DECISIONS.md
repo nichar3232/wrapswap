@@ -18,3 +18,4 @@
 - Seed native USDC by impersonating the verified-balance Base Morpho holder only on loopback Anvil: preserve real USDC interface execution.
 - Use the local deployer for crank signing, separate from UI burner accounts: avoid competing nonces during user actions and settlement.
 - Keep §5 unshipped while §7 testnet deployment is blocked by zero Sepolia ETH: honor the requested cut order rather than claim an unfinished bridge.
+- Install Undici 8.11.2's fixed dispatcher for Node clients: observed Node24.21/macOS QoS socket failure crashed the API during sustained use.

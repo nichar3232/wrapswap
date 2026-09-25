@@ -12,3 +12,4 @@
 - App unit/build integration green; nine tests include real Postgres replay.
 - make testnet attempted: blocked before broadcast because deployer has zero Base Sepolia ETH; no addresses fabricated.
 - Verified Ethereum AAPLx issuer-published address, holder and non-unit rebasing multiplier; bridge remains gated by §7 completion.
+- Five browser transaction tests passed in C worktree; main repeat exposed upstream Node24 Undici EINVAL, fixed with upstream dispatcher and a forced-QoS-failure regression test.

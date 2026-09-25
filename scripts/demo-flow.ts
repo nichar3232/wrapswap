@@ -1,3 +1,4 @@
+import '../api/src/chain/runtime.js';
 import 'dotenv/config';
 import {readFileSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';

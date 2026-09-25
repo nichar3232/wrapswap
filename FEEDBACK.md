@@ -45,3 +45,7 @@ EAS schema matching alone does not establish Coinbase provenance: the trusted at
 1. Synchronized core/periphery/template releases with a compiler matrix and machine-readable deployments.
 2. A custom-accounting tutorial covering exact output, ERC-6909 fee inventory, mixed decimals and callback bypass.
 3. A Base-native B20 fork compatibility fixture and a fully executable PositionManager/Permit2 seeding example.
+
+## Runtime integration finding
+
+The sustained local run hit Node 24.21.0's bundled Undici macOS `setTypeOfService EINVAL` crash and the supervisor correctly stopped the remaining services. This is an upstream runtime issue, not a Uniswap contract failure: [Undici issue 5544](https://github.com/nodejs/undici/issues/5544), [merged fix 5547](https://github.com/nodejs/undici/pull/5547). WrapSwap installs a fixed Undici dispatcher for Node HTTP clients and tests forced socket-QoS failure handling. The browser keeps its native fetch implementation.
