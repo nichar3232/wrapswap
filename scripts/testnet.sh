@@ -10,3 +10,5 @@ python3 scripts/print-receipts.py Deploy.s.sol 84532
 scripts/export-abis.sh
 # Verification requires an explorer API key and actual constructor arguments from broadcast artifacts.
 python3 scripts/verify-testnet.py
+
+python3 scripts/update-testnet-readme.py

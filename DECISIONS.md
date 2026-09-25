@@ -43,3 +43,4 @@
 - Express hook fee PnL in share units: raw fees from tokens with different decimals are not directly additive.
 - Use the existing Uniswap deployment JSON feed as evidence and suggest enriched records: feedback must recognize already-shipped developer tooling.
 - Use a blue action accent in both themes: reserve red and green for state indicators as requested.
+- Publish Sepolia README addresses only after receipt and explorer verification succeeds: predicted deployment addresses must not look verified.

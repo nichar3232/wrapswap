@@ -20,3 +20,4 @@
 - make fresh-clone-check GREEN at code commit 61f3c9a: fresh dependencies, new deployer, isolated database, full scripted flow, all five browser tests (44.3s).
 - Final main make test GREEN: 36 Solidity tests and 11 application/database/runtime tests; production web build green.
 - Final verification record distinguishes shipped fork app, unfunded Sepolia and deferred bridge.
+- Final live demo restored at localhost:5173; adapter manifest export and verified-testnet README publishing added; 36 Solidity plus 11 app tests remain green.

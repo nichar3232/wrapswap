@@ -16,6 +16,7 @@ import {MockOracle} from "../src/mocks/MockOracle.sol";
 
 interface IDeployRegistry {
     function add(address) external;
+    function adapterOf(address) external view returns (address);
 }
 
 interface IDeployDark {
@@ -77,9 +78,8 @@ contract Deploy is Script {
                     | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG
             )
         );
-        bytes memory dArgs = abi.encode(
-            n.poolManager, vault, n.usdc, n.oracle, calendar, n.eas, SCHEMA, owner, owner, true
-        );
+        bytes memory dArgs =
+            abi.encode(n.poolManager, vault, n.usdc, n.oracle, calendar, n.eas, SCHEMA, owner, owner, true);
         dark = _hook(
             "DarkCrossHook.sol:DarkCrossHook",
             dArgs,
@@ -134,10 +134,9 @@ contract Deploy is Script {
     }
 
     function _token(address a, string memory symbol, uint256 decimals_) internal view returns (string memory) {
-        return
-            string.concat(
-                '{"address":"', vm.toString(a), '","symbol":"', symbol, '","decimals":', vm.toString(decimals_), "}"
-            );
+        return string.concat(
+            '{"address":"', vm.toString(a), '","symbol":"', symbol, '","decimals":', vm.toString(decimals_), "}"
+        );
     }
 
     function _pool(PoolKey memory k, string memory kind) internal view returns (string memory) {
@@ -170,6 +169,8 @@ contract Deploy is Script {
         vm.serializeAddress(object, "permit2", n.permit2);
         vm.serializeAddress(object, "swapRouter", router);
         vm.serializeAddress(object, "registry", registry);
+        vm.serializeAddress(object, "adapter1", IDeployRegistry(registry).adapterOf(issuer1));
+        vm.serializeAddress(object, "adapter2", IDeployRegistry(registry).adapterOf(issuer2));
         vm.serializeAddress(object, "vault", vault);
         vm.serializeAddress(object, "calendar", calendar);
         vm.serializeAddress(object, "parityHook", parity);
