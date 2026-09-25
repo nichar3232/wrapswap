@@ -1,0 +1,11 @@
+# App decisions and progress
+- Use generated runtime contract ABIs in the API and canonical minimal ABIs in the browser so builds can complete before deployment.
+- Express raw token units and share/USD WAD amounts as decimal JSON strings to avoid precision loss.
+- Wrapper-to-wrapper conversion executes explicit vault mint then redeem transactions, avoiding an unimplemented router.
+- Keep burner keys available only for demo manifests with localhost RPC; never expose Sepolia signing keys.
+- Rebuild database event projections transactionally from a canonical raw journal during ten-block rescans to remove orphaned reveals and settlements.
+- Use StateView for pool prices and V4Quoter simulation when claim inventory is insufficient; return chain errors instead of fictional output.
+- Save commitment secrets before committing and refuse submission when browser storage fails; auto-reveal runs only with the page open.
+- Normalize accrued wrapper fees into shares for the hook PnL metric; do not sum incompatible token units.
+- Bridge remains hidden while the optional Ethereum intent workstream is not implemented.
+- 2026-09-25: Fastify API, viem indexer, local crank, React transaction controls, 8 unit tests, TypeScript check, and Vite production build pass. Fork smoke requires deployed manifests and ABI exports from integration.

@@ -10,3 +10,9 @@ web/dist/
 .DS_Store
 
 lib/
+
+broadcast/
+playwright-report/
+test-results/
+
+dist/
