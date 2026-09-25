@@ -2,7 +2,7 @@
 
 WrapSwap is the neutral conversion layer between issuers of the same tokenized stock. Coinbase's tokenized AAPL on Base (B20 standard) and Backed's AAPLx (xStocks) are separate SPV claims on the same Apple share; no issuer redeems the other's token, so one stock trades in siloed pools. WrapSwap moves a position issuer-to-issuer, share-for-share, with no USDC leg: a canonical `uAAPL` minted 1:1 per underlying share from any registered issuer, a Uniswap v4 **ParityHook** that fills swaps between wrappers at exact share-parity from hook-owned inventory (custom accounting), and a Uniswap v4 **DarkCrossHook** that batches sealed orders, crosses them at the oracle midpoint, and routes any residual to the lit pool in the same transaction. A UniswapX-pattern **intent bridge** lets an Ethereum AAPLx holder land in Base uAAPL from one signed order. ParityHook is generic: any wrapper pair on one underlying (WBTC/cbBTC, every future stock issuer). Tax treatment of wrapper conversion is jurisdiction-specific and not determined by the protocol.
 
-The paragraph above is the product specification. The intent bridge is not implemented. Local deployment uses mock issuer tokens because generic Anvil cannot execute Base's native B20 implementation. Contract, API, frontend, and demo verification status is tracked in [PROGRESS.md](PROGRESS.md); do not interpret a deployment script as a completed testnet deployment.
+The fork application is verified: **36 Solidity tests, 11 application tests, five browser transaction tests, and a clean-clone demo passed**. [Verification record](submission/verification.md) · [Demo receipts](deployments/demo-receipts.json). The product paragraph above includes the unshipped intent bridge. Sepolia deployment is blocked by zero deployer ETH; the bridge remains deferred under the requested build order. Native B20 and issuer 2 are explicit mocks; Uniswap and the Base oracle/USDC are real fork contracts.
 
 ## Uniswap stack integration
 
@@ -71,7 +71,7 @@ make demo
 # http://localhost:5173 (API :4000, crank :4001)
 ```
 
-`make demo` starts the Base fork, deploys the hooks, seeds inventory and PositionManager liquidity, executes receipt-checked conversions and a three-wallet crossed/routed batch, then runs the API, crank and web app. Logs live in `logs/`. `DEMO_CHECK=1 make demo` runs finite smoke checks. `make fresh-clone-check` repeats the workflow from a clean temporary clone. The exact integration contract, response JSON, database schema and sequence are in [INTERFACES.md](INTERFACES.md).
+`make demo` starts the Base fork, deploys the hooks, seeds inventory and PositionManager liquidity, starts the API/crank/web supervisor, then executes receipt-checked conversions and a three-wallet crossed/routed batch. The services remain running after the successful summary. Logs live in `logs/`. `DEMO_CHECK=1 make demo` runs finite smoke checks. `make fresh-clone-check` repeats the workflow from a clean temporary clone. The exact integration contract, response JSON, database schema and sequence are in [INTERFACES.md](INTERFACES.md).
 
 `make testnet` targets Base Sepolia with mock issuers and verification. Fund the address above before running it. No tokenized-stock issuer is represented as having endorsed this project.
 
@@ -95,7 +95,7 @@ First harden accounting and oracle normalization with independent security revie
 
 ## Submission
 
-[Developer feedback](FEEDBACK.md) · [Feedback form draft](submission/feedback-form.md) · [Three-minute video script](submission/demo-script.md) · [Pitch](submission/pitch.md)
+[Verification record](submission/verification.md) · [Live UI screenshot](submission/app-screenshot.png) · [Developer feedback](FEEDBACK.md) · [Feedback form draft](submission/feedback-form.md) · [Three-minute video script](submission/demo-script.md) · [Pitch](submission/pitch.md)
 
 ## License
 

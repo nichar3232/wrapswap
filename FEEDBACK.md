@@ -30,7 +30,7 @@ PositionManager's action stream and Permit2 approvals require coordinating ERC-2
 
 ## Deployments/docs and Base-specific findings
 
-The [official deployments page](https://developers.uniswap.org/docs/protocols/v4/deployments) supplied PoolManager, PositionManager, StateView, V4Quoter, Universal Router and Permit2 addresses. A versioned machine-readable manifest with chain ID, deployment block, bytecode hash and compatible package commits would eliminate manual transcribing and support repeatable fork checks. [Addresses.sol](contracts/script/Addresses.sol) is our explicit chain-address source.
+The [official deployments page](https://developers.uniswap.org/docs/protocols/v4/deployments) supplied PoolManager, PositionManager, StateView, V4Quoter, Universal Router and Permit2 addresses. The existing [versioned JSON feed](https://developers.uniswap.org/deployments.json) already includes chain IDs and source references. Extend its Base records with deployment blocks, bytecode hashes, and a tested package-compatibility matrix; pin sourceCodeUrl to the sourceRef rather than main. This would make fork checks reproducible without implying that the current feed is absent. [Addresses.sol](contracts/script/Addresses.sol) is our explicit chain-address source.
 
 Base B20 is a native implementation, not ordinary ERC-20 bytecode. Base RPC reads of AAPLc succeed, but generic Anvil returns `OpcodeNotFound`, including the attempted holder-to-contract transfer. This is a fork-runtime incompatibility, not proof of a live transfer allowlist. The fork uses [MockB20](contracts/src/mocks/MockB20.sol) with the identical consumed ERC-20/multiplier/pause surface. Publish an Anvil compatibility note or supported native-precompile shim in Base's B20 integration guide.
 
@@ -42,7 +42,7 @@ EAS schema matching alone does not establish Coinbase provenance: the trusted at
 
 ## Requested next improvements
 
-1. Synchronized core/periphery/template releases with a compiler matrix and machine-readable deployments.
+1. Synchronized core/periphery/template releases with a compiler matrix and enriched deployment records.
 2. A custom-accounting tutorial covering exact output, ERC-6909 fee inventory, mixed decimals and callback bypass.
 3. A Base-native B20 fork compatibility fixture and a fully executable PositionManager/Permit2 seeding example.
 

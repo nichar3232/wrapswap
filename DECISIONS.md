@@ -20,3 +20,26 @@
 - Keep §5 unshipped while §7 testnet deployment is blocked by zero Sepolia ETH: honor the requested cut order rather than claim an unfinished bridge.
 - Install Undici 8.11.2's fixed dispatcher for Node clients: observed Node24.21/macOS QoS socket failure crashed the API during sustained use.
 - Keep separate fee rounding functions for hook output and vault redemption: they differ by one raw unit on dust amounts and quotes must match contract execution.
+- Implement only enabled hook callbacks directly: the pinned periphery has no BaseHook source utility.
+- Exclude accrued fee claims from spendable hook inventory: ordinary fills and withdrawals must not consume fee revenue.
+- Restrict vault inventory pulls to surplus through a post-transfer backing check: provider authorization must not create unbacked shares.
+- Search calendar transitions by session day rather than minute: weekend countdown reads must stay within RPC gas limits.
+- Anchor batches to hook deployment block: phase boundaries remain deterministic for every deployment.
+- Round buy collateral and cash debits upward, seller credits downward: escrow must cover fees and preserve conservation.
+- Allocate crossed shares cumulatively and credit rounding dust to treasury: both sides receive exactly the matched quantity overall.
+- Drop valid but undercollateralized reveals without forfeiture: bad collateral is distinct from withholding a reveal.
+- Isolate unfillable residual self-calls and unlock their collateral: one trader's limit must not block the whole batch.
+- Record residual TWAP observations explicitly: v4 suppresses callbacks when a hook originates its own swap.
+- Reject a TWAP with insufficient retained history: a 64-entry buffer must not fabricate a thirty-minute price after eviction.
+- Keep dark-pool fees as treasury escrow credits: total available plus locked remains equal to held ERC20 balances.
+- Weight nonreveal forfeits by revealed share quantity and retain currency identity: USDC and shares cannot be summed as raw units.
+- Gate production liquidity on the callback sender and never tx.origin: an attested-router design remains necessary for end-user identity.
+- Encode large API integers as decimal strings: JavaScript number precision cannot represent share and token units safely.
+- Use explicit mint-then-redeem for wrapper-to-wrapper UI conversions: both transactions work today without claiming atomic multi-hop routing.
+- Keep public burner keys restricted to localhost demo manifests: chain ID alone does not prove a fork.
+- Rebuild projections transactionally from canonical event logs on rescan: orphaned reveals and fills must disappear after a reorg.
+- Persist deployment identity before indexing: reset only owned projections when a fresh fork replaces the previous deployment.
+- Refuse UI commitments when saving their secrets fails: an unsaved salt can cause a preventable forfeiture.
+- Express hook fee PnL in share units: raw fees from tokens with different decimals are not directly additive.
+- Use the existing Uniswap deployment JSON feed as evidence and suggest enriched records: feedback must recognize already-shipped developer tooling.
+- Use a blue action accent in both themes: reserve red and green for state indicators as requested.

@@ -17,3 +17,6 @@
 - Main live-fork browser suite green: five tests exercise every transaction panel, including auto-reveal (47.9s).
 - Main DarkCross suite against public Base fork green: 16 tests, including two 1000-run fuzz cases.
 - Captured real fork UI screenshot and structured demo transaction receipts.
+- make fresh-clone-check GREEN at code commit 61f3c9a: fresh dependencies, new deployer, isolated database, full scripted flow, all five browser tests (44.3s).
+- Final main make test GREEN: 36 Solidity tests and 11 application/database/runtime tests; production web build green.
+- Final verification record distinguishes shipped fork app, unfunded Sepolia and deferred bridge.

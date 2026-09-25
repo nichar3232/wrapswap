@@ -7,7 +7,7 @@
   --surface: #fff;
   --border: #dce0db;
   --muted: #65706b;
-  --accent: #126354;
+  --accent: #245bba;
 }
 * {
   box-sizing: border-box;
@@ -367,7 +367,7 @@ main > section {
     --surface: #1c2421;
     --border: #344139;
     --muted: #9aa99f;
-    --accent: #69b6a0;
+    --accent: #87aaff;
   }
   .primary {
     color: #12251e;
