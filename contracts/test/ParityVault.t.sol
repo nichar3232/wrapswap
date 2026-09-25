@@ -62,15 +62,13 @@ contract ParityVaultTest is Test {
         manager = new PoolManager(address(this));
         router = new PoolSwapTest(manager);
         liquidity = new PoolModifyLiquidityTest(manager);
-        bytes memory code =
-            abi.encodePacked(
+        bytes memory code = abi.encodePacked(
             type(ParityHook).creationCode, abi.encode(manager, registry, vault, calendar, address(this))
         );
         bytes32 salt;
         for (uint256 i;; i++) {
             salt = bytes32(i);
-            address expected =
-                address(
+            address expected = address(
                 uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(this), salt, keccak256(code)))))
             );
             if (uint160(expected) & ((1 << 14) - 1) == (1 << 13) | (1 << 7) | (1 << 6) | (1 << 3)) break;
@@ -100,6 +98,50 @@ contract ParityVaultTest is Test {
         return router.swap(
             key,
             SwapParams(z, n, z ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1),
+            PoolSwapTest.TestSettings(false, false),
+            ""
+        );
+    }
+
+    function testEightDecimalHookExactInOutAndGuard() public {
+        TestIssuer8 t = new TestIssuer8();
+        registry.add(address(new StaticAdapter(address(t), "eight", 1e18, address(this))));
+        t.mint(address(this), 10000e8);
+        t.approve(address(hook), type(uint256).max);
+        t.approve(address(router), type(uint256).max);
+        hook.depositInventory(Currency.wrap(address(t)), 1000e8);
+        bool tFirst = address(t) < address(vault);
+        PoolKey memory k = PoolKey(
+            Currency.wrap(tFirst ? address(t) : address(vault)),
+            Currency.wrap(tFirst ? address(vault) : address(t)),
+            0x800000,
+            60,
+            IHooks(address(hook))
+        );
+        uint160 sqrt = tFirst ? uint160((1 << 96) * 1e5) : uint160(uint256(1 << 96) / 1e5);
+        manager.initialize(k, sqrt);
+        uint256 beforeBal = vault.balanceOf(address(this));
+        uint256 fee = hook.feeBpsNow(address(t));
+        router.swap(
+            k,
+            SwapParams(tFirst, -int256(10e8), tFirst ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1),
+            PoolSwapTest.TestSettings(false, false),
+            ""
+        );
+        assertEq(vault.balanceOf(address(this)) - beforeBal, 10e18 * (10000 - fee) / 10000);
+        beforeBal = t.balanceOf(address(this));
+        router.swap(
+            k,
+            SwapParams(!tFirst, int256(1e8), !tFirst ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1),
+            PoolSwapTest.TestSettings(false, false),
+            ""
+        );
+        assertEq(t.balanceOf(address(this)) - beforeBal, 1e8);
+        // An empty, correctly priced curve returns zero without tripping the decimal-adjusted peg guard.
+        hook.withdrawInventory(Currency.wrap(address(vault)), hook.inventory(Currency.wrap(address(vault))));
+        router.swap(
+            k,
+            SwapParams(tFirst, -int256(1e8), tFirst ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1),
             PoolSwapTest.TestSettings(false, false),
             ""
         );
@@ -239,7 +281,7 @@ contract ParityVaultTest is Test {
     function testCalendar() public {
         assertTrue(calendar.isOpen(1784037600));
         assertFalse(calendar.isOpen(1784376000));
-        assertFalse(calendar.isOpen(1767362400));
+        assertFalse(calendar.isOpen(1798210800)); // Christmas 2026, 15:00 UTC
         uint256 beforeGas = gasleft();
         uint256 next = calendar.nextTransition(1784376000);
         assertGt(next, 1784376000);

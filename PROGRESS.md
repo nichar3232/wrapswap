@@ -4,3 +4,5 @@
 - Generated deployer and recorded public funding address.
 
 - Ground-truth fork test passes, documenting native B20 incompatibility and confirming PoolManager/USDC code.
+
+- Integrated A initial suite on main: 18 tests green including 1000-run backing fuzz and real PoolManager parity fills.
