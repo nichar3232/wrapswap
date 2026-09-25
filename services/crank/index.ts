@@ -12,7 +12,7 @@ import {
 const m = manifest();
 const local = /^http:\/\/(127\.0\.0\.1|localhost):/.test(rpc) && m.demoMode;
 const key =
-  process.env.CRANK_PK || (local ? m.burners?.[0]?.privateKey : undefined);
+  process.env.CRANK_PK || (local ? (process.env.DEPLOYER_PK || m.burners?.[0]?.privateKey) : undefined);
 if (!key) throw Error("CRANK_PK is required");
 const account = privateKeyToAccount(key as `0x${string}`);
 const wallet = createWalletClient({ account, transport: http(rpc) });

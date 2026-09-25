@@ -10,3 +10,5 @@
 - Seeded real concentrated liquidity, ERC6909 hook inventory, and three burner escrows.
 - First scripted fork flow green: vault mint, parity fill, drained-inventory curve fallback, crank cross+residual same transaction.
 - App unit/build integration green; nine tests include real Postgres replay.
+- make testnet attempted: blocked before broadcast because deployer has zero Base Sepolia ETH; no addresses fabricated.
+- Verified Ethereum AAPLx issuer-published address, holder and non-unit rebasing multiplier; bridge remains gated by §7 completion.

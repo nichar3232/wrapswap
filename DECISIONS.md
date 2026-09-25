@@ -16,3 +16,5 @@
 - Use tickSpacing=1 in the lit pool and outward-rounded ±2% price ticks: a 240-tick range would incorrectly widen the requested position.
 - Use a fresh dedicated Postgres database for clone verification: concurrent indexers must not overwrite each other's projections.
 - Seed native USDC by impersonating the verified-balance Base Morpho holder only on loopback Anvil: preserve real USDC interface execution.
+- Use the local deployer for crank signing, separate from UI burner accounts: avoid competing nonces during user actions and settlement.
+- Keep §5 unshipped while §7 testnet deployment is blocked by zero Sepolia ETH: honor the requested cut order rather than claim an unfinished bridge.
