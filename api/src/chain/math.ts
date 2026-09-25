@@ -9,6 +9,10 @@ export function tokens(qty: bigint, spt: bigint, decimals: number) {
 export function lessFee(amount: bigint, bps: number) {
   return amount - (BigInt(bps) * amount) / 10000n;
 }
+// Hook rounds net output down; vault rounds the retained fee down.
+export function hookOutput(amount: bigint, bps: number) {
+  return (amount * (10000n - BigInt(bps))) / 10000n;
+}
 export function deviation(price: bigint, ratio: bigint) {
   return ratio === 0n
     ? 0

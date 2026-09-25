@@ -14,6 +14,7 @@ import {
   shares,
   tokens,
   lessFee,
+  hookOutput,
   deviation,
   poolPrice,
 } from "../chain/math.js";
@@ -103,7 +104,7 @@ export async function quote(from: Address, to: Address, amount: bigint) {
       functionName: "balanceOf",
       args: [m.contracts.vault],
     });
-    if (held < lessFee(gross, 5))
+    if (held < gross)
       throw Error("Insufficient selected issuer inventory in vault");
     return {
       from,
@@ -146,7 +147,7 @@ export async function quote(from: Address, to: Address, amount: bigint) {
       from,
       to,
       amountIn: amount,
-      expectedOut: lessFee(gross, Number(fee)),
+      expectedOut: hookOutput(gross, Number(fee)),
       ratio: (ra * WAD) / rb,
       route: "hook",
       feeBps: Number(fee),

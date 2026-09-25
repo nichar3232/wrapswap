@@ -14,3 +14,9 @@ describe("decimal-aware share quotes", () => {
     expect(deviation(101n * WAD, 100n * WAD)).toBe(100);
   });
 });
+
+import {hookOutput} from './math';
+it('quotes the hook rounding separately from vault redemption rounding',()=>{
+ expect(hookOutput(1001n,2)).toBe(1000n);
+ expect(lessFee(1001n,2)).toBe(1001n);
+});
