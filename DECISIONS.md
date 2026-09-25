@@ -8,3 +8,6 @@
 - Use MockB20 on the Base fork due to observed OpcodeNotFound; retain real adapter for Base nodes.
 - v4 LP fee override affects swap fee without persisting slot0: validate charged amounts.
 - Enforce trusted EAS attester, bound batch size, and currency-specific forfeits: close security/accounting ambiguities in the spec.
+- Pin compatible current core/periphery commits instead of mixing stale core v4.0.0 with current periphery: the latter imports PoolOperation.sol absent from the tag.
+- Use official PositionManager and Permit2 for real fork liquidity; deploy only a PoolSwapTest convenience router locally.
+- Queue documentation agent D after one of A/B/C returns: only three child-agent slots are available.

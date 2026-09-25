@@ -8,3 +8,5 @@ contracts/broadcast/
 logs/
 web/dist/
 .DS_Store
+
+lib/
