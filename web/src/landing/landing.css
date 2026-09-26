@@ -50,6 +50,7 @@ section[id] {
 /* ---------- Hero: colour field, grain, hairline grid, halftone ---------- */
 .hero {
   --cell: max(64px, 10%);
+  --nav-h: 64px;
   position: relative;
   isolation: isolate;
   min-height: 100svh;
@@ -90,11 +91,13 @@ section[id] {
 .rules i:nth-child(3) {
   left: 73%;
 }
+/* Starts at the nav's bottom hairline so no "+" ever draws in the nav. */
 .halftone {
   position: absolute;
-  inset: 0;
+  top: var(--nav-h);
+  left: 0;
   width: 100%;
-  height: 100%;
+  height: calc(100% - var(--nav-h));
   color: var(--ink);
   pointer-events: none;
   z-index: 0;
@@ -113,7 +116,7 @@ section[id] {
   z-index: 5;
   display: flex;
   align-items: stretch;
-  height: 64px;
+  height: var(--nav-h);
   border-bottom: 1px solid var(--hairline);
   font-size: 15px;
 }
@@ -132,16 +135,22 @@ section[id] {
   font-size: 20px;
   letter-spacing: -0.03em;
 }
+/* Anchored to the 42% hairline, inset like the wordmark is from the logo cell. */
 .lnav-items {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 42%;
+  padding-left: 20px;
   display: flex;
   align-items: center;
-  gap: 28px;
-  margin-left: calc(42% - var(--cell) - 120px);
+  gap: 40px;
 }
 .lnav-items a {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  line-height: 1;
   color: var(--ink-soft);
   transition: color 150ms ease;
 }
@@ -149,6 +158,8 @@ section[id] {
   color: var(--ink);
 }
 .chev {
+  display: block;
+  flex: none;
   opacity: 0.7;
 }
 .lnav-end {
@@ -430,28 +441,18 @@ section[id] {
 }
 
 /* ---------- Responsive ---------- */
-@media (max-width: 900px) {
-  .rules i:nth-child(2),
-  .rules i:nth-child(3) {
-    display: none;
-  }
-  .wordmark {
-    padding: 0 14px;
-  }
-  .lnav-end {
-    padding: 0 12px;
-    gap: 8px;
-  }
+/* Items anchored at 42% would meet the right-hand controls below ~1200px: switch to the menu. */
+@media (max-width: 1199px) {
   .menu-toggle {
     display: inline-grid;
   }
   .lnav-items {
     display: none;
-    position: absolute;
-    top: 64px;
+    top: var(--nav-h);
+    bottom: auto;
     left: 12px;
     right: 12px;
-    margin: 0;
+    padding: 0;
     flex-direction: column;
     align-items: stretch;
     gap: 0;
@@ -468,6 +469,19 @@ section[id] {
   }
   .lnav-items a + a {
     border-top: 1px solid var(--hairline);
+  }
+}
+@media (max-width: 900px) {
+  .rules i:nth-child(2),
+  .rules i:nth-child(3) {
+    display: none;
+  }
+  .wordmark {
+    padding: 0 14px;
+  }
+  .lnav-end {
+    padding: 0 12px;
+    gap: 8px;
   }
   .hero-copy {
     padding-bottom: 48px;

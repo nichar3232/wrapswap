@@ -44,7 +44,7 @@ const STEPS = [
 function Chevron() {
   return (
     <svg className="chev" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-      <path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1" />
+      <path d="M2 3.5l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
