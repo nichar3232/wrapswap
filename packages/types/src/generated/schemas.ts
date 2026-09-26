@@ -599,6 +599,110 @@ export const schemas = {
         "additionalProperties": {
           "type": "string"
         }
+      },
+      "router": {
+        "$ref": "Address"
+      },
+      "faucet": {
+        "$ref": "Address"
+      },
+      "assets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "symbol",
+            "wrappers",
+            "pool",
+            "darkCross"
+          ],
+          "properties": {
+            "symbol": {
+              "type": "string"
+            },
+            "wrappers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "platform",
+                  "symbol",
+                  "token",
+                  "adapter",
+                  "multiplier",
+                  "decimals"
+                ],
+                "properties": {
+                  "platform": {
+                    "enum": [
+                      "Coinbase",
+                      "xStocks"
+                    ]
+                  },
+                  "symbol": {
+                    "type": "string"
+                  },
+                  "token": {
+                    "$ref": "Address"
+                  },
+                  "adapter": {
+                    "$ref": "Address"
+                  },
+                  "multiplier": {
+                    "$ref": "UInt"
+                  },
+                  "decimals": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "pool": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "key",
+                "initSqrtPriceX96"
+              ],
+              "properties": {
+                "id": {
+                  "$ref": "Bytes32"
+                },
+                "key": {
+                  "$ref": "PoolKey"
+                },
+                "initSqrtPriceX96": {
+                  "$ref": "UInt"
+                }
+              }
+            },
+            "darkCross": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "proofs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label",
+            "tx"
+          ],
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "tx": {
+              "$ref": "Bytes32"
+            }
+          }
+        }
       }
     }
   },
@@ -1952,6 +2056,29 @@ export type Deployment = {
   "verification"?: {
     [key: string]: string;
   };
+  "router"?: Address;
+  "faucet"?: Address;
+  "assets"?: Array<{
+    "symbol": string;
+    "wrappers": Array<{
+      "platform": "Coinbase" | "xStocks";
+      "symbol": string;
+      "token": Address;
+      "adapter": Address;
+      "multiplier": UInt;
+      "decimals": number;
+    }>;
+    "pool": {
+      "id": Bytes32;
+      "key": PoolKey;
+      "initSqrtPriceX96": UInt;
+    };
+    "darkCross": boolean;
+  }>;
+  "proofs"?: Array<{
+    "label": string;
+    "tx": Bytes32;
+  }>;
 };
 
 export type DeploymentToken = {

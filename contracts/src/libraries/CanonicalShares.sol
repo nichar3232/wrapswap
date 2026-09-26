@@ -12,7 +12,10 @@ library CanonicalShares {
 
     uint24 internal constant BASE_FEE_PIPS = 200;
     uint24 internal constant SKEW_FEE_PIPS = 1300;
-    uint24 internal constant CLOSED_FEE_PIPS = 1000;
+    /// @dev Off-hours rebalancing-lag premium at |skew| = 1 (15 bps). A same-share swap carries no underlying price risk;
+    ///      off-hours the issuers cannot mint/redeem until the open, so the risk is inventory skew that cannot be
+    ///      rebalanced, charged only to trades that increase it.
+    uint24 internal constant OFF_HOURS_MAX_FEE_PIPS = 1500;
     uint24 internal constant MAX_FEE_PIPS = 2500;
 
     /// @dev floor(amount * spt / 10**dec)
@@ -56,10 +59,51 @@ library CanonicalShares {
         return uint24(FullMath.mulDivRoundingUp(diff, skewFeePips, sum));
     }
 
-    /// @dev min(200 + skewPips + (open ? 0 : 1000), 2500)
-    function totalFeePips(uint256 shares0, uint256 shares1, bool marketOpen) internal pure returns (uint24) {
+    /// @dev Off-hours premium for a trade moving inventory shares from (shares0, shares1) to (post0, post1):
+    ///      ceil(1500 * |post0 - post1| / (post0 + post1)) when the trade increases |skew|, else 0.
+    ///      |skew| comparison is exact (cross-multiplied), so an unchanged or reduced |skew| pays nothing.
+    function offHoursPips(uint256 shares0, uint256 shares1, uint256 post0, uint256 post1)
+        internal
+        pure
+        returns (uint24)
+    {
+        uint256 sum = shares0 + shares1;
+        uint256 postSum = post0 + post1;
+        if (postSum == 0) return 0;
+        uint256 diff = shares0 >= shares1 ? shares0 - shares1 : shares1 - shares0;
+        uint256 postDiff = post0 >= post1 ? post0 - post1 : post1 - post0;
+        if (postDiff == 0) return 0;
+        // |post skew| > |skew|  <=>  postDiff * sum / postSum > diff  <=>  ceil(postDiff * sum / postSum) > diff
+        // (diff is an integer), evaluated in 512 bits. From an empty book (sum == 0) any imbalance is an increase.
+        if (sum != 0 && FullMath.mulDivRoundingUp(postDiff, sum, postSum) <= diff) return 0;
+        return uint24(FullMath.mulDivRoundingUp(postDiff, OFF_HOURS_MAX_FEE_PIPS, postSum));
+    }
+
+    /// @dev Premium a marginal skew-increasing trade pays now: ceil(1500 * |shares0 - shares1| / (shares0 + shares1)).
+    ///      0 when balanced. Used by the trade-less feeBreakdown(key) view.
+    function marginalOffHoursPips(uint256 shares0, uint256 shares1) internal pure returns (uint24) {
+        return skewPips(shares0, shares1, OFF_HOURS_MAX_FEE_PIPS);
+    }
+
+    /// @dev Inventory shares after a parity fill of `shares` canonical shares (zeroForOne: side 0 in, side 1 out).
+    ///      The out side is floored at 0 (an unfillable trade falls through; its fee is still well defined).
+    function postTradeShares(uint256 shares0, uint256 shares1, bool zeroForOne, uint256 shares)
+        internal
+        pure
+        returns (uint256 post0, uint256 post1)
+    {
+        if (zeroForOne) return (shares0 + shares, shares1 > shares ? shares1 - shares : 0);
+        return (shares0 > shares ? shares0 - shares : 0, shares1 + shares);
+    }
+
+    /// @dev min(200 + skewPips(pre) + (open ? 0 : offHoursPips(pre, post)), 2500)
+    function totalFeePips(uint256 shares0, uint256 shares1, uint256 post0, uint256 post1, bool marketOpen)
+        internal
+        pure
+        returns (uint24)
+    {
         uint256 total = uint256(BASE_FEE_PIPS) + skewPips(shares0, shares1, SKEW_FEE_PIPS)
-            + (marketOpen ? 0 : uint256(CLOSED_FEE_PIPS));
+            + (marketOpen ? 0 : uint256(offHoursPips(shares0, shares1, post0, post1)));
         return total > MAX_FEE_PIPS ? MAX_FEE_PIPS : uint24(total);
     }
 

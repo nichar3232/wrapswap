@@ -570,7 +570,7 @@ export async function routes(
       nextTransition,
       nextState: open ? "CLOSED" : "OPEN",
       secondsUntilTransition: Number(nextTransition - b.timestamp),
-      closedFeePips: 1000,
+      closedFeePips: Number(canonical.OFF_HOURS_MAX_FEE_PIPS), // max off-hours premium (skew-increasing trades only)
       source: "chain",
     };
   });

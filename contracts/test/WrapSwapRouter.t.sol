@@ -54,6 +54,31 @@ abstract contract WrapSwapRouterBase is Fixture {
         assertEq(maaplx.balanceOf(address(router)), 0);
     }
 
+    function test_exactIn_deliversToArbitraryRecipient() public {
+        address payee = makeAddr("payee");
+        IParityHook.Quote memory q = quoteOf(true, -int256(uint256(MCB_IN)));
+        IWrapSwapRouter.ExactInputParams memory p = exactIn(true, MCB_IN, uint128(q.amountOut), "");
+        p.recipient = payee;
+        uint256 demoMaaplx = maaplx.balanceOf(demo);
+        vm.prank(demo);
+        uint256 out = router.swapExactIn(p);
+        assertEq(out, q.amountOut);
+        assertEq(maaplx.balanceOf(payee), q.amountOut, "payee receives the output");
+        assertEq(maaplx.balanceOf(demo), demoMaaplx, "payer receives nothing");
+        assertEq(mcb.balanceOf(payee), 0);
+    }
+
+    function test_exactOut_deliversToArbitraryRecipient() public {
+        address payee = makeAddr("payee");
+        IWrapSwapRouter.ExactOutputParams memory p = exactOut(true, 50e18, MCB_IN);
+        p.recipient = payee;
+        uint256 demoMcb = mcb.balanceOf(demo);
+        vm.prank(demo);
+        uint256 paid = router.swapExactOut(p);
+        assertEq(maaplx.balanceOf(payee), 50e18);
+        assertEq(demoMcb - mcb.balanceOf(demo), paid, "payer pays the input");
+    }
+
     function test_exactIn_revertsBelowMinOut() public {
         IParityHook.Quote memory q = quoteOf(true, -int256(uint256(MCB_IN)));
         vm.prank(demo);

@@ -50,7 +50,8 @@ const pf = DEMO.parityFill;
 const variants = [DEMO.variants.anvil, DEMO.variants["unichain-sepolia"]];
 let grossOut1 = 0n;
 for (const v of variants) {
-  const fee = c.feeBreakdown(s.mcb, s.x, v.marketOpen);
+  // Per-trade fee (mcbAAPL in = side 0 in, input shares): the off-hours premium applies only if |skew| grows.
+  const fee = c.tradeFeeBreakdown(s.mcb, s.x, true, pf.shares, v.marketOpen);
   const q = c.parityQuote(mcb, x, pf.amountSpecified, fee.totalPips);
   eq(`${v.network} parityFill.feePips`, fee.totalPips, BigInt(v.parityFill.feePips));
   eq(`${v.network} parityFill.feeBps`, c.pipsToBps(fee.totalPips), v.parityFill.feeBps);
@@ -92,7 +93,7 @@ eq("dark.residual.amountIn", A.amountIn - crossedBase, r.amountIn);
 eq("dark.residual.minOut", c.residualMinOut(r.amountIn, A.limitPriceX18, true, mcb.decimals, x.decimals), r.minOut);
 let grossOut2 = 0n;
 for (const v of variants) {
-  const fee = c.feeBreakdown(s.mcb, s.x, v.marketOpen);
+  const fee = c.tradeFeeBreakdown(s.mcb, s.x, true, r.shares, v.marketOpen);
   const q = c.parityQuote(mcb, x, -r.amountIn, fee.totalPips);
   eq(`${v.network} residual.feePips`, fee.totalPips, BigInt(v.residual.feePips));
   eq(`${v.network} residual.feeBps`, c.pipsToBps(fee.totalPips), v.residual.feeBps);

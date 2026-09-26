@@ -84,22 +84,12 @@ abstract contract DemoNarrativeBase is Fixture {
         });
     }
 
-    function unichainSepoliaVariant() internal pure returns (Variant memory) {
-        return Variant({
-            warp: 1790424000,
-            marketOpen: false,
-            fillPips: 1460,
-            fillFee: 147825000000000000,
-            fillOut: 101102175000000000000,
-            residualPips: 1447,
-            residualFee: 14650875000000000,
-            residualOut: 10110349125000000000,
-            endDemoMaaplx: 601102175000000000000,
-            endDemoMcb: 400000000,
-            endAEscrowMaaplx: 60710036625000000000,
-            endBEscrowMcb: 49975000,
-            endHookFees: 162475875000000000
-        });
+    /// @dev Closed market, same numbers as ANVIL: the parity fill and the dark residual both sell mcbAAPL into a book
+    ///      long mAAPLx, reducing |skew|, so neither pays the off-hours premium.
+    function unichainSepoliaVariant() internal pure returns (Variant memory v) {
+        v = anvilVariant();
+        v.warp = 1790424000;
+        v.marketOpen = false;
     }
 
     function _skew(int256 mcbMinusMaaplx) internal view returns (int256) {
@@ -139,10 +129,13 @@ abstract contract DemoNarrativeBase is Fixture {
         IParityHook.FeeBreakdown memory f = hook.feeBreakdown(key);
         assertEq(f.skewX18, _skew(SKEW_INITIAL), "skew initial");
         assertEq(f.skewPips, FILL_SKEW_PIPS);
-        assertEq(f.totalPips, v.fillPips);
         assertEq(f.marketOpen, v.marketOpen);
+        // The trade-less view quotes a marginal skew-increasing trade: ceil(1500 * 0.2) = 300 pips when closed.
+        assertEq(f.closedPips, v.marketOpen ? 0 : 300);
         IParityHook.Quote memory q = quoteOf(true, FILL_SPECIFIED);
         assertTrue(q.fillable);
+        assertEq(q.fee.closedPips, 0, "rebalancing fill pays no off-hours premium");
+        assertEq(q.fee.totalPips, v.fillPips);
         assertEq(q.amountIn, FILL_IN);
         assertEq(q.shares, FILL_SHARES);
         assertEq(q.grossOut, FILL_GROSS);
