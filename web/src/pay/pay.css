@@ -206,3 +206,131 @@
     padding-right: 16px;
   }
 }
+.pay-wallets {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.pay-secondary {
+  background: transparent;
+  color: var(--c-text-primary);
+  border: 1px solid var(--c-border-strong);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pay-secondary:hover:not(:disabled) {
+  border-color: var(--c-accent-strong);
+}
+.pay-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.pay-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.pay-step-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.pay-step-num {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(47, 91, 255, 0.16);
+  color: var(--c-accent-strong);
+  font-weight: 700;
+  flex: none;
+}
+.pay-step h2 {
+  font-size: 20px;
+  text-transform: none;
+  letter-spacing: -0.01em;
+  color: var(--c-text-strong);
+}
+.pay-chain {
+  font-size: 12px;
+  color: var(--c-text-muted);
+}
+.pay-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  gap: 10px;
+}
+.pay-balance {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.pay-balance .pay-big {
+  font-size: 30px;
+  margin: 0;
+  white-space: nowrap;
+}
+.pay-balance > div {
+  min-width: 0;
+}
+.pay-window {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pay-window-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.pay-window-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--c-accent-strong);
+  font-weight: 600;
+}
+.pay-bar {
+  height: 4px;
+  background: var(--c-border-strong);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.pay-bar > div {
+  height: 100%;
+  background: var(--c-accent);
+  transition: width 0.5s linear;
+}
+.pay-receipts {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--c-text-secondary);
+}
+.pay-receipts:empty {
+  display: none;
+}
+.pay-who {
+  margin-bottom: 18px;
+}

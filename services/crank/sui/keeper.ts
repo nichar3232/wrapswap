@@ -39,8 +39,10 @@ export class Keeper {
     }
   }
 
-  get operator() {
-    return normalizeSuiAddress(this.dep.sui.operator);
+  /** Escrow for in-flight withdrawals. Owned by the pool id, which has no key, so no wallet can ever decrypt or
+   *  spend it, and the operator's own address stays free to hold a normal balance. */
+  get escrow() {
+    return normalizeSuiAddress(this.dep.sui.poolId);
   }
 
   balance(owner: string): bigint {
@@ -228,7 +230,7 @@ export class Keeper {
       const reserved = (shares * PIPS + (PIPS - pips) - 1n) / (PIPS - pips) + ROUNDING_MARGIN;
       if (reserved > available) return reject('overdraft', { shares: shares.toString(), reserved: reserved.toString(), available: available.toString() });
       this.add(payer, -reserved);
-      this.add(this.operator, reserved);
+      this.add(this.escrow, reserved);
       this.state.pending.push({
         commitment: env.commitment as Hex,
         owner: payer,
@@ -264,7 +266,7 @@ export class Keeper {
     for (const p of pending) {
       const reserved = BigInt(p.reserved);
       const s = res.settled.get(p.commitment.toLowerCase());
-      this.add(this.operator, -reserved);
+      this.add(this.escrow, -reserved);
       if (s) {
         let refund = reserved - s.sharesDebited;
         if (refund < 0n) {

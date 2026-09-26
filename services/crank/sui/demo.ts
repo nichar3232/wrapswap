@@ -5,20 +5,18 @@
 //   4. one deliberately failing withdrawal (maxFeeBps below the live fee) whose credit WithdrawalSkipped restores
 //   Asserts the reserves invariant before and after, and total_shares unchanged across the private payment.
 // DEMO_CHECK=1: finite smoke run (exit code = verdict). Otherwise the keeper keeps running afterwards.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { Transaction } from '@mysten/sui/transactions';
 import { formatUnits, parseEther, type Hex } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { Keeper } from './keeper.js';
-import { STATE_DIR, loadDeployment } from './config.js';
+import { loadDeployment } from './config.js';
 import { acquireLock } from './state.js';
-import { execute, sessionKeyFor, suiscan, walrusGet, walrusPut, walruscan } from './lib.js';
+import { execute, loadKeypair, sessionKeyFor, suiscan, walrusGet, walrusPut, walruscan } from './lib.js';
 import { readBatch, readPool } from './chain.js';
 import { prepareInstruction, readOwnBalance } from './payer.js';
 import { decodeJson, formatShares, normalizeSuiAddress, type Instruction, type Manifest } from './protocol.js';
-import { erc20Abi, keeperWallet, publicClient, shareVaultAbi, walletFor } from './evm.js';
+import { erc20Abi, keeperWallet, publicClient, shareVaultAbi, walletFor, withNonceRetry } from './evm.js';
 
 const CHECK = process.env.DEMO_CHECK === '1';
 const ONE = 10n ** 18n;
@@ -45,14 +43,11 @@ function check(cond: boolean, what: string) {
 
 // ---------------------------------------------------------------- wallets
 
+/** Payer and payee are the documented demo addresses (deployments/sui-testnet.json demoAccounts), keys from the
+ *  Sui CLI keystore. The payer is also the pool operator; escrow sits on the pool id, so the two never mix. */
 function suiWallets(): { A: Ed25519Keypair; B: Ed25519Keypair } {
-  const f = join(STATE_DIR, 'demo-wallets.json');
-  if (!existsSync(f)) {
-    const gen = () => Ed25519Keypair.generate().getSecretKey();
-    writeFileSync(f, JSON.stringify({ A: gen(), B: gen() }), { mode: 0o600 });
-  }
-  const w = JSON.parse(readFileSync(f, 'utf8'));
-  return { A: Ed25519Keypair.fromSecretKey(w.A), B: Ed25519Keypair.fromSecretKey(w.B) };
+  const acc = (dep as any).demoAccounts;
+  return { A: loadKeypair(acc.suiPayer), B: loadKeypair(acc.suiPayee) };
 }
 
 const mnemonic = process.env.DEMO_MNEMONIC;
@@ -89,20 +84,20 @@ async function ensureEvm(acct: typeof evmA, token: typeof mcb, raw: bigint) {
   const deployer = keeperWallet();
   const eth = await pc.getBalance({ address: acct.address });
   if (eth < parseEther('0.0005')) {
-    const h = await deployer.sendTransaction({ to: acct.address, value: parseEther('0.001') });
+    const h = await withNonceRetry(() => deployer.sendTransaction({ to: acct.address, value: parseEther('0.001') }));
     await evmTx(h);
     receipt(`fund ${acct.address} with gas`, { unichain: uniscan('tx', h) });
   }
   const bal = await pc.readContract({ address: token.address, abi: erc20Abi, functionName: 'balanceOf', args: [acct.address] });
   if (bal < raw) {
-    const h = await deployer.writeContract({ address: token.address, abi: erc20Abi, functionName: 'mint', args: [acct.address, raw - bal] });
+    const h = await withNonceRetry(() => deployer.writeContract({ address: token.address, abi: erc20Abi, functionName: 'mint', args: [acct.address, raw - bal] }));
     await evmTx(h);
     receipt(`mint ${formatUnits(raw - bal, token.decimals)} ${token.symbol} to ${acct.address} (mock issuer)`, { unichain: uniscan('tx', h) });
   }
   const w = walletFor(`0x${Buffer.from(acct.getHdKey().privateKey!).toString('hex')}`);
   const allowance = await pc.readContract({ address: token.address, abi: erc20Abi, functionName: 'allowance', args: [acct.address, evm.shareVault] });
   if (allowance < raw) {
-    const h = await w.writeContract({ address: token.address, abi: erc20Abi, functionName: 'approve', args: [evm.shareVault, 2n ** 255n] });
+    const h = await withNonceRetry(() => w.writeContract({ address: token.address, abi: erc20Abi, functionName: 'approve', args: [evm.shareVault, 2n ** 255n] }));
     await evmTx(h);
   }
   return w;
@@ -166,7 +161,7 @@ await reserves('before');
 step('Deposits on Unichain Sepolia (issuer tokens into ShareVault custody)');
 const mcbRaw = 2n * 10n ** 6n; // 2 mcbAAPL = 2.025 canonical shares
 const wA = await ensureEvm(evmA, mcb, mcbRaw);
-const hA = await wA.writeContract({ address: evm.shareVault, abi: shareVaultAbi, functionName: 'deposit', args: [mcb.address, mcbRaw, addrA] });
+const hA = await withNonceRetry(() => wA.writeContract({ address: evm.shareVault, abi: shareVaultAbi, functionName: 'deposit', args: [mcb.address, mcbRaw, addrA] }));
 await evmTx(hA);
 receipt(`A deposits 2 mcbAAPL -> credit to Sui ${addrA.slice(0, 10)}…`, { unichain: uniscan('tx', hA) });
 
@@ -174,11 +169,11 @@ receipt(`A deposits 2 mcbAAPL -> credit to Sui ${addrA.slice(0, 10)}…`, { unic
 const heldMcb = await pc.readContract({ address: mcb.address, abi: erc20Abi, functionName: 'balanceOf', args: [evm.shareVault] });
 const heldMcbShares = heldMcb * 10125n * 10n ** 8n; // raw * 1.0125e18 / 1e6 (mcbAAPL: 6 decimals, multiplier 1.0125)
 const W_OK = ((heldMcbShares / ONE) + 1n) * ONE; // strictly more mcbAAPL than custody holds
-const W_SKIP = W_OK - ONE / 2n;
+const W_SKIP = W_OK; // same size: custody still lacks it after the first conversion, so it must convert too
 const PAY = ONE;
 const bDeposit = W_OK + W_SKIP + 2n * ONE;
 const wB = await ensureEvm(evmB, maaplx, bDeposit);
-const hB = await wB.writeContract({ address: evm.shareVault, abi: shareVaultAbi, functionName: 'deposit', args: [maaplx.address, bDeposit, addrB] });
+const hB = await withNonceRetry(() => wB.writeContract({ address: evm.shareVault, abi: shareVaultAbi, functionName: 'deposit', args: [maaplx.address, bDeposit, addrB] }));
 await evmTx(hB);
 receipt(`B deposits ${formatShares(bDeposit, 2)} mAAPLx -> credit to Sui ${addrB.slice(0, 10)}…`, { unichain: uniscan('tx', hB) });
 
