@@ -958,9 +958,11 @@ abstract contract ParityHookBase is Fixture {
         mcb.mint(address(donor), donation);
         donor.donate(cur(mcb), address(hook), donation);
         IParityHook.Quote memory afterDonation = quoteOf(false, -int256(size));
-        // Fee saving (in mcbAAPL raw, same output token) never exceeds what was donated.
+        // Fee saving (in mcbAAPL raw, same output token) never exceeds what was donated, up to one pip of the output: the
+        // skew fee is ceil-rounded to whole pips at the post-trade skew, so a dust donation that moves |post skew| across
+        // a pip boundary saves one pip. That grants nothing beyond choosing the trade size, which moves |post skew| too.
         uint256 saving = afterDonation.amountOut > before.amountOut ? afterDonation.amountOut - before.amountOut : 0;
-        assertLt(saving, donation);
+        assertLe(saving, donation + before.amountOut / 1e6 + 1);
     }
 
     // ---------------------------------------------------------------- rounding and deltas

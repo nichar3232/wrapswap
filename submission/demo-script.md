@@ -60,11 +60,11 @@ Start state: a fresh `scripts/dev/record-ready` stack, before any swap.
   5. The crank settles at mid **1.0125**.
   6. The batch detail shows:
      - Crossed **50 mcbAAPL ↔ 50.625 mAAPLx**.
-     - A receives **50.5996875 mAAPLx**; B receives **49.975 mcbAAPL** (5 bps per side).
+     - A receives **50.6199375 mAAPLx**; B receives **49.995 mcbAAPL** (1 bp on crossed volume, to the protocol).
      - Residual: **10 mcbAAPL → 10.120474125 mAAPLx** via ParityHook at **4.47 bps** (≥ min 10.1).
   7. The fills list shows `DARK-CROSS` and `DARK-RESIDUAL` rows under one settlement tx hash.
 - **Voiceover (101 words):** "Bigger holders can cross off-book. Counterparty A commits to sell 60 mcbAAPL, limit 1.0100. B commits to sell 50.625 mAAPLx, limit 1.0150. Until reveal, the orders are only hashes. The crank settles at the 1.0125 mid: 50 mcbAAPL cross against 50.625 mAAPLx, five basis points per side. A's leftover 10 mcbAAPL doesn't wait for another batch. In the same unlock, it's swapped into the ParityHook pool: 10.12 mAAPLx out, at a 4.47 bps fee, above A's limit. So every flow, whether parity fill, fall-through or dark residual, settles through one hook. Commit-reveal hides orders until reveal; it isn't full cryptographic privacy."
-- **Caption:** `Mid 1.0125 · crossed 50 mcbAAPL ↔ 50.625 mAAPLx · 5 bps/side · residual 10 mcbAAPL → 10.120474125 mAAPLx via ParityHook (4.47 bps) · one unlock`
+- **Caption:** `Mid 1.0125 · crossed 50 mcbAAPL ↔ 50.625 mAAPLx · 1 bp to protocol · residual 10 mcbAAPL → 10.122975 mAAPLx via ParityHook (2 bps base, to the LP)`
 
 ---
 
@@ -83,10 +83,10 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 - **Screen:**
   1. `https://nichars-mac-mini.tail43cacc.ts.net/app` (live stack on the mini via Tailscale Funnel; see DEMO.md), Convert tab. The header shows NYSE **CLOSED** · next open Mon 13:30 UTC.
   2. From `mcbAAPL`, To `mAAPLx`, amount `100`.
-  3. At time of writing (book long mAAPLx, |skew| 0.089), 100 mcbAAPL → mAAPLx reduces skew, so the breakdown is base 2.00 + skew 1.16 + **off-hours 0** = **3.16 bps**; output **101.218005 mAAPLx**.
-  4. Flip the direction (100 mAAPLx → mcbAAPL): it increases skew, so off-hours adds **1.49 bps** (15 bps × post-trade |skew| 0.099) = **4.65 bps**, output 98.719506 mcbAAPL. The deployer's proof swap at deploy time filled 4.93 bps on this side (98.71674 mcbAAPL out).
-- **Voiceover (47 words):** "It's the weekend, so NYSE is closed. A same-share swap has no price risk; the only off-hours risk is that issuers can't rebalance until Monday. So a trade that rebalances the hook pays nothing extra, 3.16 bps, and one that deepens the skew pays 4.65."
-- **Caption:** `NYSE CLOSED · rebalancing 3.16 bps (off-hours 0) · skew-increasing 4.65 bps (off-hours 15 bps × |post skew|)` (at time of writing)
+  3. AAPL inventory is long mAAPLx (|skew| ≈ 0.20), so 100 mcbAAPL → mAAPLx reduces skew: the breakdown is base 2.00 + **skew 0** = **2.00 bps**; output **101.22975 mAAPLx**.
+  4. Flip the direction (100 mAAPLx → mcbAAPL): it deepens the imbalance, so the skew fee applies: 2.00 + **3.14** (15 bps × post-trade |skew| 0.209) = **5.14 bps**; the deployer proof swap filled exactly this (98.714666 mcbAAPL out).
+- **Voiceover (38 words):** "A same-share swap has no price risk, so the base fee is 2 basis points. Only a trade that deepens the hook's inventory imbalance pays a skew fee: this way 2.00 bps, the other way 5.14. All of it goes to the LP."
+- **Caption:** `cheap direction 2.00 bps (skew fee 0) · imbalance-increasing 5.14 bps (+ 15 bps × |post skew|) · 100% to the LP`
 
 ### B3 · 2:50–3:00 — Integration table, close
 
@@ -108,7 +108,7 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 | A 60 mcbAAPL @1.0100, B 50.625 mAAPLx @1.0150, mid 1.0125 | shared | `dark.orders`, `dark.oracleMidX18` |
 | crossed 50 ↔ 50.625; A gets 50.5996875; B gets 49.975 | shared | `dark.crossedBase/crossedQuote`, `dark.crossOut` |
 | residual 10 mcbAAPL → 10.120474125 mAAPLx, 4.47 bps, min 10.1 | ANVIL | `variants.anvil.residual`, `dark.residual.minOut` |
-| 3.16 bps = 2.00 + 1.16 + 0 off-hours (skew-reducing), out 101.218005; reverse 4.65 bps = 2.00 + 1.16 + 1.49, out 98.719506 mcbAAPL (at time of writing) | UNICHAIN-SEPOLIA | live `ParityHook.quote` on 1301, block 63581560 |
+| 2.00 bps (skew-reducing), out 101.22975; reverse 5.14 bps = 2.00 + 3.14 skew, out 98.714666 mcbAAPL | UNICHAIN-SEPOLIA | live `ParityHook.quote(asset, from, to, amountIn)` on 1301 |
 | next open Mon 2026-09-28 13:30 UTC | UNICHAIN-SEPOLIA | `variants.unichain-sepolia.nextOpen = 1790602200` |
 
 ## Technical claims in the voiceover → source
@@ -116,10 +116,10 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 | Claim | Source |
 |---|---|
 | Hook fills from inventory inside beforeSwap at the share ratio | [`ParityHook.beforeSwap` (ParityHook.sol#L226)](../contracts/src/ParityHook.sol#L226); DECISIONS.md "Fills are all-or-nothing from inventory via beforeSwapReturnDelta" |
-| Fee = 2 bps base + skew + off-hours 15 bps·\|post-trade skew\| on skew-increasing trades, cap 25 bps | [`ParityHook.feeBreakdown` (ParityHook.sol#L171)](../contracts/src/ParityHook.sol#L171); DECISIONS.md "Fee is expressed in pips: min(200 + ceil(1300·\|skew\|) + (NYSE closed and the trade increases \|skew\| ? ceil(1500·\|post-trade skew\|) : 0), 2500)" |
+| Fee = 2 bps base (owner-settable) + min(15·\|post-trade skew\|, 50) bps on imbalance-increasing trades, 100% to the LP |post-trade skew\| on skew-increasing trades, cap 25 bps | [`ParityHook.feeBreakdown` (ParityHook.sol#L171)](../contracts/src/ParityHook.sol#L171); DECISIONS.md "Fee is expressed in pips: min(200 + ceil(1300·\|skew\|) + (NYSE closed and the trade increases \|skew\| ? ceil(1500·\|post-trade skew\|) : 0), 2500)" |
 | Inventory is ERC-6909 claims in the PoolManager | [`ParityHook.depositInventory` (ParityHook.sol#L119)](../contracts/src/ParityHook.sol#L119); DECISIONS.md "Inventory is ERC-6909 claims owned by ParityHook in the PoolManager" |
 | Fall-through to the same pool, 50 bps peg guard | [`ParityHook.afterSwap` (ParityHook.sol#L279)](../contracts/src/ParityHook.sol#L279); DECISIONS.md "afterSwap reverts when the post-swap price is more than 50 bps from adapter parity" |
-| Commit-reveal; settle at oracle mid; 5 bps per side | [`DarkCrossHook.commit` (DarkCrossHook.sol#L185)](../contracts/src/DarkCrossHook.sol#L185), [`DarkCrossHook.reveal` (DarkCrossHook.sol#L212)](../contracts/src/DarkCrossHook.sol#L212); DECISIONS.md "crossing charges 5 bps per side to treasury" |
+| Commit-reveal; settle at the oracle mid (≤ 30 min old); 1 bp on crossed volume to the protocol; residual to ParityHook at base + skew, unfilled part refunded | [`DarkCrossHook.commit` (DarkCrossHook.sol#L185)](../contracts/src/DarkCrossHook.sol#L185), [`DarkCrossHook.reveal` (DarkCrossHook.sol#L212)](../contracts/src/DarkCrossHook.sol#L212); DECISIONS.md "crossing charges 5 bps per side to treasury" |
 | Residual swapped into the ParityHook pool in the same unlock | [`DarkCrossHook.settle` (DarkCrossHook.sol#L246)](../contracts/src/DarkCrossHook.sol#L246); DECISIONS.md "routes residuals into the ParityHook pool inside the same unlock" |
 | Non-US gate via Coinbase Verified Country EAS; demoMode on testnet | [`IEligibility.check` (IEligibility.sol#L21)](../contracts/src/interfaces/IEligibility.sol#L21), [`IEligibility.setDemoMode` (IEligibility.sol#L18)](../contracts/src/interfaces/IEligibility.sol#L18); DECISIONS.md "IEligibility has an EAS implementation (Coinbase Verified Country, restricted country \"US\")… demoMode is owner-set and emits DemoModeSet" |
 | NYSE closed read from the chain clock | [`NyseCalendar.isOpen` (NyseCalendar.sol#L54)](../contracts/src/NyseCalendar.sol#L54); DECISIONS.md "Market-hours logic everywhere reads the latest block timestamp" |

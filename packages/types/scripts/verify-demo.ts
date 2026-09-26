@@ -59,7 +59,7 @@ for (const v of variants) {
   const seed = seedOf(v);
   const sv = shares(seed);
   // Per-trade fee (mcbAAPL in = side 0 in, input shares): the off-hours premium applies only if |skew| grows.
-  const fee = c.tradeFeeBreakdown(sv.mcb, sv.x, true, pf.shares, v.marketOpen);
+  const fee = c.tradeFeeBreakdown(sv.mcb, sv.x, true, pf.shares);
   const q = c.parityQuote(mcb, x, pf.amountSpecified, fee.totalPips);
   eq(`${v.network} parityFill.feePips`, fee.totalPips, BigInt(v.parityFill.feePips));
   eq(`${v.network} parityFill.feeBps`, c.pipsToBps(fee.totalPips), v.parityFill.feeBps);
@@ -103,7 +103,7 @@ eq("dark.residual.minOut", c.residualMinOut(r.amountIn, A.limitPriceX18, true, m
 let grossOut2 = 0n;
 for (const v of variants) {
   const sv = afterFill.get(v.network)!;
-  const fee = c.tradeFeeBreakdown(sv.mcb, sv.x, true, r.shares, v.marketOpen);
+  const fee = c.tradeFeeBreakdown(sv.mcb, sv.x, true, r.shares);
   const q = c.parityQuote(mcb, x, -r.amountIn, fee.totalPips);
   eq(`${v.network} residual.feePips`, fee.totalPips, BigInt(v.residual.feePips));
   eq(`${v.network} residual.feeBps`, c.pipsToBps(fee.totalPips), v.residual.feeBps);

@@ -77,20 +77,19 @@ For the anvil backup, tunnel `13008` and `18008` the same way.
 
 Live figures below are from the 1301 pools **at time of writing** (block 63581560, Sat 2026-09-26 14:46 UTC). NYSE is
 closed until Mon 2026-09-28 13:30 UTC. Every live swap moves the skew, so read the numbers off the screen.
-Fee model: 2 bps base + skew fee + off-hours premium of 15 bps × |post-trade skew|. The premium applies only to trades
-that increase skew while NYSE is closed. The total is capped at 25 bps.
+Fee model: 2 bps base (owner-settable) + a skew fee of min(15 bps × |post-trade skew|, 50 bps) charged only to trades that increase inventory imbalance; the whole fee stays in the hook's inventory (100% to the LP), the protocol takes nothing on Convert. There is no market-hours component and no charge for any price gap between wrappers.
+AAPL is seeded at |skew| ≈ 0.20 (long mAAPLx), so mcbAAPL → mAAPLx is the cheap direction.
 
 ### 4.1 Convert: PARITY fill (Convert tab)
 
 - The header shows `unichain-sepolia · Chain 1301 · NYSE CLOSED`, crank healthy and an indexer lag of about 2 blocks. The asset picker (from `/api/assets`) lists AAPL, NVDA and TSLA, each with Coinbase and xStocks wrappers.
 - Convert 100 mcbAAPL to mAAPLx and the **PARITY** badge appears. The quote shows ratio 1.0125 and 101.25 shares.
-- At time of writing this trade reduces inventory skew (|skew| 0.089), so the fee is 2.00 base + 1.16 skew + 0 off-hours = **3.16 bps**, output **101.218005 mAAPLx**.
-- Flip the direction (100 mAAPLx → mcbAAPL): it deepens the skew, so off-hours adds 1.49 bps = **4.65 bps**, output 98.719506 mcbAAPL.
-- Talking point: the hook fills the swap from its own inventory inside `beforeSwap` at the share ratio, with no USDC leg. Off-hours it charges only trades that deepen inventory skew (rebalancing lag), instead of refusing to trade.
+- This trade reduces inventory skew, so the fee is the 2.00 bps base only (no skew fee): output **101.22975 mAAPLx** for 100 mcbAAPL.
+- Flip the direction (100 mAAPLx → mcbAAPL): it deepens the skew, so the skew fee applies: 2.00 + 3.14 = **5.14 bps**, output 98.714666 mcbAAPL (deployer proof swap).
+- Talking point: the hook fills the swap from its own inventory inside `beforeSwap` at the share ratio, with no USDC leg. Only trades that deepen the inventory imbalance pay a skew fee; the whole fee goes to the LP.
 - Executed Converts through `WrapSwapRouter.swapExactIn` on the current ParityHook:
-  - Production `/app` UI, demo account 1, via `e2e/live/sepolia-convert.spec.ts`: 100 mcbAAPL → 101.21668875 mAAPLx, exactly the quote (3.29 bps): [0x41022b52…3dbb](https://sepolia.uniscan.xyz/tx/0x41022b52ea7908bb631818a97562ee6ee5124768314fcddaf2586b9fcc9b3dbb) (block 63581542)
-  - Deployer, skew-increasing: 100 mAAPLx → 98.71674 mcbAAPL at 4.93 bps (1.64 off-hours): [0x8fb8d9c3…ac12](https://sepolia.uniscan.xyz/tx/0x8fb8d9c3c90cb31c830ec331197e62b10f3fa9b0f50c5689b5e78dc6ecc5ac12) (block 63580053)
-- Test funds: `TestShareFaucet.claim()` sends 1,000 of each of the 6 wrappers once per 24 h. Proof claim: [0x5fd33936…13ca](https://sepolia.uniscan.xyz/tx/0x5fd33936c421b2046415fbae6197ba09fee575d4f95755b4ad31ee19017913ca). Claims show in `/api/stats`.
+  - Deployer, skew-increasing: 100 mAAPLx → 98.714666 mcbAAPL at 5.14 bps (2.00 base + 3.14 skew): [0x53058b66…6967](https://sepolia.uniscan.xyz/tx/0x53058b66852381de1aab326442304d553ab204d248215fc7c00a18d36cf06967)
+- Test funds: `TestShareFaucet.claim()` sends 1,000 of each of the 6 wrappers once per 24 h. Previous-deploy proof claim: [0x5fd33936…13ca](https://sepolia.uniscan.xyz/tx/0x5fd33936c421b2046415fbae6197ba09fee575d4f95755b4ad31ee19017913ca). Claims show in `/api/stats`.
 
 ### 4.2 Pool skew (Pool tab)
 

@@ -4,7 +4,7 @@
 
 ## Pitch (≤120 words)
 
-The same Apple share now trades through different issuers, such as Coinbase's tokenized AAPL on Base and Backed's xStocks AAPLx. Each wrapper is its own island. Switching issuers means selling into USDC and buying back. WrapSwap is a Uniswap v4 hook that converts share-for-share, no USDC leg. It fills swaps from its ERC-6909 inventory at the issuers' share ratio. It prices inventory skew into a dynamic fee, and it adds an off-hours risk premium while NYSE is closed. Swaps its inventory can't cover fall through to the same pool's liquidity under a peg guard. Dark-cross residuals settle through that same hook. Users only ever hold real issuer securities. Swaps are gated to non-US users by Coinbase's Verified Country attestation.
+The same Apple share now trades through different issuers, such as Coinbase's tokenized AAPL on Base and Backed's xStocks AAPLx. Each wrapper is its own island. Switching issuers means selling into USDC and buying back. WrapSwap is a Uniswap v4 hook that converts share-for-share, no USDC leg. It fills swaps from its ERC-6909 inventory at the issuers' share ratio. It charges a 2 bps base fee plus a skew fee only on trades that deepen its inventory imbalance, all of it to the LP. Swaps its inventory can't cover fall through to the same pool's liquidity under a peg guard. Dark-cross residuals settle through that same hook. Users only ever hold real issuer securities. Swaps are gated to non-US users by Coinbase's Verified Country attestation.
 
 ## Why this is a Uniswap stack contribution
 

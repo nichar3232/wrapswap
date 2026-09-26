@@ -2,13 +2,14 @@
 // Bit-for-bit mirror of the Solidity rounding rules; used by the API for display math and by `make types` to verify §10.
 export const ONE = 10n ** 18n;
 export const PIPS = 1_000_000n;
+/** Default Convert base fee (2 bps); ParityHook.baseFeePips is owner-settable up to MAX_BASE_FEE_PIPS. */
 export const BASE_FEE_PIPS = 200n;
-export const SKEW_FEE_PIPS = 1300n;
-/** Off-hours rebalancing-lag premium at |skew| = 1: charged as ceil(1500 * |post-trade skew|), only when a trade increases |skew|. */
-export const OFF_HOURS_MAX_FEE_PIPS = 1500n;
-export const MAX_FEE_PIPS = 2500n;
+export const MAX_BASE_FEE_PIPS = 5000n;
+/** Skew fee: 15 bps per unit of |post-trade skew|, capped at 50 bps, only on trades that increase |skew|. */
+export const SKEW_FEE_PIPS = 1500n;
+export const SKEW_FEE_CAP_PIPS = 5000n;
 export const PEG_GUARD_BPS = 50n;
-export const CROSS_FEE_PIPS = 500n;
+export const CROSS_FEE_PIPS = 100n;
 
 const pow10 = (d: number | bigint) => 10n ** BigInt(d);
 export const mulDiv = (a: bigint, b: bigint, d: bigint) => (a * b) / d;
@@ -40,23 +41,30 @@ export function skewPips(shares0: bigint, shares1: bigint, skewFeePips = SKEW_FE
 export type FeeBreakdown = {
   basePips: bigint;
   skewPips: bigint;
-  closedPips: bigint;
   totalPips: bigint;
+  /** Pre-trade skew, 1e18 signed. */
   skewX18: bigint;
-  marketOpen: boolean;
+  /** Post-trade skew (equals skewX18 in the trade-less view). */
+  postSkewX18: bigint;
+  /** true when the trade does not increase |skew| (skewPips = 0). */
+  reducesImbalance: boolean;
 };
 
-/** CanonicalShares.offHoursPips: ceil(1500 * |post skew|) if the trade strictly increases |skew|, else 0. */
-export function offHoursPips(shares0: bigint, shares1: bigint, post0: bigint, post1: bigint): bigint {
-  const sum = shares0 + shares1;
+/** CanonicalShares.increasesImbalance: |post skew| > |skew|, exact. */
+export function increasesImbalance(shares0: bigint, shares1: bigint, post0: bigint, post1: bigint): boolean {
   const postSum = post0 + post1;
-  if (postSum === 0n) return 0n;
-  const diff = abs(shares0 - shares1);
   const postDiff = abs(post0 - post1);
-  if (postDiff === 0n) return 0n;
-  if (sum !== 0n && mulDivUp(postDiff, sum, postSum) <= diff) return 0n;
-  return mulDivUp(postDiff, OFF_HOURS_MAX_FEE_PIPS, postSum);
+  if (postSum === 0n || postDiff === 0n) return false;
+  const sum = shares0 + shares1;
+  if (sum === 0n) return true;
+  return mulDivUp(postDiff, sum, postSum) > abs(shares0 - shares1);
 }
+
+const capSkew = (pips: bigint) => (pips > SKEW_FEE_CAP_PIPS ? SKEW_FEE_CAP_PIPS : pips);
+
+/** CanonicalShares.skewFeePips: min(ceil(1500 * |post skew|), 5000) if the trade increases |skew|, else 0. */
+export const skewFeePips = (shares0: bigint, shares1: bigint, post0: bigint, post1: bigint) =>
+  increasesImbalance(shares0, shares1, post0, post1) ? capSkew(skewPips(post0, post1, SKEW_FEE_PIPS)) : 0n;
 
 /** CanonicalShares.postTradeShares: `shares` canonical shares move in on side 0 (zeroForOne) or side 1; out side floored at 0. */
 export function postTradeShares(shares0: bigint, shares1: bigint, zeroForOne: boolean, shares: bigint): [bigint, bigint] {
@@ -64,41 +72,42 @@ export function postTradeShares(shares0: bigint, shares1: bigint, zeroForOne: bo
   return [shares0 > shares ? shares0 - shares : 0n, shares1 + shares];
 }
 
-function breakdown(shares0: bigint, shares1: bigint, marketOpen: boolean, offHours: bigint): FeeBreakdown {
-  const s = skewPips(shares0, shares1);
-  const closed = marketOpen ? 0n : offHours;
-  const raw = BASE_FEE_PIPS + s + closed;
-  return {
-    basePips: BASE_FEE_PIPS,
-    skewPips: s,
-    closedPips: closed,
-    totalPips: raw > MAX_FEE_PIPS ? MAX_FEE_PIPS : raw,
-    skewX18: skewX18(shares0, shares1),
-    marketOpen,
-  };
-}
-
 /**
- * IParityHook.feeBreakdown (trade-less view): closedPips is the premium a marginal skew-increasing trade pays now,
- * ceil(1500 * |skew|) off-hours (0 when balanced); a skew-reducing trade pays 0 (see tradeFeeBreakdown).
+ * IParityHook.feeBreakdown (trade-less view): the fee a marginal |skew|-increasing trade pays now,
+ * base + min(ceil(1500 * |skew|), 5000).
  */
-export function feeBreakdown(shares0: bigint, shares1: bigint, marketOpen: boolean): FeeBreakdown {
-  return breakdown(shares0, shares1, marketOpen, skewPips(shares0, shares1, OFF_HOURS_MAX_FEE_PIPS));
+export function feeBreakdown(
+  shares0: bigint,
+  shares1: bigint,
+  base: bigint | boolean = BASE_FEE_PIPS, // a boolean (legacy market-open flag) is ignored: the fee has no clock input
+): FeeBreakdown {
+  const basePips = typeof base === "bigint" ? base : BASE_FEE_PIPS;
+  const skew = capSkew(skewPips(shares0, shares1, SKEW_FEE_PIPS));
+  const s = skewX18(shares0, shares1);
+  return { basePips, skewPips: skew, totalPips: basePips + skew, skewX18: s, postSkewX18: s, reducesImbalance: skew === 0n };
 }
 
 /**
- * Fee of an actual parity fill (IParityHook.quote / beforeSwap): base + pre-trade skew + off-hours premium at the
- * post-trade skew. `tradeShares` is the fee-independent size: input shares (exact input) or net output shares (exact output).
+ * Fee of an actual parity fill (IParityHook.quote / beforeSwap): base + skew fee at the post-trade skew, charged only
+ * if the trade increases |skew|. `tradeShares` is fee-independent: input shares (exact input) or net output shares (exact output).
  */
 export function tradeFeeBreakdown(
   shares0: bigint,
   shares1: bigint,
   zeroForOne: boolean,
   tradeShares: bigint,
-  marketOpen: boolean,
+  basePips: bigint = BASE_FEE_PIPS,
 ): FeeBreakdown {
   const [post0, post1] = postTradeShares(shares0, shares1, zeroForOne, tradeShares);
-  return breakdown(shares0, shares1, marketOpen, offHoursPips(shares0, shares1, post0, post1));
+  const skew = skewFeePips(shares0, shares1, post0, post1);
+  return {
+    basePips,
+    skewPips: skew,
+    totalPips: basePips + skew,
+    skewX18: skewX18(shares0, shares1),
+    postSkewX18: skewX18(post0, post1),
+    reducesImbalance: !increasesImbalance(shares0, shares1, post0, post1),
+  };
 }
 
 export const feeOnGross = (grossOut: bigint, feePips: bigint) => mulDivUp(grossOut, feePips, PIPS);

@@ -2,20 +2,7 @@
 export const IParityHookAbi = [
   {
     "type": "function",
-    "name": "BASE_FEE_PIPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "CLOSED_FEE_PIPS",
+    "name": "DEFAULT_BASE_FEE_PIPS",
     "inputs": [],
     "outputs": [
       {
@@ -41,7 +28,7 @@ export const IParityHookAbi = [
   },
   {
     "type": "function",
-    "name": "MAX_FEE_PIPS",
+    "name": "MAX_BASE_FEE_PIPS",
     "inputs": [],
     "outputs": [
       {
@@ -67,6 +54,19 @@ export const IParityHookAbi = [
   },
   {
     "type": "function",
+    "name": "SKEW_FEE_CAP_PIPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "SKEW_FEE_PIPS",
     "inputs": [],
     "outputs": [
@@ -80,13 +80,13 @@ export const IParityHookAbi = [
   },
   {
     "type": "function",
-    "name": "calendar",
+    "name": "baseFeePips",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "address",
-        "internalType": "contract INyseCalendar"
+        "type": "uint24",
+        "internalType": "uint24"
       }
     ],
     "stateMutability": "view"
@@ -222,11 +222,6 @@ export const IParityHookAbi = [
             "internalType": "uint24"
           },
           {
-            "name": "closedPips",
-            "type": "uint24",
-            "internalType": "uint24"
-          },
-          {
             "name": "totalPips",
             "type": "uint24",
             "internalType": "uint24"
@@ -237,30 +232,16 @@ export const IParityHookAbi = [
             "internalType": "int256"
           },
           {
-            "name": "marketOpen",
+            "name": "postSkewX18",
+            "type": "int256",
+            "internalType": "int256"
+          },
+          {
+            "name": "reducesImbalance",
             "type": "bool",
             "internalType": "bool"
           }
         ]
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "feesAccrued",
-    "inputs": [
-      {
-        "name": "currency",
-        "type": "address",
-        "internalType": "Currency"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -427,6 +408,60 @@ export const IParityHookAbi = [
     "name": "quote",
     "inputs": [
       {
+        "name": "asset",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "fromWrapper",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "toWrapper",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amountIn",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "sharesOut",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "baseFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "skewFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "postSkew",
+        "type": "int256",
+        "internalType": "int256"
+      },
+      {
+        "name": "reducesImbalance",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "quote",
+    "inputs": [
+      {
         "name": "key",
         "type": "tuple",
         "internalType": "struct PoolKey",
@@ -521,11 +556,6 @@ export const IParityHookAbi = [
                 "internalType": "uint24"
               },
               {
-                "name": "closedPips",
-                "type": "uint24",
-                "internalType": "uint24"
-              },
-              {
                 "name": "totalPips",
                 "type": "uint24",
                 "internalType": "uint24"
@@ -536,7 +566,12 @@ export const IParityHookAbi = [
                 "internalType": "int256"
               },
               {
-                "name": "marketOpen",
+                "name": "postSkewX18",
+                "type": "int256",
+                "internalType": "int256"
+              },
+              {
+                "name": "reducesImbalance",
                 "type": "bool",
                 "internalType": "bool"
               }
@@ -562,6 +597,19 @@ export const IParityHookAbi = [
   },
   {
     "type": "function",
+    "name": "setBaseFeePips",
+    "inputs": [
+      {
+        "name": "basePips",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setKeeper",
     "inputs": [
       {
@@ -576,30 +624,6 @@ export const IParityHookAbi = [
       }
     ],
     "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "sweepFees",
-    "inputs": [
-      {
-        "name": "currency",
-        "type": "address",
-        "internalType": "Currency"
-      },
-      {
-        "name": "to",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "amount",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
     "stateMutability": "nonpayable"
   },
   {
@@ -624,6 +648,86 @@ export const IParityHookAbi = [
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "BaseFeeSet",
+    "inputs": [
+      {
+        "name": "basePips",
+        "type": "uint24",
+        "indexed": false,
+        "internalType": "uint24"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Converted",
+    "inputs": [
+      {
+        "name": "asset",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "from",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "sender",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "amountIn",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "sharesOut",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "baseFee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "skewFee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "postSkew",
+        "type": "int256",
+        "indexed": false,
+        "internalType": "int256"
+      }
+    ],
+    "anonymous": false
   },
   {
     "type": "event",
@@ -679,80 +783,6 @@ export const IParityHookAbi = [
       },
       {
         "name": "deviationBpsAfter",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "FeeQuoted",
-    "inputs": [
-      {
-        "name": "poolId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "PoolId"
-      },
-      {
-        "name": "totalPips",
-        "type": "uint24",
-        "indexed": false,
-        "internalType": "uint24"
-      },
-      {
-        "name": "basePips",
-        "type": "uint24",
-        "indexed": false,
-        "internalType": "uint24"
-      },
-      {
-        "name": "skewPips",
-        "type": "uint24",
-        "indexed": false,
-        "internalType": "uint24"
-      },
-      {
-        "name": "closedPips",
-        "type": "uint24",
-        "indexed": false,
-        "internalType": "uint24"
-      },
-      {
-        "name": "skewX18",
-        "type": "int256",
-        "indexed": false,
-        "internalType": "int256"
-      },
-      {
-        "name": "marketOpen",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "FeesSwept",
-    "inputs": [
-      {
-        "name": "currency",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "to",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -970,6 +1000,22 @@ export const IParityHookAbi = [
   },
   {
     "type": "error",
+    "name": "BaseFeeTooHigh",
+    "inputs": [
+      {
+        "name": "basePips",
+        "type": "uint24",
+        "internalType": "uint24"
+      },
+      {
+        "name": "max",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "DynamicFeeRequired",
     "inputs": [
       {
@@ -1154,6 +1200,19 @@ export const IDarkCrossHookAbi = [
   },
   {
     "type": "function",
+    "name": "asset",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "balances",
     "inputs": [
       {
@@ -1332,9 +1391,9 @@ export const IDarkCrossHookAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "routeResidual",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "salt",
@@ -1485,9 +1544,9 @@ export const IDarkCrossHookAbi = [
             "internalType": "uint256"
           },
           {
-            "name": "routeResidual",
-            "type": "bool",
-            "internalType": "bool"
+            "name": "recipient",
+            "type": "address",
+            "internalType": "address"
           },
           {
             "name": "crossedIn",
@@ -1591,6 +1650,19 @@ export const IDarkCrossHookAbi = [
   },
   {
     "type": "function",
+    "name": "protocolFeeRecipient",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "quoteToken",
     "inputs": [],
     "outputs": [
@@ -1622,14 +1694,27 @@ export const IDarkCrossHookAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "routeResidual",
-        "type": "bool",
-        "internalType": "bool"
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "salt",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setProtocolFeeRecipient",
+    "inputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -1663,19 +1748,6 @@ export const IDarkCrossHookAbi = [
         "name": "",
         "type": "bool",
         "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "treasury",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "stateMutability": "view"
@@ -1792,7 +1864,7 @@ export const IDarkCrossHookAbi = [
   },
   {
     "type": "event",
-    "name": "Crossed",
+    "name": "CrossFilled",
     "inputs": [
       {
         "name": "batchId",
@@ -1802,6 +1874,12 @@ export const IDarkCrossHookAbi = [
       },
       {
         "name": "trader",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "recipient",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -1825,13 +1903,44 @@ export const IDarkCrossHookAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "feeAmount",
+        "name": "fee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Crossed",
+    "inputs": [
+      {
+        "name": "batchId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "asset",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "matchedShares",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "midX18",
+        "name": "midpoint",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "protocolFee",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -1897,7 +2006,20 @@ export const IDarkCrossHookAbi = [
   },
   {
     "type": "event",
-    "name": "ResidualRouted",
+    "name": "ProtocolFeeRecipientSet",
+    "inputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ResidualFilled",
     "inputs": [
       {
         "name": "batchId",
@@ -1906,31 +2028,25 @@ export const IDarkCrossHookAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "trader",
+        "name": "user",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "poolId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "PoolId"
-      },
-      {
-        "name": "sellBase",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      },
-      {
-        "name": "amountIn",
+        "name": "shares",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "amountOut",
+        "name": "baseFee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "skewFee",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -2023,10 +2139,35 @@ export const IDarkCrossHookAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "routeResidual",
-        "type": "bool",
+        "name": "recipient",
+        "type": "address",
         "indexed": false,
-        "internalType": "bool"
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Unfilled",
+    "inputs": [
+      {
+        "name": "batchId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "user",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "sharesRefunded",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false

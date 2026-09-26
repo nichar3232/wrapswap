@@ -1,1 +1,69 @@
-{"schemaVersion":1,"network":"unichain-sepolia","chainId":1301,"deployCommit":"b4ef312f8d6b51d09311e3cba58817f5ebf64437","deployedAt":"2026-09-26T14:19:41Z","deployer":"0xFD42fC43855C9332051e9e2F05a75C8914073F9e","startBlock":"63572662","demoMode":true,"mockOracle":true,"contracts":{"poolManager":"0x00B036B58a818B1BC34d502D3fE730Db729e62AC","positionManager":"0xf969Aee60879C54bAAed9F3eD26147Db216Fd664","stateView":"0xc199F1072a74D4e905ABa1A84d9a45E2546B6222","quoter":"0x56DCD40A3F2d466F48e7F48bDBE5Cc9B92Ae4472","permit2":"0x000000000022D473030F116dDEE9F6B43aC78BA3","universalRouter":"0xf70536B3bcC1bD1a972dc186A2cf84cC6da6Be5D","swapRouter":"0x8525eD020Aa0CEa75884546b834d1eb40D3987b3","modifyLiquidityRouter":"0x57428942dEC15511cE19700877001813EE5fE81d","registry":"0xA5d433FA4E90D21859B325Be34F0B8845F8E9070","calendar":"0x70396f1Be86e3d7F70C017cbbe69efED861387A1","eligibility":"0x85ABBc06C69D9426907352034a5A7C3D30EB5C5A","oracle":"0xBe2fb3259454F35bC5999f345873c870b5DE3dB1","parityHook":"0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8","darkCrossHook":"0xBfcdFf560AaEe80E9030be7574e2451a1296883A","wrapSwapRouter":"0x9C4Fc24f99C2E0212F6d6562b8A417952ef3Eba3","eas":"0x4200000000000000000000000000000000000021","easIndexer":null},"tokens":[{"symbol":"mcbAAPL","name":"Mock Coinbase Apple","address":"0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c","decimals":6,"issuer":"coinbase","underlying":"AAPL","mock":true,"adapter":"0xc3bE8635F1CB05aBCd5DF001157aAb9349184828","adapterKind":"B20Multiplier","sharesPerTokenX18":"1012500000000000000","darkRole":"base"},{"symbol":"mAAPLx","name":"Mock Apple xStock","address":"0x433DAfF77AD96b9319957D83d9d422E70c996C45","decimals":18,"issuer":"xstocks","underlying":"AAPL","mock":true,"adapter":"0x577C983f0c3cf3868d543C1c4cbb2807B65ddA78","adapterKind":"XStocksMultiplier","sharesPerTokenX18":"1000000000000000000","darkRole":"quote"}],"pool":{"id":"0xfb36965758ff8acaa8074d8349af34ba6b914298b27032abe95bd4ef06252821","key":{"currency0":"0x433DAfF77AD96b9319957D83d9d422E70c996C45","currency1":"0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c","fee":8388608,"tickSpacing":10,"hooks":"0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8"},"initSqrtPriceX96":"78737580939686982353822"},"hooks":{"parityHook":{"address":"0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8","flags":"0x20c8","permissions":["beforeInitialize","beforeSwap","afterSwap","beforeSwapReturnDelta"]},"darkCrossHook":{"address":"0x9E358e72018B776F22fEf71bd07cD9e8bC4b790e","flags":"0x0000","permissions":[]}},"dark":{"baseToken":"0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c","quoteToken":"0x433DAfF77AD96b9319957D83d9d422E70c996C45","batchOrigin":"63579637","batchBlocks":20,"commitBlocks":12,"revealBlocks":6},"blocks":{"swapRouter":"63572655","modifyLiquidityRouter":"63572658","registry":"63572662","calendar":"63572666","eligibility":"63572670","oracle":"63572675","parityHook":"63579651","darkCrossHook":"63579659","wrapSwapRouter":"63572710","poolInitialized":"63579654"},"demoAccounts":{"mnemonicSource":"env:DEMO_MNEMONIC","accounts":[{"role":"deployer","index":0,"address":"0xFD42fC43855C9332051e9e2F05a75C8914073F9e"},{"role":"demo","index":1,"address":"0x90d2d9C4966e81D1D8c50f3aaD51b3F9299f7612"},{"role":"counterpartyA","index":2,"address":"0x588e53E014c69df42a0adbc5d65009e5CBff0f1A"},{"role":"counterpartyB","index":3,"address":"0x3D061579C832f9d9F1FC0670EAc962fEa51cb0b8"},{"role":"crank","index":4,"address":"0xa9c1353210FE20F919FB080E21266319cb5130cB"}]},"router":"0x9C4Fc24f99C2E0212F6d6562b8A417952ef3Eba3","faucet":"0xD25b4916eC55aA1F550052ff90d1EcD6B51AABdC","assets":[{"symbol":"AAPL","wrappers":[{"platform":"Coinbase","symbol":"mcbAAPL","token":"0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c","adapter":"0xc3bE8635F1CB05aBCd5DF001157aAb9349184828","multiplier":"1012500000000000000","decimals":6},{"platform":"xStocks","symbol":"mAAPLx","token":"0x433DAfF77AD96b9319957D83d9d422E70c996C45","adapter":"0x577C983f0c3cf3868d543C1c4cbb2807B65ddA78","multiplier":"1000000000000000000","decimals":18}],"pool":{"id":"0xfb36965758ff8acaa8074d8349af34ba6b914298b27032abe95bd4ef06252821","key":{"currency0":"0x433DAfF77AD96b9319957D83d9d422E70c996C45","currency1":"0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c","fee":8388608,"tickSpacing":10,"hooks":"0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8"},"initSqrtPriceX96":"78737580939686982353822"},"darkCross":true},{"symbol":"NVDA","wrappers":[{"platform":"Coinbase","symbol":"mcbNVDA","token":"0x9b1dc2Cb4cF7b3e514555944E5cE07A54265A2D2","adapter":"0xF76aC3064b5b8a458a46e281acf047069F2eD762","multiplier":"1020000000000000000","decimals":6},{"platform":"xStocks","symbol":"mNVDAx","token":"0xEdcD509ab5404529ed5169379EeE14A755E3027c","adapter":"0x612b15a552D49616A60aa4B740A84D3e2E306211","multiplier":"1005000000000000000","decimals":18}],"pool":{"id":"0x4bf2d33a06bd7604898199c65e34bc8e74ddc9c9d0e3e0569c99e947abcc4173","key":{"currency0":"0x9b1dc2Cb4cF7b3e514555944E5cE07A54265A2D2","currency1":"0xEdcD509ab5404529ed5169379EeE14A755E3027c","fee":8388608,"tickSpacing":10,"hooks":"0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8"},"initSqrtPriceX96":"79817227595234520547731541462383229"},"darkCross":false},{"symbol":"TSLA","wrappers":[{"platform":"Coinbase","symbol":"mcbTSLA","token":"0x0757eEe1292046c7303f5C603001e0a9069a6B80","adapter":"0x2De6944b9c3C00c9Fe2f407C91DF28c7283c8Ef6","multiplier":"990000000000000000","decimals":6},{"platform":"xStocks","symbol":"mTSLAx","token":"0x752746b311B256170f1a3156B34465D5A4363153","adapter":"0x81e70214de47206a58c03179291e7DD8e2C168a5","multiplier":"1010000000000000000","decimals":18}],"pool":{"id":"0x428b5ab44fd961a0c84b554a924b93a4a8d4598ddf1b6414a3be95449062f339","key":{"currency0":"0x0757eEe1292046c7303f5C603001e0a9069a6B80","currency1":"0x752746b311B256170f1a3156B34465D5A4363153","fee":8388608,"tickSpacing":10,"hooks":"0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8"},"initSqrtPriceX96":"78439802977325216994227756661878344"},"darkCross":false}],"proofs":[{"label":"Deployer WrapSwapRouter.swapExactIn, 100 mAAPLx -> 98.71674 mcbAAPL (skew-increasing, off-hours 1.64 bps, total 4.93 bps)","tx":"0x8fb8d9c3c90cb31c830ec331197e62b10f3fa9b0f50c5689b5e78dc6ecc5ac12"},{"label":"Dark Cross batch 16 settled by the crank (2 crossed, residual routed through ParityHook)","tx":"0x43cdac4b32a03c49b6f7dc937a094a4f94861b172df5380391cace646571bb0e"},{"label":"TestShareFaucet.claim() (1,000 of each of 6 wrappers)","tx":"0x5fd33936c421b2046415fbae6197ba09fee575d4f95755b4ad31ee19017913ca"}]}
+{
+  "chainId": 1301,
+  "deployBlock": 63586346,
+  "router": "0x49d7eA31c619E80785Fa31CBc5bE052ED4EC40Cb",
+  "faucet": "0x108fb6DdBCAc39cC49ACB075a04714e17B49d30A",
+  "protocolFeeRecipient": "0xFD42fC43855C9332051e9e2F05a75C8914073F9e",
+  "assets": [
+    {
+      "symbol": "AAPL",
+      "wrappers": [
+        {
+          "platform": "Coinbase",
+          "token": "0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c",
+          "adapter": "0xc3bE8635F1CB05aBCd5DF001157aAb9349184828",
+          "multiplier": "1012500000000000000"
+        },
+        {
+          "platform": "xStocks",
+          "token": "0x433DAfF77AD96b9319957D83d9d422E70c996C45",
+          "adapter": "0x577C983f0c3cf3868d543C1c4cbb2807B65ddA78",
+          "multiplier": "1000000000000000000"
+        }
+      ],
+      "pool": "0xb1d8e1c86674b92a25e277b2ccb23b9765cd308e0d99da6918b1da6fb6cba9f9",
+      "parityHook": "0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8",
+      "darkCross": "0xBac8C71CfbB1101221cb4699533d79Df188C4898"
+    },
+    {
+      "symbol": "NVDA",
+      "wrappers": [
+        {
+          "platform": "Coinbase",
+          "token": "0x9b1dc2Cb4cF7b3e514555944E5cE07A54265A2D2",
+          "adapter": "0xF76aC3064b5b8a458a46e281acf047069F2eD762",
+          "multiplier": "1020000000000000000"
+        },
+        {
+          "platform": "xStocks",
+          "token": "0xEdcD509ab5404529ed5169379EeE14A755E3027c",
+          "adapter": "0x612b15a552D49616A60aa4B740A84D3e2E306211",
+          "multiplier": "1005000000000000000"
+        }
+      ],
+      "pool": "0xf57d09b59f5199789b91a05ac7947004b8cff5335649b43dcaaef06c7c72b0c2",
+      "parityHook": "0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8",
+      "darkCross": "0xadf79997624aFeCE9d3E9391d7B51F59a8fB691a"
+    },
+    {
+      "symbol": "TSLA",
+      "wrappers": [
+        {
+          "platform": "Coinbase",
+          "token": "0x0757eEe1292046c7303f5C603001e0a9069a6B80",
+          "adapter": "0x2De6944b9c3C00c9Fe2f407C91DF28c7283c8Ef6",
+          "multiplier": "990000000000000000"
+        },
+        {
+          "platform": "xStocks",
+          "token": "0x752746b311B256170f1a3156B34465D5A4363153",
+          "adapter": "0x81e70214de47206a58c03179291e7DD8e2C168a5",
+          "multiplier": "1010000000000000000"
+        }
+      ],
+      "pool": "0xb8dec9123afbb275c89e030753d1932aefec010f6d2f32c54b8bd094e1bd2d5e",
+      "parityHook": "0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8",
+      "darkCross": "0x223a9d724F5bbF4e76830edDf4858fdD838c3a3c"
+    }
+  ]
+}
