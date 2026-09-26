@@ -1976,10 +1976,7 @@ main.app-main {
 }
 
 /* Portfolio / Move fill the viewport so no fold is left empty (rows spread, no filler). */
-.portfolio .asset,
-.move-card {
-  min-height: min(calc(100dvh - 190px), 1100px);
-}
+
 .portfolio .asset {
   display: flex;
   flex-direction: column;
@@ -2471,32 +2468,412 @@ dl.review {
   }
 }
 
-/* Tall screens (e.g. 2560×1440): scale Portfolio rows up instead of leaving gaps between them. */
-@media (min-height: 1200px) and (min-width: 1600px) {
-  .portfolio .holdings {
-    justify-content: center;
-    gap: 8px;
+/* ================= Pass 4: Portfolio · Move · Send · Liquidity, per asset ================= */
+.asset-pick {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--card);
+}
+.asset-pick button {
+  border: 0;
+  background: none;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+.asset-pick button[aria-checked="true"] {
+  background: var(--accent);
+  color: #fff;
+}
+.small {
+  font-size: 13px;
+}
+.good {
+  color: var(--good);
+}
+
+/* Move: segmented Convert | Dark Cross */
+.move-card {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  gap: 22px;
+}
+.seg {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--card);
+}
+.seg button {
+  position: relative;
+  z-index: 1;
+  border: 0;
+  background: none;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.seg button[aria-selected="true"] {
+  color: var(--text);
+}
+.seg-thumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+  transition: transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.convert,
+.dark {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.pair {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px 12px;
+  align-items: center;
+}
+.pair .choices {
+  grid-template-columns: 1fr 1fr;
+}
+.flip {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-size: 18px;
+}
+.pair-line {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.quote-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--card) 60%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+.qc-row,
+.fee-rows > div,
+.receipt-rows > div,
+.result-rows > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+}
+.qc-row {
+  font-size: 15px;
+}
+.qc-row strong {
+  font-size: 20px;
+  font-weight: 500;
+}
+.fee-rows,
+.receipt-rows,
+.result-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  font-size: 15px;
+}
+.fee-rows dt small,
+.result-rows dt small,
+.result-rows dd small {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+.fee-rows dd,
+.receipt-rows dd,
+.result-rows dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.keep-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.keep-v {
+  font-family: var(--display);
+  font-size: clamp(28px, 3.2vw, 38px);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.keep-v strong {
+  font-weight: 600;
+  color: var(--accent);
+}
+.keep-v small {
+  font-size: 15px;
+  color: var(--muted);
+}
+.parity-line {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.receipt .fee-rows,
+.receipt-rows {
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+/* Dark Cross: batch phases, order card, history */
+.batch-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.bs-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.bs-left strong {
+  font-size: 22px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.bs-phases {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bs-phases li {
+  padding: 8px 0 0;
+  border-top: 3px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
+}
+.bs-phases li.done {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+.bs-phases li.on {
+  border-color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+.bs-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.order-card,
+.settled {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.row-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.dark-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+/* Portfolio */
+.faucet {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px 20px;
+}
+.faucet .tx {
+  grid-column: 1 / -1;
+}
+.faucet-line {
+  margin: 4px 0 0;
+  font-size: 16px;
+}
+.cooldown {
+  font-size: 15px;
+  color: var(--muted);
+}
+.cooldown strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 20px;
+}
+.portfolio .holding {
+  grid-template-columns: 1fr auto auto;
+  gap: 14px;
+  padding: 22px 0;
+}
+.portfolio .platform {
+  font-size: 22px;
+}
+.portfolio .holding-shares {
+  font-size: 20px;
+}
+.portfolio .move-btn {
+  min-width: 0;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+.portfolio .asset .tile-v {
+  font-size: 36px;
+}
+
+/* Liquidity */
+.inv-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.inv-rows li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+.lp .tiles {
+  grid-template-columns: repeat(3, 1fr);
+}
+.lp .tile {
+  min-height: 0;
+  gap: 6px;
+}
+.lp-line {
+  margin: 0;
+  font-size: 15px;
+}
+
+/* Send */
+.send-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.send-steps li {
+  display: flex;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.send-steps .dot {
+  flex: 0 0 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+.send-steps p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.send-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 20px;
+}
+.tiles.two {
+  grid-template-columns: 1fr 1fr;
+}
+.tiles.two .tile {
+  min-height: 0;
+  gap: 6px;
+}
+table.sees th[scope="row"] {
+  text-align: left;
+  font-weight: 500;
+}
+.uses p {
+  margin: 0;
+  font-size: 15px;
+}
+.uses .ladder {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-family: var(--display);
+  font-size: 18px;
+}
+@media (max-width: 900px) {
+  .send-steps,
+  .send-grid,
+  .lp .tiles {
+    grid-template-columns: 1fr;
   }
-  .holding {
-    padding: 64px 0;
+}
+@media (max-width: 720px) {
+  .asset-pick {
+    order: -1;
   }
-  .platform {
-    font-size: 44px;
+  .asset-pick button {
+    padding: 6px 9px;
   }
-  .holding-shares {
-    font-size: 32px;
+  .faucet {
+    grid-template-columns: 1fr;
   }
-  .symbol {
-    font-size: 15px;
+  .pair .choices {
+    grid-template-columns: 1fr;
   }
-  .holding-bar {
-    height: 16px;
+  .asset-grid {
+    grid-template-columns: 1fr;
   }
-  .move-btn {
-    padding: 20px 34px;
-    font-size: 18px;
-  }
-  .asset .tile-v {
-    font-size: 64px;
-  }
+}
+.lp .tile,
+.tiles.two .tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
 }

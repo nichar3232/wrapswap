@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { devLanes, proofSwaps, suiLookup } from "./flowData";
+import { devLanes, suiLookup } from "./flowData";
 
 const addr = (n: number) => "0x" + n.toString(16).padStart(40, "0");
-const hash = (n: number) => "0x" + n.toString(16).padStart(64, "0");
 // Explicit fixtures: the real manifests are never read by these tests.
 const unichain = {
   contracts: { wrapSwapRouter: addr(1), poolManager: addr(2), parityHook: addr(3), darkCrossHook: addr(4) },
@@ -36,15 +35,5 @@ describe("developer diagram", () => {
   it("leaves nodes unlinked when files or keys are missing", () => {
     expect(devLanes(undefined, undefined).flatMap((l) => l.nodes).every((n) => n.href === null)).toBe(true);
     expect(suiLookup({ pool: 3 }, ["pool"])).toBeUndefined();
-  });
-});
-
-describe("proof swaps", () => {
-  it("come only from the deployment file, and only valid tx hashes", () => {
-    expect(proofSwaps(undefined)).toEqual([]);
-    expect(proofSwaps({ contracts: {} })).toEqual([]);
-    const p = proofSwaps({ proofs: { swaps: [{ label: "User swap", hash: hash(7), block: 5 }, { hash: "0xnot" }] } });
-    expect(p).toHaveLength(1);
-    expect(p[0].url).toBe(`https://sepolia.uniscan.xyz/tx/${hash(7)}`);
   });
 });

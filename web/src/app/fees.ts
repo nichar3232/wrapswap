@@ -1,82 +1,58 @@
-import { canonical } from "@wrapswap/types";
+import { canonical, type QuoteResponse } from "@wrapswap/types";
 
 /**
- * The single place the UI prices a conversion. Everything (quote notes, Pool hero, fee curve, demo data) goes
- * through tradeFee(), which calls the shared formula in @wrapswap/types (canonical.*, the bit-for-bit mirror of
- * the contract).
- *
- * The shared formula today is canonical.feeBreakdown(shares0, shares1, marketOpen): pre-trade skew and a flat
- * off-hours add-on, so both directions cost the same. The announced model (off-hours = 15 bps × |post-trade skew|,
- * only on trades that increase |skew|) is not in the shared package yet; when it lands, call it here with the
- * trade (post-trade shares and direction are already computed below) and the whole UI follows.
+ * The fee model (ParityHook, CanonicalShares): every Convert pays the base fee (2 bps) to the LP; a trade that
+ * increases |inventory skew| also pays the skew fee min(ceil(1500 × |post-trade skew|), 5000) pips to the LP; a
+ * trade that reduces it pays no skew fee. Nothing depends on the clock.
  */
-export type Inventory = { shares0: bigint; shares1: bigint };
-export type Trade = { sharesIn: bigint; inIsToken0: boolean };
-export type TradeFee = {
-  basePips: bigint;
-  skewPips: bigint;
-  closedPips: bigint;
-  totalPips: bigint;
-  marketOpen: boolean;
-  preSkew: number;
-  postSkew: number;
-  /** The trade moves inventory toward balance (|post-trade skew| < |pre-trade skew|). */
-  rebalances: boolean;
+export const pipsToBps = (pips: bigint | number) => Number(pips) / 100;
+export const skewOf = (x18: string | bigint) => Number(BigInt(x18)) / 1e18;
+/** Signed skew as a percent string, e.g. "−9.78%". */
+export const skewPct = (x18: string | bigint) => {
+  const v = skewOf(x18) * 100;
+  return `${v < 0 ? "−" : v > 0 ? "+" : ""}${Math.abs(v).toFixed(2)}%`;
 };
 
-const skewOf = (s0: bigint, s1: bigint) => Number(canonical.skewX18(s0, s1)) / 1e18;
+export type QuoteBreakdown = {
+  sharesIn: bigint;
+  sharesOut: bigint;
+  baseFee: bigint;
+  skewFee: bigint;
+  /** Fraction of the input shares kept, 0…1 (e.g. 0.999637). */
+  keep: number;
+  reducesImbalance: boolean;
+  preSkewX18: bigint;
+  postSkewX18: bigint;
+};
 
-/** Hook inventory after a trade: the input side grows by the traded shares, the output side shrinks. */
-export function postTrade(inv: Inventory, t: Trade): Inventory {
-  return t.inIsToken0
-    ? { shares0: inv.shares0 + t.sharesIn, shares1: inv.shares1 - t.sharesIn }
-    : { shares0: inv.shares0 - t.sharesIn, shares1: inv.shares1 + t.sharesIn };
-}
-
-export function tradeFee(inv: Inventory, t: Trade, marketOpen: boolean): TradeFee {
-  const post = postTrade(inv, t);
-  const f = canonical.feeBreakdown(inv.shares0, inv.shares1, marketOpen);
-  const preSkew = skewOf(inv.shares0, inv.shares1),
-    postSkew = skewOf(post.shares0, post.shares1);
-  return {
-    basePips: f.basePips,
-    skewPips: f.skewPips,
-    closedPips: f.closedPips,
-    totalPips: f.totalPips,
-    marketOpen,
-    preSkew,
-    postSkew,
-    rebalances: Math.abs(postSkew) < Math.abs(preSkew),
-  };
-}
-
-/** Inventory with total shares T at a signed skew s (−1…1): shares0 − shares1 = s·T. */
-export function inventoryAtSkew(skew: number, total = 20_000n * canonical.ONE): Inventory {
-  const milli = BigInt(Math.round(Math.max(-1, Math.min(1, skew)) * 1000));
-  const shares0 = (total * (1000n + milli)) / 2000n;
-  return { shares0, shares1: total - shares0 };
-}
-
-/** Fee at a signed skew with no trade, used by the pin tests (pre-trade formula). */
-export function feeAtSkew(skew: number, marketOpen: boolean) {
-  const inv = inventoryAtSkew(skew);
-  return canonical.feeBreakdown(inv.shares0, inv.shares1, marketOpen);
-}
-
-export const pipsToBps = (pips: bigint | number) => Number(pips) / 100;
-
-/** What a quote means in shares: in, out after the fee, the share of value kept, and the fee in tokenOut. */
-export function quoteSummary(
-  q: { shares: string; amountOut: string; feeAmount: string },
-  tokenOut: { sharesPerTokenX18: string; decimals: number },
-) {
-  const sharesIn = BigInt(q.shares);
-  const sharesOut = canonical.toSharesDown(BigInt(q.amountOut), BigInt(tokenOut.sharesPerTokenX18), tokenOut.decimals);
-  const keptBp = sharesIn === 0n ? 0n : (sharesOut * 1_000_000n) / sharesIn; // parts per million
+/**
+ * What a quote means in shares. Reads the API's own split (sharesIn, sharesOut, baseFee, skewFee, youKeep: the
+ * figures from ParityHook.quote()); an older API without them gets the same split from the shared formula.
+ */
+export function quoteBreakdown(q: QuoteResponse, tokenOut: { sharesPerTokenX18: string; decimals: number }): QuoteBreakdown {
+  const sharesIn = BigInt(q.sharesIn ?? q.shares);
+  const sharesOut = q.sharesOut
+    ? BigInt(q.sharesOut)
+    : canonical.toSharesDown(BigInt(q.amountOut), BigInt(tokenOut.sharesPerTokenX18), tokenOut.decimals);
+  let baseFee: bigint, skewFee: bigint;
+  if (q.baseFee !== undefined && q.skewFee !== undefined) {
+    baseFee = BigInt(q.baseFee);
+    skewFee = BigInt(q.skewFee);
+  } else {
+    const fee = sharesIn - sharesOut,
+      total = BigInt(q.fee.totalPips);
+    baseFee = total ? (fee * BigInt(q.fee.basePips)) / total : 0n;
+    skewFee = fee - baseFee;
+  }
+  const keep = q.youKeep !== undefined ? Number(q.youKeep) : sharesIn ? Number((sharesOut * 1_000_000n) / sharesIn) / 1e6 : 0;
   return {
     sharesIn,
     sharesOut,
-    keptPct: Number(keptBp) / 10_000,
-    feeAmount: BigInt(q.feeAmount),
+    baseFee,
+    skewFee,
+    keep,
+    reducesImbalance: q.reducesImbalance ?? q.fee.reducesImbalance,
+    preSkewX18: BigInt(q.preSkewX18 ?? q.fee.skewX18),
+    postSkewX18: BigInt(q.postSkewX18 ?? q.fee.postSkewX18),
   };
 }

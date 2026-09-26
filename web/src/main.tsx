@@ -9,18 +9,21 @@ import { assetsOf } from "./app/assets";
 import { Liquidity } from "./app/Liquidity";
 import { Move } from "./app/Move";
 import { Portfolio } from "./app/Portfolio";
+import { SendOverview } from "./app/SendOverview";
 import { Hex, Skeleton, shortHex } from "./app/ui";
+import type { Token } from "./app/assets";
 import { WalletProvider, useWallet } from "./app/wallet";
 import { isDemo } from "./wallet";
 import type { MoveIntent } from "./app/types";
 import "./theme.css";
 import "./style.css";
 
-const TABS = ["Portfolio", "Move", "Liquidity"] as const;
+const TABS = ["Portfolio", "Move", "Send", "Liquidity"] as const;
 type Tab = (typeof TABS)[number];
-const TAB_PARAM: Record<Tab, string> = { Portfolio: "portfolio", Move: "move", Liquidity: "liquidity" };
+const TAB_PARAM: Record<Tab, string> = { Portfolio: "portfolio", Move: "move", Send: "send", Liquidity: "liquidity" };
 /** Old links (?tab=convert|dark|pool) land on their new homes. */
 const LEGACY: Record<string, Tab> = { convert: "Move", dark: "Move", pool: "Liquidity" };
+const initialAsset = () => (new URLSearchParams(location.search).get("asset") ?? "").toUpperCase();
 const initialTab = (): Tab => {
   const p = new URLSearchParams(location.search).get("tab") ?? "";
   return TABS.find((t) => TAB_PARAM[t] === p) ?? LEGACY[p] ?? "Portfolio";
@@ -87,7 +90,7 @@ function NetworkBadge({ feeds }: { feeds: FeedRow[] }) {
   );
 }
 
-function Account({ d }: { d: Deployment | undefined }) {
+function Account({ tokens }: { tokens: Token[] }) {
   const w = useWallet();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -132,9 +135,10 @@ function Account({ d }: { d: Deployment | undefined }) {
           <div className="acct-row">
             <Hex value={w.address} />
             {w.simulated && <span className="chip">simulated</span>}
+            {w.relay && <span className="chip">demo relay</span>}
           </div>
           <dl>
-            {d?.tokens.map((t) => (
+            {tokens.map((t) => (
               <div key={t.address} className="acct-bal">
                 <dt>{t.symbol}</dt>
                 <dd>
@@ -175,17 +179,28 @@ const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").match
 function App() {
   const deployment = useApi("deployment");
   const health = useApi("health"),
-    nyse = useApi("nyse"),
-    fees = useApi("fees"),
-    pool = useApi("pool"),
     crank = useApi("crankStatus");
   const d = deployment.data ?? fallbackDeployment;
   const assetsFeed = useApi("assets", "", 30000);
   const assets = assetsOf(assetsFeed.data, d);
+  const tokens = assets.flatMap((a) => a.platforms.map((p) => p.token));
+  // The global asset: every panel reads and acts on this one (?asset= keeps it across reloads).
+  const [assetSym, setAssetSym] = useState(initialAsset);
+  const asset = assets.find((a) => a.symbol === assetSym) ?? assets[0];
+  const pool = useApi("poolAsset", asset ? asset.symbol : null, 8000);
+  const batch = useApi("currentBatch", asset?.darkCross ? `asset=${asset.symbol}` : null, 2000);
+  const chooseAsset = (sym: string) => {
+    setAssetSym(sym);
+    const u = new URL(location.href);
+    u.searchParams.set("asset", sym);
+    history.replaceState(null, "", u);
+  };
   const [tab, setTabState] = useState<Tab>(initialTab);
   const [intent, setIntent] = useState<MoveIntent>();
-  const moveFrom = (fromToken: string) => {
-    setIntent({ fromToken, nonce: Date.now() });
+  const moveFrom = (fromToken: string, mode: MoveIntent["mode"] = "convert") => {
+    const owner = assets.find((a) => a.platforms.some((p) => p.token.address.toLowerCase() === fromToken.toLowerCase()));
+    if (owner && owner.symbol !== asset?.symbol) chooseAsset(owner.symbol);
+    setIntent({ fromToken, mode, nonce: Date.now() });
     setTab("Move");
   };
   const index = TABS.indexOf(tab);
@@ -252,15 +267,15 @@ function App() {
     // The bundled manifest keeps the UI rendering but is not a live feed, so it never counts as loaded.
     { name: "Deployment", status: deployment.status },
     { name: "Network", status: health.status, healthy: health.data?.ok },
-    { name: "NYSE calendar", status: nyse.status },
-    { name: "Fees", status: fees.status },
-    { name: "Peg guard", status: pool.status },
+    { name: "Assets", status: assetsFeed.status },
+    { name: `${asset?.symbol ?? ""} pool`.trim(), status: pool.status },
+    { name: "Dark Cross batches", status: batch.status },
     { name: "Crank", status: crank.status, healthy: crank.data?.ok },
   ];
   const demo = isDemo();
   const still = reducedMotion();
   return (
-    <WalletProvider d={d}>
+    <WalletProvider d={d} tokens={tokens}>
       <a className="skip" href="#main">
         Skip to content
       </a>
@@ -278,16 +293,23 @@ function App() {
           <span className={`tab-bar${still ? " still" : ""}`} style={{ transform: `translateX(${bar.left}px)`, width: bar.width }} aria-hidden="true" />
         </nav>
         <div className="wallet">
+          <div className="asset-pick" role="radiogroup" aria-label="Asset">
+            {assets.map((a) => (
+              <button key={a.symbol} type="button" role="radio" aria-checked={a === asset} onClick={() => chooseAsset(a.symbol)}>
+                {a.symbol}
+              </button>
+            ))}
+          </div>
           <NetworkBadge feeds={feeds} />
           {demo && (
             <span
               className="badge demo"
-              title={config.useMocks ? "Demo data and a simulated wallet: nothing is sent onchain." : "No wallet detected: a simulated wallet runs every flow. Connect a real wallet to transact."}
+              title={config.useMocks ? "Mock data (test build): nothing is sent onchain." : "Demo relay: a server-side test wallet signs real Unichain Sepolia transactions."}
             >
               Demo
             </span>
           )}
-          <Account d={d} />
+          <Account tokens={tokens} />
         </div>
       </header>
       <main id="main" className="app-main" onWheel={onWheel}>
@@ -299,9 +321,11 @@ function App() {
                 {t === "Portfolio" ? (
                   <Portfolio d={d} assets={assets} onMove={moveFrom} />
                 ) : t === "Move" ? (
-                  <Move d={d} assets={assets} pool={pool} intent={intent} />
+                  <Move d={d} asset={asset} pool={pool} batch={batch} intent={intent} />
+                ) : t === "Send" ? (
+                  <SendOverview d={d} assets={assets} />
                 ) : (
-                  <Liquidity d={d} assets={assets} fees={fees} nyse={nyse} onMove={moveFrom} />
+                  <Liquidity asset={asset} pool={pool} onMove={moveFrom} />
                 )}
               </div>
             </section>

@@ -10,10 +10,14 @@ import {
 import { DEMO, type Address, type Deployment } from "@wrapswap/types";
 import { config } from "../config";
 import { useApi } from "../hooks/useApi";
+import type { Token } from "./assets";
 import {
   disconnectWallet,
   expectedChain,
+  injected,
+  isDemo,
   readChainId,
+  relayInfo,
   requestAccount,
   simulatedWallet,
   subscribeWallet,
@@ -24,7 +28,7 @@ import { humanize } from "./tx";
 
 type Balances = { status: "loading" | "ok" | "unavailable"; values: Record<string, bigint> };
 
-function useWalletState(d: Deployment | undefined) {
+function useWalletState(d: Deployment | undefined, tokens: Token[] | undefined) {
   const [address, setAddress] = useState<Address>();
   const [chainId, setChainId] = useState<number | null>(null);
   const [busy, setBusy] = useState<"connect" | "switch" | null>(null);
@@ -47,19 +51,22 @@ function useWalletState(d: Deployment | undefined) {
     [],
   );
 
-  const connect = useCallback(async () => {
-    setBusy("connect");
-    setNotice("");
-    try {
-      const account = await requestAccount(d);
-      setAddress(account);
-      setChainId(await readChainId());
-    } catch (e) {
-      setNotice(humanize(e));
-    } finally {
-      setBusy(null);
-    }
-  }, [d]);
+  const connect = useCallback(
+    async (quiet = false) => {
+      setBusy("connect");
+      setNotice("");
+      try {
+        const account = await requestAccount(d);
+        setAddress(account);
+        setChainId(await readChainId());
+      } catch (e) {
+        if (!quiet) setNotice(humanize(e));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [d],
+  );
 
   const switchChain = useCallback(async () => {
     setBusy("switch");
@@ -74,12 +81,17 @@ function useWalletState(d: Deployment | undefined) {
     }
   }, []);
 
-  // Demo mode: the simulated wallet connects itself once, so every primary button can act immediately.
+  // Demo: with no injected wallet, the mock wallet (tests) or the demo relay (live) connects itself once.
   const autoTried = useRef(false);
+  const [relay, setRelay] = useState(false);
   useEffect(() => {
-    if (autoTried.current || !d || !simulatedWallet()) return;
+    if (autoTried.current || !d || injected()) return;
     autoTried.current = true;
-    void connect();
+    if (simulatedWallet()) return void connect(true);
+    void relayInfo().then((r) => {
+      setRelay(!!r);
+      if (r) void connect(true);
+    });
   }, [d, connect]);
 
   const disconnect = useCallback(() => {
@@ -89,11 +101,11 @@ function useWalletState(d: Deployment | undefined) {
     setNotice("");
   }, []);
 
-  // Issuer-token balances: demo balances in mock mode, RPC reads live (refreshed every 15 s and after transactions).
-  const tokens = d?.tokens;
+  // Wrapper balances for every asset: demo balances in mock mode, RPC reads live (every 15 s and after transactions).
+  const tokenKey = tokens?.map((t) => t.address).join() ?? "";
   useEffect(() => {
-    if (!address || !tokens) return;
-    if (config.useMocks || simulatedWallet()) {
+    if (!address || !tokens?.length) return;
+    if (config.useMocks) {
       setBalances((b) =>
         b.status === "ok"
           ? b
@@ -102,7 +114,8 @@ function useWalletState(d: Deployment | undefined) {
               values: Object.fromEntries(
                 tokens.map((t) => [
                   t.address,
-                  DEMO.balances.demo[t.symbol as keyof typeof DEMO.balances.demo] ?? 0n,
+                  DEMO.balances.demo[t.symbol as keyof typeof DEMO.balances.demo] ??
+                    (t.decimals === 6 ? 400_000000n : 400n * 10n ** 18n),
                 ]),
               ),
             },
@@ -126,11 +139,12 @@ function useWalletState(d: Deployment | undefined) {
       live = false;
       clearInterval(timer);
     };
-  }, [address, tokens, tick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address, tokenKey, tick]);
 
   /** Mock mode: apply a simulated transfer so balances move with the demo. */
   const adjust = useCallback((token: Address, delta: bigint) => {
-    if (!config.useMocks && !simulatedWallet()) return setTick((t) => t + 1);
+    if (!config.useMocks) return setTick((t) => t + 1);
     setBalances((b) => ({
       ...b,
       values: { ...b.values, [token]: (b.values[token] ?? 0n) + delta },
@@ -144,6 +158,9 @@ function useWalletState(d: Deployment | undefined) {
     wrongChain,
     ready: !!address && !wrongChain,
     simulated: simulatedWallet(),
+    /** Signing through the demo relay (no injected wallet). */
+    relay: relay && !!address && !injected(),
+    demo: isDemo(),
     busy,
     notice,
     clearNotice: () => setNotice(""),
@@ -160,7 +177,7 @@ function useWalletState(d: Deployment | undefined) {
 }
 export type WalletApi = ReturnType<typeof useWalletState>;
 const Ctx = createContext<WalletApi | null>(null);
-export function WalletProvider({ d, children }: { d: Deployment | undefined; children: ReactNode }) {
-  return <Ctx.Provider value={useWalletState(d)}>{children}</Ctx.Provider>;
+export function WalletProvider({ d, tokens, children }: { d: Deployment | undefined; tokens: Token[]; children: ReactNode }) {
+  return <Ctx.Provider value={useWalletState(d, tokens)}>{children}</Ctx.Provider>;
 }
 export const useWallet = () => useContext(Ctx)!;

@@ -1,19 +1,20 @@
-import { useState } from "react";
-import type { Deployment } from "@wrapswap/types";
-import { config } from "../config";
-import { useApi, type Feed } from "../hooks/useApi";
-import { amount } from "../lib/format";
-import { platformName, toShares, type Asset, type Platform } from "./assets";
-import { FeeCurve, hours, pct } from "./FeeCurve";
-import { pipsToBps, tradeFee, type Inventory } from "./fees";
-import { fmtShares } from "./Move";
-import { Empty, Hex, Val } from "./ui";
+import type { PoolAssetResponse } from "@wrapswap/types";
+import type { Feed } from "../hooks/useApi";
+import { amount, fmtShares } from "../lib/format";
+import type { Asset } from "./assets";
+import { skewPct } from "./fees";
+import { Skeleton, Val } from "./ui";
 
-/** A beam that tips toward the side holding more inventory; each pan shows the fee for moving out of that platform. */
-function Balance({ sides }: { sides: { p: Platform; bps: number; cheap: boolean; shares: bigint }[] }) {
-  const [l, r] = sides;
-  const total = l.shares + r.shares;
-  const tilt = total === 0n ? 0 : Number(((r.shares - l.shares) * 10_000n) / total) / 10_000; // −1…1, + = right heavier
+type Wrapper = PoolAssetResponse["wrappers"][number];
+type Direction = PoolAssetResponse["directions"][number];
+
+/** A beam that tips toward the wrapper the hook holds more of; each pan shows its inventory in shares. */
+function Balance({ wrappers, skewX18 }: { wrappers: Wrapper[]; skewX18: string }) {
+  const [l, r] = wrappers;
+  const L = BigInt(l.inventoryShares),
+    R = BigInt(r.inventoryShares);
+  const total = L + R;
+  const tilt = total === 0n ? 0 : Number(((R - L) * 10_000n) / total) / 10_000; // −1…1, + = right heavier
   const angle = Math.max(-14, Math.min(14, tilt * 40));
   const W = 640,
     cx = W / 2,
@@ -29,20 +30,20 @@ function Balance({ sides }: { sides: { p: Platform; bps: number; cheap: boolean;
       className="balance-svg"
       viewBox={`0 0 ${W} 230`}
       role="img"
-      aria-label={`Inventory balance: ${sides.map((s) => `${s.p.name} ${fmtShares(s.shares)} shares, ${s.bps.toFixed(2)} bps to move out`).join("; ")}`}
+      aria-label={`Inventory: ${wrappers.map((x) => `${x.platform} ${fmtShares(x.inventoryShares)} shares`).join(", ")}; skew ${skewPct(skewX18)}`}
     >
       <path className="bal-post" d={`M${cx} ${cy} L${cx - 26} 214 H${cx + 26} Z`} />
       <line className="bal-beam" x1={ends[0].x} y1={ends[0].y} x2={ends[1].x} y2={ends[1].y} />
       <circle className="bal-pivot" cx={cx} cy={cy} r={6} />
-      {sides.map((s, i) => (
-        <g key={s.p.token.address} className={`bal-pan${s.cheap ? " cheap" : ""}`}>
+      {wrappers.map((x, i) => (
+        <g key={x.address} className="bal-pan">
           <line x1={ends[i].x} y1={ends[i].y} x2={ends[i].x} y2={ends[i].y + 30} />
           <rect x={ends[i].x - 96} y={ends[i].y + 30} width={192} height={64} rx={12} />
           <text x={ends[i].x} y={ends[i].y + 56} textAnchor="middle" className="bal-name">
-            {s.p.name}
+            {x.platform}
           </text>
           <text x={ends[i].x} y={ends[i].y + 78} textAnchor="middle" className="bal-fee">
-            {amount(s.shares, 18, 0)} sh · {s.bps.toFixed(2)} bps
+            {amount(x.inventoryShares, 18, 0)} sh
           </text>
         </g>
       ))}
@@ -50,203 +51,105 @@ function Balance({ sides }: { sides: { p: Platform; bps: number; cheap: boolean;
   );
 }
 
-function AssetLiquidity({
-  asset,
-  inventory,
-  marketOpen,
-  onMove,
-}: {
-  asset: Asset;
-  inventory: Feed<"inventory">;
-  marketOpen?: boolean;
-  onMove: (fromToken: string) => void;
-}) {
-  const invTokens = inventory.data?.tokens ?? [];
-  const find = (p: Platform) => invTokens.findIndex((t) => t.address.toLowerCase() === p.token.address.toLowerCase());
-  const ready = asset.platforms.length === 2 && asset.platforms.every((p) => find(p) >= 0) && marketOpen !== undefined;
-  if (!ready)
+/**
+ * Liquidity for the selected asset, from GET /pool/:asset: inventory per wrapper, skew, the fee each direction pays
+ * now, and what the LP has earned. Display-only: depositInventory / withdrawInventory are keeper-only.
+ */
+export function Liquidity({ asset, pool, onMove }: { asset: Asset | undefined; pool: Feed<"poolAsset">; onMove: (fromToken: string) => void }) {
+  const p = pool.data && asset && pool.data.asset === asset.symbol ? pool.data : undefined;
+  if (!asset || !p)
     return (
-      <section className="card">
-        <Val status={inventory.status === "ok" ? "loading" : inventory.status} w="100%" h="10em">
-          {null}
-        </Val>
-      </section>
-    );
-  const inv: Inventory = { shares0: BigInt(invTokens[0].inventoryShares), shares1: BigInt(invTokens[1].inventoryShares) };
-  // Reference size: 100 shares (the demo conversion), priced with the shared formula for each direction.
-  const ref = 100n * 10n ** 18n;
-  const sides = asset.platforms.map((p) => {
-    const f = tradeFee(inv, { sharesIn: ref, inIsToken0: find(p) === 0 }, marketOpen!);
-    return { p, f, bps: pipsToBps(f.totalPips), shares: BigInt(invTokens[find(p)].inventoryShares), cheap: false };
-  });
-  const [x, y] = sides;
-  const strictly = x.bps !== y.bps;
-  const best = strictly ? (x.bps < y.bps ? x : y) : x.f.rebalances ? x : y;
-  best.cheap = true;
-  const skew = Number(inventory.data!.skewX18) / 1e18;
-  const other = (s: (typeof sides)[number]) => sides.find((z) => z !== s)!.p;
-  return (
-    <>
-      <section className="card liq-hero" aria-label={`${asset.symbol} fees by direction`}>
-        <span className="tile-k">{asset.symbol} · fee by direction (100 shares)</span>
-        <div className="dir-fees">
-          {sides.map((s) => (
-            <div key={s.p.token.address} className={`dir${s.cheap ? " cheap" : ""}`}>
-              <span className="dir-name">
-                {s.p.name} → {other(s).name}
-              </span>
-              <span className="dir-v">
-                {s.bps.toFixed(2)} <small>bps</small>
-              </span>
-              <span className="dir-s">{s.f.rebalances ? "rebalances the pool" : "adds to the imbalance"}</span>
-            </div>
-          ))}
-        </div>
-        <button className="primary" onClick={() => onMove(best.p.token.address)}>
-          {strictly ? "Move the cheap direction →" : "Move the rebalancing direction →"}
-        </button>
-      </section>
-      <section className="card" aria-label={`${asset.symbol} inventory balance`}>
-        <div className="card-head">
-          <span className="tile-k">Inventory · skew {pct(skew)}</span>
-          <meter className="sr-only" min={-1} max={1} value={skew} aria-label="Inventory skew" />
-        </div>
-        <Balance sides={sides} />
-      </section>
-    </>
-  );
-}
-
-export function Liquidity({
-  d,
-  assets,
-  fees,
-  nyse,
-  onMove,
-}: {
-  d: Deployment | undefined;
-  assets: Asset[];
-  fees: Feed<"fees">;
-  nyse: Feed<"nyse">;
-  onMove: (fromToken: string) => void;
-}) {
-  const inventory = useApi("inventory");
-  const fills = useApi("fills");
-  const stats = useApi("stats", "", 15000);
-  const [curve, setCurve] = useState(false);
-  const skew = inventory.data ? Number(inventory.data.skewX18) / 1e18 : undefined;
-  const conversions = stats.data ? stats.data.byKind.PARITY + stats.data.byKind["FALL-THROUGH"] : undefined;
-  const crosses = stats.data ? stats.data.byKind["DARK-CROSS"] : undefined;
-  return (
-    <div className="page">
-      <div className="liq-top">
-        {assets.map((a) => (
-          <AssetLiquidity key={a.symbol} asset={a} inventory={inventory} marketOpen={fees.data?.fee.marketOpen} onMove={onMove} />
-        ))}
-      </div>
-      <div className="tiles">
-        <section className="card tile" aria-label="Volume converted">
-          <span className="tile-k">Volume converted</span>
-          <span className="tile-v">
-            <Val status={stats.status} w="4em" h="1em">
-              {stats.data && fmtShares(stats.data.sharesVolume)} <small>shares</small>
-            </Val>
-          </span>
-          <span className="tile-s">
-            {conversions !== undefined ? `${conversions} instant move${conversions === 1 ? "" : "s"} · ${crosses} sealed cross fill${crosses === 1 ? "" : "s"}` : " "}
-          </span>
-        </section>
-        <section className="card tile" aria-label="Fees earned">
-          <span className="tile-k">Fees earned by inventory</span>
-          <span className="tile-v">
-            <Val status={stats.status} w="4em" h="1em">
-              {stats.data && fmtShares(stats.data.feesEarned.totalShares)} <small>shares</small>
-            </Val>
-          </span>
-          <span className="tile-s">
-            {stats.data
-              ? stats.data.feesEarned.tokens
-                  .filter((t) => BigInt(t.amount) > 0n)
-                  .map((t) => {
-                    const tok = d?.tokens.find((x) => x.address === t.address);
-                    return `${amount(t.amount, tok?.decimals ?? 18, 4)} ${t.symbol}`;
-                  })
-                  .join(" · ") || "none yet"
-              : " "}
-          </span>
-        </section>
-        <section className="card tile" aria-label="Market">
-          <span className="tile-k">Market</span>
-          <span className="tile-v">
-            <Val status={nyse.status} w="5em" h="1em">
-              {nyse.data && <span className={nyse.data.open ? "good" : "warn"}>{nyse.data.open ? "Open" : "Closed"}</span>}
-            </Val>
-          </span>
-          <span className="tile-s">
-            {nyse.data
-              ? nyse.data.open
-                ? `NYSE closes in ${hours(nyse.data.secondsUntilTransition)}`
-                : `Moves live 24/7 · NYSE opens in ${hours(nyse.data.secondsUntilTransition)}`
-              : " "}
-          </span>
-        </section>
-      </div>
-
-      <section className="card" aria-label="Recent fills">
-        <h2 className="card-title">Recent fills</h2>
-        {fills.data ? (
-          fills.data.items.length ? (
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Type</th>
-                    <th>From</th>
-                    <th>To</th>
-                    <th>Fee</th>
-                    <th>Transaction</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fills.data.items.map((f) => {
-                    const a = d?.tokens.find((t) => t.address === f.tokenIn),
-                      b = d?.tokens.find((t) => t.address === f.tokenOut);
-                    return (
-                      <tr key={f.txHash + f.logIndex}>
-                        <td>
-                          {f.kind === "PARITY" ? "Instant" : f.kind === "FALL-THROUGH" ? "Instant (AMM)" : f.kind === "DARK-RESIDUAL" ? "Cross residual" : "Sealed cross"}
-                        </td>
-                        <td>
-                          {a ? `${fmtShares(toShares(BigInt(f.amountIn), a))} sh · ${platformName(a)}` : "—"}
-                        </td>
-                        <td>
-                          {b ? `${fmtShares(toShares(BigInt(f.amountOut), b))} sh · ${platformName(b)}` : "—"}
-                        </td>
-                        <td>{f.feePips === null ? "—" : (f.feePips / 100).toFixed(2) + " bps"}</td>
-                        <td>
-                          <Hex value={f.txHash} kind="tx" simulated={config.useMocks} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+      <div className="page">
+        <section className="card">
+          {pool.status === "unavailable" ? (
+            <Val status="unavailable">{null}</Val>
           ) : (
-            <Empty>No fills yet.</Empty>
-          )
-        ) : (
-          <Val status={fills.status} w="100%" h="4em">
-            {null}
-          </Val>
-        )}
-      </section>
-
-      <section className="card quiet">
-        <button type="button" className="disclosure" aria-expanded={curve} onClick={() => setCurve(!curve)}>
-          How fees work
-        </button>
-        {curve && <FeeCurve key={inventory.data && fees.data ? "live" : "static"} liveSkew={skew} liveOpen={fees.data?.fee.marketOpen} />}
+            <Skeleton w="100%" h="14em" />
+          )}
+        </section>
+      </div>
+    );
+  const name = (sym: string) => p.wrappers.find((x) => x.symbol === sym)?.platform ?? sym;
+  const tokenOf = (sym: string) => asset.platforms.find((x) => x.token.symbol === sym)?.token.address;
+  const cheap = p.directions.find((x) => x.from === p.cheapDirection.from && x.to === p.cheapDirection.to) ?? p.directions[0];
+  const baseBps = (x: Direction) => ((x.totalPips - x.skewFeePips) / 100).toFixed(2);
+  return (
+    <div className="page liquidity">
+      <div className="liq-top">
+        <section className="card liq-hero" aria-label={`${asset.symbol} fee by direction`}>
+          <span className="tile-k">{asset.symbol} · fee by direction now</span>
+          <div className="dir-fees">
+            {p.directions.map((x) => (
+              <div key={x.from} className={`dir${x === cheap ? " cheap" : ""}`}>
+                <span className="dir-name">
+                  {name(x.from)} → {name(x.to)}
+                </span>
+                <span className="dir-v">
+                  {x.totalBps} <small>bps</small>
+                </span>
+                <span className="dir-s">
+                  {x.reducesImbalance || x.skewFeePips === 0
+                    ? `${baseBps(x)} base · skew 0 — rebalances the pool`
+                    : `${baseBps(x)} base + ${(x.skewFeePips / 100).toFixed(2)} skew · to LP`}
+                </span>
+              </div>
+            ))}
+          </div>
+          <button className="primary" disabled={!tokenOf(cheap.from)} onClick={() => onMove(tokenOf(cheap.from)!)}>
+            Cheap direction now: {name(cheap.from)} → {name(cheap.to)}
+          </button>
+        </section>
+        <section className="card" aria-label={`${asset.symbol} inventory`}>
+          <div className="card-head">
+            <span className="tile-k">
+              Inventory · <span data-testid="skew">skew {skewPct(p.skewX18)}</span>
+            </span>
+            <span className="muted">{fmtShares(p.totalShares, 0)} sh total</span>
+          </div>
+          <Balance wrappers={p.wrappers} skewX18={p.skewX18} />
+          <ul className="inv-rows">
+            {p.wrappers.map((x) => {
+              const t = asset.platforms.find((q) => q.token.address.toLowerCase() === x.address.toLowerCase())?.token;
+              return (
+                <li key={x.address}>
+                  <span>{x.platform}</span>
+                  <span className="mono">
+                    {fmtShares(x.inventoryShares)} sh · {t ? amount(x.inventory, t.decimals, 2) : "—"} {x.symbol}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      </div>
+      <section className="card lp" aria-label="LP economics">
+        <h2 className="card-title">LP economics</h2>
+        <div className="tiles">
+          <div className="tile">
+            <span className="tile-k">LP fees earned</span>
+            <span className="tile-v">
+              {fmtShares(p.lpFees.totalShares, 4)} <small>sh</small>
+            </span>
+            <span className="tile-s">
+              {p.lpFees.fills} conversion{p.lpFees.fills === 1 ? "" : "s"}
+            </span>
+          </div>
+          <div className="tile">
+            <span className="tile-k">Base fees</span>
+            <span className="tile-v">
+              {fmtShares(p.lpFees.baseShares, 4)} <small>sh</small>
+            </span>
+          </div>
+          <div className="tile">
+            <span className="tile-k">Skew fees</span>
+            <span className="tile-v">
+              {fmtShares(p.lpFees.skewShares, 4)} <small>sh</small>
+            </span>
+          </div>
+        </div>
+        <p className="lp-line">All Convert fees (base + skew) go to the LP. The protocol takes 0 on Convert.</p>
+        <p className="lp-line">Both sides are the same share — no impermanent loss from price divergence. Risk is inventory getting stuck lopsided.</p>
+        <p className="muted small">Inventory is added and removed by the pool keeper (keeper-only on ParityHook).</p>
       </section>
     </div>
   );

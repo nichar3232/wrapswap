@@ -15,11 +15,13 @@ async function api(page: Page, mutate: Mutate = (_, v) => v) {
   await page.route(/\/(api|crank)\//, async (route) => {
     const url = new URL(route.request().url()),
       path = url.pathname.replace(/^\/(api|crank)/, "");
-    const r = routes.find(
-      (r) => r.path === path || (r.path.includes(":address") && path.startsWith(r.path.split(":")[0])),
-    );
+    const r =
+      routes.find((r) => r.path === path) ??
+      routes.find((r) => r.path.includes(":") && new RegExp(`^${r.path.replace(/:[A-Za-z]+/, "[^/]+")}$`).test(path));
     if (!r) return route.fulfill({ status: 404, json: { error: { code: "NOT_FOUND", message: "Missing fixture" } } });
-    const params = r.path.includes(":address") ? path.split("/").pop()! : url.search.slice(1);
+    const params = r.path.includes(":")
+      ? decodeURIComponent(path.split("/").pop()!) + (url.search ? `?${url.search.slice(1)}` : "")
+      : url.search.slice(1);
     const value = mutate(r.name, mockResponse(r.name, network, params));
     if (value === "EMPTY") return route.fulfill({ status: 200, body: "" });
     if (value === "ERROR")
@@ -34,14 +36,12 @@ function watchConsole(page: Page) {
   return errors;
 }
 
-const step = (page: Page) => page.locator(".step:not([inert])");
+const convert = (page: Page) => page.locator("#pane-convert");
 const tab = (page: Page, name: string) => page.locator("header nav").getByRole("button", { name, exact: true });
-async function toHow(page: Page) {
-  await page.goto("/app?tab=move");
+async function toQuote(page: Page) {
+  await page.goto("/app?tab=move&asset=AAPL");
   await page.getByRole("button", { name: "Connect wallet" }).click();
-  await page.getByLabel("Move amount").fill("100");
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await step(page).getByRole("button", { name: "Next" }).click();
+  await convert(page).getByLabel("Amount", { exact: true }).fill("100");
 }
 
 test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on every panel", async ({ page }) => {
@@ -54,8 +54,9 @@ test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on
   await expect(page.locator('[data-panel="liquidity"]').getByText("unavailable").first()).toBeVisible({ timeout: 15000 });
   await expect(pill).toHaveText(/connecting…/);
   for (const [t, text] of [
-    ["Liquidity", "Market"],
-    ["Move", "Move AAPL from"],
+    ["Liquidity", "unavailable"],
+    ["Move", "Same share, converted at parity"], // platforms from the committed manifest
+    ["Send", "Confidential, not anonymous"],
     ["Portfolio", "AAPL"],
   ]) {
     await tab(page, t).click();
@@ -68,15 +69,15 @@ test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on
 });
 
 test("degraded names only the failing feeds; everything else stays live", async ({ page }) => {
-  await api(page, (name, v) => (["crankStatus", "pool"].includes(name) ? "ERROR" : v));
-  await page.goto("/app");
+  await api(page, (name, v) => (["crankStatus", "poolAsset"].includes(name) ? "ERROR" : v));
+  await page.goto("/app?asset=AAPL");
   const pill = page.getByTestId("status-pill");
   await expect(pill).toHaveText(/^(Unichain Sepolia|Anvil) · degraded$/, { timeout: 15000 });
-  await expect(pill).toHaveAttribute("title", "Degraded: Peg guard, Crank");
+  await expect(pill).toHaveAttribute("title", "Degraded: AAPL pool, Crank");
   await pill.click();
   const feeds = page.locator("#feed-status");
-  await expect(feeds.getByRole("listitem").filter({ hasText: "Fees" })).toContainText("live");
-  await expect(feeds.getByRole("listitem").filter({ hasText: "Peg guard" })).not.toContainText("live");
+  await expect(feeds.getByRole("listitem").filter({ hasText: "Assets" })).toContainText("live");
+  await expect(feeds.getByRole("listitem").filter({ hasText: "AAPL pool" })).not.toContainText("live");
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
 });
 
@@ -87,22 +88,22 @@ test("all feeds loaded: Live badge; a real wallet turns demo off", async ({ page
   await expect(page.locator("header").getByText("Demo", { exact: true })).toHaveCount(0);
 });
 
-test("eligibility denial blocks the move with a reason", async ({ page }) => {
+test("eligibility denial blocks Convert with a reason", async ({ page }) => {
   await api(page, (name, value) =>
     name === "eligibility" ? { ...value, eligible: false, reason: "RESTRICTED_COUNTRY", reasonCode: 7 } : value,
   );
-  await toHow(page);
-  await expect(step(page).getByText("A valid issuer eligibility attestation is required.", { exact: false })).toBeVisible();
-  await expect(step(page).getByRole("button", { name: "Next" })).toBeDisabled();
+  await toQuote(page);
+  await expect(convert(page).getByText("no issuer eligibility attestation", { exact: false })).toBeVisible();
+  await expect(convert(page).getByRole("button", { name: /convert$/i })).toBeDisabled();
 });
 
 test("blocked peg route is visible and cannot proceed", async ({ page }) => {
   await api(page, (name, value) =>
     name === "route" ? { ...value, route: "BLOCKED-PEG", reason: "Peg deviation exceeds 50 bps", quote: null } : value,
   );
-  await toHow(page);
-  await expect(step(page).getByText("Peg deviation exceeds 50 bps")).toBeVisible();
-  await expect(step(page).getByRole("button", { name: "Next" })).toBeDisabled();
+  await toQuote(page);
+  await expect(convert(page).getByText("Peg deviation exceeds 50 bps")).toBeVisible();
+  await expect(convert(page).getByRole("button", { name: /convert$/i })).toBeDisabled();
 });
 
 test("slow and malformed responses never produce blank screens or raw errors", async ({ page }) => {
@@ -113,8 +114,10 @@ test("slow and malformed responses never produce blank screens or raw errors", a
   });
   await page.goto("/app?tab=move");
   // While /deployment is slow (then malformed) the committed Unichain manifest still names the platforms.
-  await expect(step(page).getByRole("radio", { name: /Coinbase/ })).toBeVisible();
+  await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toBeVisible();
+  await page.getByRole("tab", { name: "Dark Cross" }).click();
+  await expect(page.getByText("No settled batches for AAPL yet.")).toBeVisible();
   await tab(page, "Liquidity").click();
-  await expect(page.getByText("No fills yet.")).toBeVisible();
+  await expect(page.getByText("LP economics")).toBeVisible();
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
 });

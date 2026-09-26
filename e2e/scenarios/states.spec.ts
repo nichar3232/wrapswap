@@ -26,6 +26,6 @@ for(const variant of ['FALL-THROUGH','BLOCKED-PEG','NYSE-CLOSED','BLOCKED-ELIGIB
     if(variant==='NYSE-CLOSED')expect(route.quote.fee.totalPips).toBe(DEMO.variants.anvil.parityFill.feePips); // skew-reducing: no off-hours premium
     await page.goto(webURL+'/app');
     await page.locator('header nav').getByRole('button',{name:'Move',exact:true}).click();
-    await expect(page.getByRole('heading',{name:/^Move /}).first()).toBeVisible();
+    await expect(page.getByRole('tab',{name:'Convert'})).toHaveAttribute('aria-selected','true');
   });
 }

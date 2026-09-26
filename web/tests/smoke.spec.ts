@@ -1,50 +1,44 @@
 import { test, expect, type Page } from "@playwright/test";
 import { DEMO, type Network } from "@wrapswap/types";
-import { demoVariant } from "../src/mocks/api";
+import { MOCK_BATCH } from "../src/mocks/api";
 import { injectTestWallet, setTxMode } from "./testWallet";
 
-// Mock data (VITE_USE_MOCKS=true), Unichain Sepolia by default: market closed, fee from the contract formula.
+// Mock data (VITE_USE_MOCKS=true), Unichain Sepolia by default. Figures come from the shared formula.
 const network = (process.env.VITE_NETWORK || "unichain-sepolia") as Network;
-const v = demoVariant(network);
 const account = DEMO.accounts.demo.anvilAddress;
 const RIGHT = network === "unichain-sepolia" ? "0x515" : "0x7a69";
 const RAW_ERROR = /SyntaxError|Unexpected (token|end)|TypeError|ReferenceError|HTTP \d{3}|Failed to fetch|\[object Object\]|undefined|NaN/;
+const RETIRED = /off-hours|NYSE|market (open|closed)|parity gap fee|USD|\$\d/i;
 
 const panel = (page: Page, id: string) => page.locator(`[data-panel="${id}"]`);
-const step = (page: Page) => page.locator(".step:not([inert])");
 const tab = (page: Page, name: string) => page.locator("header nav").getByRole("button", { name, exact: true });
+const convert = (page: Page) => page.locator("#pane-convert");
+const dark = (page: Page) => page.locator("#pane-dark");
 function watchConsole(page: Page) {
   const errors: string[] = [];
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
   page.on("pageerror", (e) => errors.push(String(e)));
   return errors;
 }
-/** Demo mode: no injected wallet; the simulated wallet connects itself. */
+/** Mock mode, no injected wallet: the mock wallet connects itself. */
 async function demo(page: Page, path = "/app") {
   await page.goto(path);
   await expect(page.getByRole("button", { name: /^Account 0x/ })).toBeVisible();
 }
-/** Drive Move to the Review step with the given choices. */
-async function toReview(page: Page, opts: { from?: RegExp; amount?: string; method?: "Instant" | "Sealed cross" } = {}) {
-  if (opts.from) await step(page).getByRole("radio", { name: opts.from }).click();
-  await page.getByLabel("Move amount").fill(opts.amount ?? "100");
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await step(page).getByRole("radio", { name: new RegExp(opts.method ?? "Instant") }).click();
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await expect(step(page).getByRole("heading", { name: "Review" })).toBeVisible();
-}
+/** A wall-clock second inside mock batch `k` at `offset` seconds (commit 0–9, reveal 10–17, settle 18–23). */
+const batchTime = (k: number, offset: number) => (MOCK_BATCH.origin + k * MOCK_BATCH.seconds + offset) * 1000;
 
-test("nav: Portfolio · Move · Liquidity, network badge, Demo badge; no console or raw errors", async ({ page }) => {
+test("nav: Portfolio · Move · Send · Liquidity with the asset picker; no console, raw or retired copy", async ({ page }) => {
   const errors = watchConsole(page);
   await demo(page);
   await expect(tab(page, "Portfolio")).toHaveAttribute("aria-current", "page");
+  await expect(page.locator("header").getByRole("radiogroup", { name: "Asset" }).getByRole("radio")).toHaveText(["AAPL", "NVDA", "TSLA"]);
   await expect(page.locator("header").getByTestId("status-pill")).toHaveText(/^(Unichain Sepolia|Anvil)$/);
   await expect(page.locator("header").getByText("Demo", { exact: true })).toBeVisible();
-  await expect(page.locator("footer")).toHaveCount(0);
-  for (const t of ["Move", "Liquidity", "Portfolio"]) {
+  for (const t of ["Move", "Send", "Liquidity", "Portfolio"]) {
     await tab(page, t).click();
     await expect(page.locator("main")).not.toContainText(RAW_ERROR);
+    await expect(page.locator("main")).not.toContainText(RETIRED);
   }
   expect(errors).toEqual([]);
 });
@@ -53,17 +47,15 @@ test("panels slide and lock; URL and ←/→ keys stay in sync; legacy ?tab= lin
   await demo(page);
   await tab(page, "Liquidity").click();
   await expect(page).toHaveURL(/tab=liquidity/);
-  await expect(page.locator(".track")).toHaveAttribute("style", /translateX\(-200%\)/);
+  await expect(page.locator(".track")).toHaveAttribute("style", /translateX\(-300%\)/);
   await page.locator("body").click({ position: { x: 5, y: 300 } });
   await page.keyboard.press("ArrowLeft");
-  await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
-  await expect(page).toHaveURL(/tab=move/);
+  await expect(tab(page, "Send")).toHaveAttribute("aria-current", "page");
   await page.keyboard.press("ArrowLeft");
-  await expect(page).toHaveURL(/tab=portfolio/);
-  await expect(panel(page, "move")).toHaveAttribute("inert", "");
+  await expect(page).toHaveURL(/tab=move/);
+  await expect(panel(page, "liquidity")).toHaveAttribute("inert", "");
   // Keys don't hijack typing.
-  await tab(page, "Move").click();
-  await page.getByLabel("Move amount").press("ArrowLeft");
+  await convert(page).getByLabel("Amount", { exact: true }).press("ArrowLeft");
   await expect(page).toHaveURL(/tab=move/);
   for (const [legacy, now] of [["convert", "move"], ["dark", "move"], ["pool", "liquidity"]]) {
     await page.goto(`/app?tab=${legacy}`);
@@ -71,102 +63,127 @@ test("panels slide and lock; URL and ←/→ keys stay in sync; legacy ?tab= lin
   }
 });
 
-test("Portfolio: total shares, rows per platform, Move prefills From", async ({ page }) => {
+test("asset picker: NVDA / TSLA switch every panel, and the choice survives a reload", async ({ page }) => {
+  await demo(page, "/app?tab=move");
+  await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toContainText("mcbAAPL");
+  await page.locator("header").getByRole("radio", { name: "NVDA" }).click();
+  await expect(page).toHaveURL(/asset=NVDA/);
+  await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toContainText("mcbNVDA");
+  await expect(convert(page).locator(".unit")).toHaveText("mcbNVDA");
+  await expect(convert(page).getByTestId("you-keep")).toContainText("→");
+  await tab(page, "Liquidity").click();
+  await expect(panel(page, "liquidity")).toContainText("NVDA · fee by direction now");
+  await page.locator("header").getByRole("radio", { name: "TSLA" }).click();
+  await expect(panel(page, "liquidity")).toContainText("TSLA · fee by direction now");
+  await page.reload();
+  await expect(page.locator("header").getByRole("radio", { name: "TSLA" })).toHaveAttribute("aria-checked", "true");
+});
+
+test("Portfolio: holdings per asset per wrapper in shares, faucet claim → cooldown, Convert prefills Move", async ({ page }) => {
   await demo(page);
   const p = panel(page, "portfolio");
-  await expect(p.getByText("1,006.25", { exact: false })).toBeVisible(); // 500 mcbAAPL × 1.0125 + 500 mAAPLx
-  await expect(p.getByText("Coinbase", { exact: true })).toBeVisible();
-  await expect(p.getByText("506.25 shares")).toBeVisible();
-  await expect(p.getByText("testnet mocks", { exact: false })).toBeVisible();
-  await expect(p.getByText("Get test shares")).toHaveCount(0); // no faucet contract is deployed
-  await p.getByRole("button", { name: "Move" }).nth(1).click(); // xStocks row
+  const aapl = p.getByRole("region", { name: "AAPL holdings" });
+  await expect(aapl).toContainText("1,006.25"); // 500 mcbAAPL × 1.0125 + 500 mAAPLx
+  await expect(aapl).toContainText("506.25 sh");
+  await expect(p.getByRole("region", { name: "NVDA holdings" })).toContainText("Coinbase");
+  await expect(p.getByRole("region", { name: "TSLA holdings" })).toContainText("xStocks");
+  const faucet = p.getByRole("region", { name: "Test shares faucet" });
+  await expect(faucet).toContainText("1,000 of each of 6 test wrappers, once a day");
+  await faucet.getByRole("button", { name: "Claim test shares" }).click();
+  await expect(faucet.getByTestId("faucet-cooldown")).toHaveText(/Next claim in 2[34]h \d\dm/);
+  await expect(aapl).toContainText("3,018.75"); // + 1,000 of each wrapper: 1,500 × 1.0125 + 1,500
+  await aapl.getByRole("button", { name: "Convert mAAPLx" }).click();
   await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
-  await expect(step(page).getByRole("radio", { name: /xStocks/ })).toHaveAttribute("aria-checked", "true");
+  await expect(convert(page).getByRole("radio", { name: /xStocks/ })).toHaveAttribute("aria-checked", "true");
 });
 
-test("demo Move · Instant end to end: shares after fee, Details, receipt", async ({ page }) => {
-  await demo(page, "/app?tab=move");
-  await toReview(page, { from: /Coinbase/ });
-  const review = step(page);
-  await expect(review.locator(".review-line")).toHaveText("101.25 AAPL shares on Coinbase → 101.10 AAPL shares on xStocks");
-  await expect(review).toContainText(`${v.parityFill.feeBps} bps`);
-  await expect(review).toContainText("99.85%");
-  await review.getByRole("button", { name: "Details", exact: true }).click();
-  await expect(review.getByText("PARITY", { exact: true })).toBeVisible();
-  await expect(review.getByTestId("fee-breakdown")).toContainText(`${v.parityFill.feeBps} bps`);
-  await review.getByRole("button", { name: "Move", exact: true }).click();
-  const done = step(page);
-  await expect(done.getByText("Conversion confirmed (simulated)")).toBeVisible();
-  await expect(done.locator(".review-line")).toContainText("101.10 AAPL shares on xStocks");
-  await expect(done.getByRole("button", { name: "Copy transaction hash" })).toBeVisible();
-  await tab(page, "Portfolio").click();
-  await expect(panel(page, "portfolio").getByText("405.00 shares")).toBeVisible(); // 400 mcbAAPL left
+test("Convert: quote card (shares in · base · skew · You keep), parity line, receipt with fee split and new skew", async ({ page }) => {
+  await demo(page, "/app?tab=move&asset=AAPL");
+  const c = convert(page);
+  await c.getByRole("radio", { name: /Coinbase/ }).click();
+  await c.getByLabel("Amount", { exact: true }).fill("100");
+  const card = c.getByRole("region", { name: "Quote" });
+  await expect(card.locator(".qc-row")).toContainText("101.25");
+  await expect(card.getByTestId("fee-breakdown")).toContainText("Base fee 2.00 bps · to LP0.0202");
+  await expect(card.getByTestId("fee-breakdown")).toContainText("0 — this trade rebalances the pool");
+  await expect(c.getByTestId("you-keep")).toContainText("101.25 → 101.22 AAPL shares");
+  await expect(c).toContainText("Same share, converted at parity. Price gap between issuers is not charged.");
+  // The other direction adds to the imbalance: a skew fee to the LP.
+  await c.getByRole("button", { name: /^Flip/ }).click();
+  await expect(card.getByTestId("fee-breakdown")).toContainText(/Skew fee \d+\.\d\d bps · to LP/);
+  await c.getByRole("button", { name: /^Flip/ }).click();
+  await c.getByRole("button", { name: "Convert", exact: true }).click();
+  await expect(c.getByText("Converted (mock)")).toBeVisible();
+  await expect(c.locator(".review-line")).toHaveText("101.25 AAPL shares on Coinbase → 101.22 on xStocks");
+  await expect(c.getByTestId("fee-breakdown")).toContainText("0 — this trade rebalances the pool");
+  await expect(c.getByTestId("receipt-skew")).toHaveText(/^\+20\.00% → \+19\.\d\d%$/);
+  await expect(c.getByRole("button", { name: "Copy transaction hash" })).toBeVisible();
 });
 
-test("demo Move · Sealed cross end to end: real quote, tracker Sealed → Revealed → Crossed, receipt", async ({ page }) => {
-  test.setTimeout(45000);
-  await demo(page, "/app?tab=move");
-  await step(page).getByRole("radio", { name: /Coinbase/ }).click();
-  await page.getByLabel("Move amount").fill("100");
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await step(page).getByRole("button", { name: "Next" }).click();
-  const how = step(page);
-  const sealed = how.getByRole("radio", { name: /Sealed cross/ });
-  await expect(sealed).toContainText("101.19"); // 100 mcbAAPL × 1.0125 at mid, less the 5 bps cross fee
-  await expect(sealed).toContainText("5.00 bps on crossed volume");
-  await expect(sealed).not.toContainText("0 fee");
-  await sealed.click();
-  await expect(how.getByText("= oracle mid")).toBeVisible();
-  await expect(how.getByLabel("Limit price")).toHaveValue("1.0125");
-  await how.getByRole("button", { name: "Next" }).click();
-  await step(page).getByRole("button", { name: "Move", exact: true }).click();
-  const tracker = page.locator(".tracker");
-  await expect(tracker.locator("li.on")).toHaveText(/Sealed/);
-  await expect(tracker.locator("li.on")).toHaveText(/Revealed/, { timeout: 10000 });
-  await expect(tracker.getByText("Crossed at the oracle mid (simulated)")).toBeVisible({ timeout: 12000 });
-  await expect(tracker).toContainText("101.25 → 101.19 AAPL");
-  await expect(tracker).toContainText("Residual via pool");
+test("Dark Cross: side + size → sealed commit; commit → reveal → settle; 3-row result; privacy line; history", async ({ page }) => {
+  test.setTimeout(60000);
+  const k = 5000;
+  await page.clock.setFixedTime(batchTime(k, 1));
+  await demo(page, "/app?tab=move&asset=AAPL");
+  await page.getByRole("tab", { name: "Dark Cross" }).click();
+  const x = dark(page);
+  await expect(x.locator(".batch-strip")).toHaveAttribute("data-phase", "COMMIT");
+  await expect(x.getByTestId("batch-countdown")).toContainText("Commit · 9s left");
+  await expect(x).toContainText("Hidden until matched. Public on-chain after settlement.");
+  await expect(x).toContainText("1.00 bp · protocol");
+  await x.getByRole("radio", { name: /Coinbase → xStocks/ }).click();
+  await x.getByLabel("Size").fill("60");
+  await x.getByRole("button", { name: `Commit sealed order · batch #${k}` }).click();
+  const order = x.getByRole("region", { name: "Your sealed order" });
+  await expect(order.locator("li.on")).toHaveText(/Sealed/);
+  await page.clock.setFixedTime(batchTime(k, 11));
+  await expect(x.locator(".batch-strip")).toHaveAttribute("data-phase", "REVEAL", { timeout: 6000 });
+  await expect(order.locator("li.on")).toHaveText(/Revealed/, { timeout: 8000 });
+  await page.clock.setFixedTime(batchTime(k, 19));
+  await expect(x.locator(".batch-strip")).toHaveAttribute("data-phase", "SETTLE", { timeout: 6000 });
+  const result = x.getByTestId("settled-result");
+  await expect(result).toBeVisible({ timeout: 10000 });
+  await expect(result).toContainText("Crossed at the 30-min midpoint 1 bp venue fee · protocol");
+  await expect(result).toContainText("50.62 → 50.61 sh"); // 50 mcbAAPL at mid 1.0125, less 1 bp
+  await expect(result).toContainText("Residual via Convert base + skew · LP");
+  await expect(result).toContainText("10.12 → 10.12 sh");
+  await expect(result).toContainText("Unfilled, refunded0.00 sh");
+  const history = x.getByRole("region", { name: "Settled batches" });
+  await expect(history.getByRole("row")).toHaveCount(4); // header + 3 settled batches
+  await expect(history).toContainText("50.62 sh");
 });
 
-test("deliver-to: validates the address, hides Sealed cross for other recipients, shows the recipient", async ({ page }) => {
-  await demo(page, "/app?tab=move");
-  await page.getByLabel("Move amount").fill("10");
-  await step(page).getByRole("button", { name: "Next" }).click();
-  const to = step(page);
-  await to.getByRole("radio", { name: "Another address" }).click();
-  await to.getByLabel("Recipient address").fill("0x1234");
-  await expect(to.getByText(/Enter a valid 0x address/)).toBeVisible();
-  await expect(to.getByRole("button", { name: "Next" })).toBeDisabled();
-  await to.getByLabel("Recipient address").fill("0x0000000000000000000000000000000000000000");
-  await expect(to.getByRole("button", { name: "Next" })).toBeDisabled();
-  const other = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC";
-  await to.getByLabel("Recipient address").fill(other);
-  await to.getByRole("button", { name: "Next" }).click();
-  await expect(step(page).getByRole("radio", { name: /Sealed cross/ })).toHaveCount(0); // settlement has no recipient
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await expect(step(page).getByRole("button", { name: "Copy address" })).toBeVisible();
-});
-
-test("Liquidity: direction-aware fees, balance diagram, the highlighted direction prefills Move", async ({ page }) => {
-  await demo(page, "/app?tab=liquidity");
+test("Liquidity: inventory, skew, fee each direction, cheap-direction CTA prefills Move, LP economics", async ({ page }) => {
+  await demo(page, "/app?tab=liquidity&asset=AAPL");
   const l = panel(page, "liquidity");
-  await expect(l.getByText("Coinbase → xStocks")).toBeVisible();
-  await expect(l.getByText("rebalances the pool")).toBeVisible();
-  await expect(l.getByRole("img", { name: /Inventory balance/ })).toBeVisible();
-  await expect(l.getByRole("region", { name: "Market" })).toContainText(v.marketOpen ? "Open" : "Moves live 24/7");
-  await expect(l.getByRole("cell", { name: /Instant/ }).first()).toBeVisible();
-  await l.getByRole("button", { name: /Move the (cheap|rebalancing) direction/ }).click();
+  await expect(l.getByTestId("skew")).toHaveText("skew +20.00%");
+  await expect(l.getByRole("img", { name: /^Inventory: Coinbase 8,100\.00 shares, xStocks 12,150\.00 shares/ })).toBeVisible();
+  await expect(l.locator(".dir.cheap")).toContainText("Coinbase → xStocks2.00 bps2.00 base · skew 0 — rebalances the pool");
+  await expect(l.locator(".dir:not(.cheap)")).toContainText(/xStocks → Coinbase\d\.\d\d bps2\.00 base \+ \d\.\d\d skew · to LP/);
+  await expect(l).toContainText("All Convert fees (base + skew) go to the LP. The protocol takes 0 on Convert.");
+  await expect(l).toContainText("Both sides are the same share — no impermanent loss from price divergence. Risk is inventory getting stuck lopsided.");
+  await expect(l.getByRole("region", { name: "LP economics" })).toContainText("0.0222 sh");
+  await expect(l.getByRole("button", { name: /deposit|withdraw|add liquidity/i })).toHaveCount(0); // keeper-only
+  await l.getByRole("button", { name: "Cheap direction now: Coinbase → xStocks" }).click();
   await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
-  await expect(step(page).getByRole("radio", { name: /Coinbase/ })).toHaveAttribute("aria-checked", "true");
-  await tab(page, "Liquidity").click();
-  await l.getByRole("button", { name: "How fees work" }).click();
-  await expect(l.getByRole("button", { name: "Rebalances" })).toBeVisible();
-  await l.getByLabel("Inventory skew (percent)").fill("0");
-  await l.getByRole("button", { name: "Market open" }).click();
-  await expect(l.locator(".curve-readout")).toContainText("2.00 bps");
+  await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toHaveAttribute("aria-checked", "true");
 });
 
-test("real (injected) wallet: wrong chain → add + switch; Move rejection and revert show a reason and Retry", async ({ page }) => {
+test("Send: three steps, who-sees-what table, labels, use cases, ladder line", async ({ page }) => {
+  await demo(page, "/app?tab=send");
+  const s = panel(page, "send");
+  await expect(s.locator(".send-steps li")).toHaveCount(3);
+  await expect(s).toContainText("Confidential, not anonymous. Operator-blind enclave on roadmap.");
+  const table = s.getByRole("table");
+  await expect(table.getByRole("row")).toHaveCount(4);
+  await expect(table.getByRole("row", { name: /Keeper/ })).toContainText("VisibleVisibleVisible");
+  await expect(s).toContainText("Private compensation");
+  await expect(s).toContainText("Private settlement");
+  await expect(s).toContainText("Dark Cross protects the order before the trade. Send protects the amount after it.");
+  await expect(s.getByRole("region", { name: "Reserves" })).toContainText("unavailable"); // no /pay/reserves in mocks
+});
+
+test("real (injected) wallet: wrong chain → add + switch; rejection and decoded reverts show the real reason", async ({ page }) => {
   test.skip(network !== "unichain-sepolia", "the add-chain flow targets Unichain Sepolia");
   await injectTestWallet(page, { account, chainId: "0x1" });
   await page.goto("/app?tab=move");
@@ -178,54 +195,49 @@ test("real (injected) wallet: wrong chain → add + switch; Move rejection and r
     blockExplorerUrls: ["https://sepolia.uniscan.xyz"],
     nativeCurrency: { symbol: "ETH" },
   });
-  await toReview(page, { from: /Coinbase/ });
+  const c = convert(page);
+  await c.getByLabel("Amount", { exact: true }).fill("100");
   await setTxMode(page, "reject");
-  await step(page).getByRole("button", { name: "Move", exact: true }).click();
-  await expect(step(page).getByText("You rejected the request in your wallet. Nothing was sent.")).toBeVisible();
+  await c.getByRole("button", { name: /^(Approve and )?convert$/i }).click();
+  await expect(c.getByText("You rejected the request in your wallet. Nothing was sent.")).toBeVisible();
   await setTxMode(page, "revert-peg");
-  await step(page).getByRole("button", { name: "Retry" }).click();
-  await expect(step(page).getByText(/Peg guard: the pool drifted more than 50 bps/)).toBeVisible();
-  await expect(page.locator("main")).not.toContainText(/execution reverted|PegGuardTripped/);
+  await c.getByRole("button", { name: "Retry" }).click();
+  await expect(c.getByText(/Peg guard: the pool drifted more than 50 bps/)).toBeVisible();
+  await setTxMode(page, "revert-slippage");
+  await c.getByRole("button", { name: "Retry" }).click();
+  await expect(c.getByText(/fell below your 0.5% minimum/)).toBeVisible();
+  await expect(page.locator("main")).not.toContainText(/execution reverted|Internal JSON-RPC/);
 });
 
-test("every control produces a visible result (demo mode, all panels and Move steps)", async ({ page, context }) => {
+test("every control produces a visible result (all panels, both Move modes)", async ({ page, context }) => {
   test.setTimeout(240000);
   await context.route(/uniscan\.xyz|github\.com/, (r) => r.fulfill({ body: "ok" }));
+  await page.clock.setFixedTime(batchTime(6000, 1)); // a commit window, so Dark Cross controls are live
   const snapshot = () =>
     page.evaluate(() => ({
       html: document.querySelector("#root")!.innerHTML,
       values: [...document.querySelectorAll("input")].map((i) => i.value).join("|"),
       url: location.href,
     }));
-  // The current tab is a no-op by design; the skip link is keyboard-only; inert panels are excluded by :visible.
-  // A radio that is already selected is a no-op by design, like the current tab.
+  // The current tab / selected radio are no-ops by design; the skip link is keyboard-only; inert panels are excluded.
   const CONTROLS =
-    "main :is(button, a[href]):visible:not([disabled]):not([aria-checked=true]):not([inert] *), header :is(button):visible:not([disabled]):not([aria-current=page])";
+    "main :is(button, a[href]):visible:not([disabled]):not([aria-checked=true]):not([aria-selected=true]):not([inert] *), header :is(button):visible:not([disabled]):not([aria-current=page]):not([aria-checked=true])";
   const places: [string, (p: Page) => Promise<void>][] = [
     ["portfolio", async () => {}],
+    ["move · convert", async () => {}],
+    ["move · dark", async (p) => void (await p.getByRole("tab", { name: "Dark Cross" }).click())],
+    ["send", async () => {}],
     ["liquidity", async () => {}],
-    ["move · from", async () => {}],
-    ["move · to", async (p) => void (await step(p).getByRole("button", { name: "Next" }).click())],
-    [
-      "move · how",
-      async (p) => {
-        await step(p).getByRole("button", { name: "Next" }).click();
-        await step(p).getByRole("button", { name: "Next" }).click();
-      },
-    ],
-    ["move · review", async (p) => void (await toReview(p))],
   ];
   for (const [place, go] of places) {
     const path = `/app?tab=${place.split(" ")[0]}`;
     await demo(page, path);
     await go(page);
-    await page.waitForTimeout(400); // let the step slide finish
     const count = await page.locator(CONTROLS).count();
     expect(count, `${place}: controls`).toBeGreaterThan(2);
     for (let i = 0; i < count; i++) {
       await demo(page, path);
       await go(page);
-      await page.waitForTimeout(400);
       const el = page.locator(CONTROLS).nth(i);
       if (!(await el.count())) continue;
       const name = (await el.getAttribute("aria-label")) || (await el.innerText()).trim();
@@ -245,60 +257,45 @@ test("every control produces a visible result (demo mode, all panels and Move st
   }
 });
 
-test("no empty fold at 1440×900 and 2560 wide: content reaches the fold, numbers ≥ 28px, labels ≥ 14px", async ({ page }) => {
-  for (const [w, h] of [
-    [1440, 900],
-    [2560, 1440],
-  ]) {
-    await page.setViewportSize({ width: w, height: h });
-    const big: Record<string, string> = { portfolio: ".asset .tile-v", move: ".step:not([inert]) .amount", liquidity: ".dir-v" };
-    for (const [id, sel] of Object.entries(big)) {
-      await demo(page, `/app?tab=${id}`);
-      const bottom = await panel(page, id).evaluate((p) => Math.max(...[...p.querySelectorAll(".card")].map((c) => c.getBoundingClientRect().bottom)));
-      expect(bottom, `${id} @${w}: content bottom`).toBeGreaterThan(h * 0.6);
-      expect(
-        await panel(page, id).locator(sel).first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize)),
-        `${id}: key number`,
-      ).toBeGreaterThanOrEqual(28);
-      const labels = await panel(page, id)
-        .locator(".field-label, .tile-k, .card-title, .stepper li, .choice-sub")
-        .evaluateAll((els) =>
-          els.filter((e) => (e as HTMLElement).offsetParent && e.textContent?.trim()).map((e) => parseFloat(getComputedStyle(e).fontSize)),
-        );
-      expect(Math.min(...labels), `${id}: smallest label`).toBeGreaterThanOrEqual(14);
-    }
+test("key numbers ≥ 28px, labels ≥ 13px; content reaches the fold at 1440×900", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const big: Record<string, string> = { portfolio: ".asset .tile-v", move: ".keep-v", liquidity: ".dir-v" };
+  for (const [id, sel] of Object.entries(big)) {
+    await demo(page, `/app?tab=${id}`);
+    await expect(panel(page, id).locator(sel).first()).toBeVisible();
+    const bottom = await panel(page, id).evaluate((p) => Math.max(...[...p.querySelectorAll(".card")].map((c) => c.getBoundingClientRect().bottom)));
+    expect(bottom, `${id}: content bottom`).toBeGreaterThan(900 * 0.6);
+    expect(await panel(page, id).locator(sel).first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize)), `${id}: key number`).toBeGreaterThanOrEqual(28);
+    const labels = await panel(page, id)
+      .locator(".field-label, .tile-k, .card-title, .choice-sub")
+      .evaluateAll((els) => els.filter((e) => (e as HTMLElement).offsetParent && e.textContent?.trim()).map((e) => parseFloat(getComputedStyle(e).fontSize)));
+    expect(Math.min(...labels), `${id}: smallest label`).toBeGreaterThanOrEqual(13);
   }
 });
 
 test("responsive: 390px has no sideways page scroll on any panel", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const id of ["portfolio", "move", "liquidity"]) {
+  for (const id of ["portfolio", "move", "send", "liquidity"]) {
     await demo(page, `/app?tab=${id}`);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), id).toBe(true);
   }
 });
 
-test("e2e/demo.spec selector contract: its Move steps resolve to exactly one element each", async ({ page }) => {
+test("e2e/demo.spec selector contract: its Convert steps resolve to exactly one element each", async ({ page }) => {
   await injectTestWallet(page, { account, chainId: RIGHT, known: [RIGHT] });
-  await page.goto("/app?tab=move");
+  const pane = page.locator("#pane-convert");
+  await page.goto("/app?tab=move&asset=AAPL");
   await page.getByRole("button", { name: /connect wallet/i }).click();
-  await step(page).getByRole("radio", { name: /Coinbase/ }).click();
-  await page.getByLabel("Move amount").fill("100");
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await step(page).getByRole("radio", { name: /Instant/ }).click();
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await page.getByRole("button", { name: "Details", exact: true }).click();
-  await expect(page.getByText("PARITY", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("fee-breakdown").getByText(new RegExp(v.parityFill.feeBps.replace(".", "\\.") + "\\s*bps"))).toBeVisible();
-  await step(page).getByRole("button", { name: /^move$/i }).click();
-  await expect(page.getByText(/conversion confirmed/i)).toBeVisible({ timeout: 30000 });
+  await pane.getByRole("radio", { name: /Coinbase/ }).click();
+  await pane.getByLabel("Amount", { exact: true }).fill("100");
+  await expect(pane.getByTestId("fee-breakdown").getByText(/2\.00\s*bps/)).toBeVisible();
+  await expect(pane.getByTestId("you-keep")).toContainText("→");
+  await pane.getByRole("button", { name: /^(approve and )?convert$/i }).click();
+  await expect(pane.getByText(/^\s*Converted\b/)).toBeVisible({ timeout: 30000 });
   await tab(page, "Liquidity").click();
   await expect(page.getByText(/20(?:\.0+)?\s*%/).first()).toBeVisible(); // demo.spec expects 19% after its real fill
   await tab(page, "Move").click();
-  await step(page).getByRole("button", { name: "Move again" }).click();
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await step(page).getByRole("button", { name: "Next" }).click();
-  await expect(step(page).getByText(/cross/i).first()).toBeVisible();
-  await expect(step(page).getByText(/residual/i).first()).toBeVisible();
+  await page.getByRole("tab", { name: "Dark Cross" }).click();
+  await expect(page.locator("#pane-dark").getByText(/cross/i).first()).toBeVisible();
+  await expect(page.locator("#pane-dark").getByText(/residual/i).first()).toBeVisible();
 });

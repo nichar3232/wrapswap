@@ -1,4 +1,4 @@
-import type { AssetsResponse, Deployment } from "@wrapswap/types";
+import type { AssetsResponse, Deployment, PoolKey } from "@wrapswap/types";
 
 export type Token = {
   address: `0x${string}`;
@@ -9,20 +9,23 @@ export type Token = {
   underlying: string;
 };
 export type Platform = { name: string; token: Token };
+export type DarkPair = { hook: `0x${string}`; baseToken: string; quoteToken: string; batchBlocks: number };
 export type Asset = {
   symbol: string;
   platforms: Platform[];
-  /** The asset's Dark Cross pair, when one is deployed (Sealed cross is offered only then). */
-  darkCross: { baseToken: string; quoteToken: string } | null;
+  /** The asset's ParityHook pool (Convert routes through it). */
+  pool: { id: `0x${string}`; key: PoolKey } | null;
+  /** The asset's DarkCrossHook pair, when one is deployed. */
+  darkCross: DarkPair | null;
 };
 
 const PLATFORM: Record<string, string> = { coinbase: "Coinbase", xstocks: "xStocks" };
 export const platformName = (t: { issuer: string }) =>
-  PLATFORM[t.issuer] ?? t.issuer.charAt(0).toUpperCase() + t.issuer.slice(1);
+  PLATFORM[t.issuer.toLowerCase()] ?? t.issuer.charAt(0).toUpperCase() + t.issuer.slice(1);
 
 /**
- * Assets and platforms from GET /assets (unhealthy adapters are left out: they can't be moved). While /assets is
- * loading or unavailable, the deployment's tokens stand in, grouped by underlying.
+ * Assets from GET /assets (unhealthy adapters are left out: they can't be converted). While /assets is loading or
+ * unavailable, the deployment's per-asset manifest (deployments/<network>.resolved.json → assets) stands in.
  */
 export function assetsOf(api: AssetsResponse | undefined, d: Deployment | undefined): Asset[] {
   if (api)
@@ -31,34 +34,68 @@ export function assetsOf(api: AssetsResponse | undefined, d: Deployment | undefi
         symbol: a.asset,
         platforms: a.platforms
           .filter((p) => p.healthy)
-          .map((p) => {
-            const token: Token = {
+          .map((p) => ({
+            name: p.platform || platformName(p),
+            token: {
               address: p.address,
               symbol: p.symbol,
               decimals: p.decimals,
               sharesPerTokenX18: p.sharesPerTokenX18,
               issuer: p.issuer,
               underlying: a.asset,
-            };
-            return { name: platformName(p), token };
-          }),
-        darkCross: a.darkCross ? { baseToken: a.darkCross.baseToken, quoteToken: a.darkCross.quoteToken } : null,
+            },
+          })),
+        pool: a.pools[0]
+          ? {
+              id: a.pools[0].poolId,
+              key: {
+                currency0: a.pools[0].currency0,
+                currency1: a.pools[0].currency1,
+                fee: a.pools[0].fee,
+                tickSpacing: a.pools[0].tickSpacing,
+                hooks: a.pools[0].hooks,
+              },
+            }
+          : null,
+        darkCross: a.darkCross
+          ? { hook: a.darkCross.hook, baseToken: a.darkCross.baseToken, quoteToken: a.darkCross.quoteToken, batchBlocks: a.darkCross.batchBlocks }
+          : null,
       }))
       .filter((a) => a.platforms.length >= 2);
   if (!d) return [];
+  if (d.assets?.length)
+    return d.assets.map((a) => ({
+      symbol: a.symbol,
+      platforms: a.wrappers.map((w) => ({
+        name: w.platform,
+        token: {
+          address: w.token,
+          symbol: w.symbol,
+          decimals: w.decimals,
+          sharesPerTokenX18: w.multiplier,
+          issuer: w.platform.toLowerCase(),
+          underlying: a.symbol,
+        },
+      })),
+      pool: { id: a.pool.id, key: a.pool.key },
+      darkCross:
+        a.darkCross && a.darkCrossHook && a.darkBaseToken && a.darkQuoteToken
+          ? { hook: a.darkCrossHook, baseToken: a.darkBaseToken, quoteToken: a.darkQuoteToken, batchBlocks: d.dark.batchBlocks }
+          : null,
+    }));
   const by = new Map<string, Token[]>();
   for (const t of d.tokens) by.set(t.underlying, [...(by.get(t.underlying) ?? []), t]);
-  const dark = [d.dark.baseToken.toLowerCase(), d.dark.quoteToken.toLowerCase()];
   return [...by].map(([symbol, tokens]) => ({
     symbol,
     platforms: tokens.map((token) => ({ name: platformName(token), token })),
-    darkCross:
-      tokens.filter((t) => dark.includes(t.address.toLowerCase())).length === 2
-        ? { baseToken: d.dark.baseToken, quoteToken: d.dark.quoteToken }
-        : null,
+    pool: { id: d.pool.id, key: d.pool.key },
+    darkCross: { hook: d.contracts.darkCrossHook, baseToken: d.dark.baseToken, quoteToken: d.dark.quoteToken, batchBlocks: d.dark.batchBlocks },
   }));
 }
 
 /** Canonical shares for a raw token amount (floor, like the contract). */
 export const toShares = (raw: bigint, t: { sharesPerTokenX18: string; decimals: number }) =>
   (raw * BigInt(t.sharesPerTokenX18)) / 10n ** BigInt(t.decimals);
+
+export const findToken = (assets: Asset[], address: string) =>
+  assets.flatMap((a) => a.platforms).find((p) => p.token.address.toLowerCase() === address.toLowerCase());

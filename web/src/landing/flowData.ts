@@ -5,13 +5,11 @@ export type UnichainFile = {
   chainId?: number;
   contracts?: Partial<Record<string, string | null>>;
   tokens?: { symbol?: string; issuer?: string; address?: string; underlying?: string }[];
-  /** Router swap proofs, when the deployment lane records them. */
-  proofs?: { swaps?: { label?: string; hash?: string; block?: number | string; caption?: string }[] };
 };
 export type SuiFile = Record<string, unknown>;
 
 // Globbed so the build passes before either file lands.
-const unichainFiles = import.meta.glob<UnichainFile>("../../../deployments/unichain-sepolia.json", { eager: true, import: "default" });
+const unichainFiles = import.meta.glob<UnichainFile>("../../../deployments/unichain-sepolia.resolved.json", { eager: true, import: "default" });
 const suiFiles = import.meta.glob<SuiFile>("../../../deployments/sui-testnet.json", { eager: true, import: "default" });
 export const unichainFile: UnichainFile | undefined = Object.values(unichainFiles)[0];
 export const suiFile: SuiFile | undefined = Object.values(suiFiles)[0];
@@ -19,7 +17,6 @@ export const SUI_EXPLORER = "https://suiscan.xyz/testnet";
 
 const isAddress = (v: unknown): v is string => typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v);
 const isSuiId = (v: unknown): v is string => typeof v === "string" && /^0x[0-9a-fA-F]{1,64}$/.test(v);
-const isTx = (v: unknown): v is string => typeof v === "string" && /^0x[0-9a-fA-F]{64}$/.test(v);
 
 /** First Sui id found under any of the keys, at the top level or inside objects/contracts. */
 export function suiLookup(s: SuiFile | undefined, keys: string[]) {
@@ -87,11 +84,4 @@ export function devLanes(u: UnichainFile | undefined, s: SuiFile | undefined): L
       ],
     },
   ];
-}
-
-/** Swap proofs recorded in the deployment file (none are shown unless the file has them). */
-export function proofSwaps(u: UnichainFile | undefined) {
-  return (u?.proofs?.swaps ?? [])
-    .filter((p) => isTx(p.hash))
-    .map((p) => ({ ...p, hash: p.hash!, url: explorerUrl("unichain-sepolia", "tx", p.hash!)! }));
 }

@@ -45,20 +45,16 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
   const [baseBefore, quoteBefore] = [await balance(base.address), await balance(quote.address)];
   const q = await api(`/quote?tokenIn=${base.address}&tokenOut=${quote.address}&amount=${DEMO.parityFill.amountIn}&kind=exactIn`, 'QuoteResponse');
 
-  const step = () => page.locator('.step:not([inert])');
-  await page.goto(webURL+'/app?tab=move');
+  const pane = page.locator('#pane-convert');
+  await page.goto(webURL+'/app?tab=move&asset=AAPL');
   await page.getByRole('button', { name: /connect wallet/i }).click();
-  await step().getByRole('radio', { name: /Coinbase/ }).click();
-  await page.getByLabel('Move amount').fill(formatUnits(DEMO.parityFill.amountIn, base.decimals));
-  await step().getByRole('button', { name: 'Next' }).click();
-  await step().getByRole('button', { name: 'Next' }).click();
-  await step().getByRole('radio', { name: /Instant/ }).click();
-  await expect(step().getByRole('button', { name: 'Next' })).toBeEnabled({ timeout: 30000 });
-  await step().getByRole('button', { name: 'Next' }).click();
-  await page.getByRole('button', { name: 'Details', exact: true }).click();
-  await expect(page.getByText('PARITY', { exact: true })).toBeVisible({ timeout: 30000 });
-  await step().getByRole('button', { name: /^move$/i }).click(); // approval then swapExactIn
-  await expect(page.getByText(/conversion confirmed/i)).toBeVisible({ timeout: 90000 });
+  await pane.getByRole('radio', { name: /Coinbase/ }).click();
+  await pane.getByLabel('Amount', { exact: true }).fill(formatUnits(DEMO.parityFill.amountIn, base.decimals));
+  await expect(pane.getByTestId('you-keep')).toContainText('→', { timeout: 30000 });
+  const convert = pane.getByRole('button', { name: /^(approve and )?convert$/i });
+  await expect(convert).toBeEnabled({ timeout: 30000 });
+  await convert.click(); // approval then swapExactIn
+  await expect(pane.getByText(/^\s*Converted\b/)).toBeVisible({ timeout: 90000 });
 
   const swapTx = hashes.at(-1)!;
   const receipt = await chain.getTransactionReceipt({ hash: swapTx as `0x${string}` });

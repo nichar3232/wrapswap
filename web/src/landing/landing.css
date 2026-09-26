@@ -1083,3 +1083,21 @@ html {
     padding: 20px;
   }
 }
+
+/* Developers page */
+.dev-page-top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.proof .table-wrap + .table-wrap {
+  margin-top: 28px;
+}
+.proof caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}

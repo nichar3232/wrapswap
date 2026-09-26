@@ -1,45 +1,106 @@
-import type { Deployment } from "@wrapswap/types";
-import { config } from "../config";
+import { useEffect, useState } from "react";
+import type { Address, Deployment } from "@wrapswap/types";
 import { useApi } from "../hooks/useApi";
-import { amount } from "../lib/format";
-import { isDemo } from "../wallet";
-import { platformName, toShares, type Asset } from "./assets";
-import { fmtShares } from "./Move";
-import { Hex, Skeleton, Val } from "./ui";
+import { amount, duration, fmtShares } from "../lib/format";
+import { claimFaucet } from "../wallet";
+import { findToken, toShares, type Asset } from "./assets";
+import { useTx } from "./tx";
+import { Hex, Skeleton, Spinner, TxPanel, Val } from "./ui";
 import { useWallet } from "./wallet";
 
-/** Home: what you hold, per asset and platform, with one action per row. */
+const KIND: Record<string, string> = { PARITY: "Convert", "FALL-THROUGH": "Convert (pool)", "DARK-CROSS": "Dark Cross", "DARK-RESIDUAL": "Dark Cross residual" };
+const COOLDOWN = 86_400; // TestShareFaucet.COOLDOWN
+
+/** Test-share faucet: claim every listed wrapper once per day; the cooldown comes from GET /faucet/:address. */
+function Faucet({ d, assets, faucetAddr }: { d: Deployment | undefined; assets: Asset[]; faucetAddr?: Address }) {
+  const w = useWallet();
+  const feed = useApi("faucet", w.address ?? null, 20000);
+  const tx = useTx<unknown>();
+  const [claimedAt, setClaimedAt] = useState<number>();
+  const [now, setNow] = useState(Date.now() / 1000);
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const faucet = (feed.data?.faucet ?? faucetAddr) as Address | undefined;
+  const next = Math.max(
+    ...(feed.data?.tokens.map((t) => Number(t.nextClaimAt)) ?? [0]),
+    claimedAt ? claimedAt + COOLDOWN : 0,
+  );
+  const wait = next > now ? next - now : 0;
+  const claim = async () => {
+    const done = await tx.run("Faucet claim", async (onHash) => {
+      const sent = await claimFaucet(d!, w.address!, faucet!, { onHash });
+      for (const t of feed.data?.tokens ?? []) w.adjust(t.address, BigInt(t.amount));
+      setClaimedAt(Math.floor(Date.now() / 1000));
+      feed.refresh();
+      return { hash: sent.hash, simulated: sent.simulated, result: "claimed" };
+    });
+    if (!done) return;
+  };
+  if (!w.address) return null;
+  const per = feed.data?.tokens[0];
+  const perDecimals = per ? findToken(assets, per.address)?.token.decimals : undefined;
+  return (
+    <section className="card faucet" aria-label="Test shares faucet">
+      <div>
+        <span className="tile-k">Test shares</span>
+        <p className="faucet-line">
+          <Val status={feed.status} w="12em">
+            {per && perDecimals !== undefined ? `${amount(per.amount, perDecimals, 0)} of each of ${feed.data!.tokens.length} test wrappers, once a day` : "—"}
+          </Val>
+        </p>
+      </div>
+      <div className="faucet-act">
+        {wait > 0 ? (
+          <span className="cooldown" data-testid="faucet-cooldown">
+            Next claim in <strong>{duration(wait)}</strong>
+          </span>
+        ) : (
+          <button className="primary" disabled={!faucet || !d || tx.busy || !feed.data} onClick={() => void claim()}>
+            {tx.busy && <Spinner />}
+            {tx.busy ? "Claiming…" : "Claim test shares"}
+          </button>
+        )}
+      </div>
+      <TxPanel tx={tx.state} onRetry={() => void claim()} />
+    </section>
+  );
+}
+
+/** Home: what you hold, per asset per wrapper in shares, the faucet, and your recent fills. */
 export function Portfolio({ d, assets, onMove }: { d: Deployment | undefined; assets: Asset[]; onMove: (fromToken: string) => void }) {
   const w = useWallet();
   const stats = useApi("stats", w.address ? `address=${w.address}` : null, 15000);
-  const tokens = assets.flatMap((a) => a.platforms.map((p) => p.token));
   const recent = stats.data?.wallet?.recent ?? [];
+  const mocks = import.meta.env.VITE_USE_MOCKS === "true";
 
   return (
     <div className="page portfolio">
-      {!w.address ? (
+      {!w.address && (
         <section className="card">
           <button className="primary wide" disabled={!!w.busy} onClick={() => void w.connect()}>
             {w.busy === "connect" ? "Connecting…" : "Connect to see your shares"}
           </button>
           {w.notice && <p className="block-reason">{w.notice}</p>}
         </section>
-      ) : null}
+      )}
+      <Faucet d={d} assets={assets} faucetAddr={d?.faucet} />
       {assets.length === 0 && (
         <section className="card">
           <Skeleton w="100%" h="8em" />
         </section>
       )}
-      {assets.map((asset) => {
-        const rows = asset.platforms.map((p) => {
-          const bal = w.balances.values[p.token.address];
-          return { p, bal, shares: bal !== undefined ? toShares(bal, p.token) : undefined };
-        });
-        const total = rows.reduce((s, r) => s + (r.shares ?? 0n), 0n);
-        return (
-          <section key={asset.symbol} className="card asset" aria-label={`${asset.symbol} holdings`}>
-            <div className="asset-head">
-              <div>
+      <div className="asset-grid">
+        {assets.map((asset) => {
+          const rows = asset.platforms.map((p) => {
+            const bal = w.balances.values[p.token.address];
+            return { p, bal, shares: bal !== undefined ? toShares(bal, p.token) : undefined };
+          });
+          const total = rows.reduce((s, r) => s + (r.shares ?? 0n), 0n);
+          return (
+            <section key={asset.symbol} className="card asset" aria-label={`${asset.symbol} holdings`}>
+              <div className="asset-head">
                 <span className="tile-k">{asset.symbol}</span>
                 <span className="tile-v">
                   {w.address ? (
@@ -51,64 +112,57 @@ export function Portfolio({ d, assets, onMove }: { d: Deployment | undefined; as
                   )}
                 </span>
               </div>
-              <span className="hint">{isDemo() ? "Demo wallet · testnet mocks" : "Testnet mocks"}</span>
-            </div>
-            <ul className="holdings">
-              {rows.map(({ p, bal, shares }) => {
-                const pct = total > 0n && shares !== undefined ? Number((shares * 1000n) / total) / 10 : 0;
-                return (
+              <ul className="holdings">
+                {rows.map(({ p, bal, shares }) => (
                   <li key={p.token.address} className="holding">
                     <div className="holding-name">
                       <span className="platform">{p.name}</span>
-                      <span className="symbol">{p.token.symbol}</span>
-                    </div>
-                    <div className="holding-nums">
-                      <span className="holding-shares">{shares !== undefined ? fmtShares(shares) : "—"} shares</span>
                       <span className="symbol">
                         {bal !== undefined ? amount(bal, p.token.decimals, 4) : "—"} {p.token.symbol}
                       </span>
                     </div>
-                    <div className="holding-bar" role="img" aria-label={`${pct}% of your ${asset.symbol} shares on ${p.name}`}>
-                      <span style={{ width: `${pct}%` }} />
-                      <small>{pct.toFixed(1)}%</small>
-                    </div>
+                    <span className="holding-shares">{shares !== undefined ? fmtShares(shares) : "—"} sh</span>
                     {bal !== undefined && bal > 0n ? (
-                      <button className="primary move-btn" onClick={() => onMove(p.token.address)}>
-                        Move
+                      <button className="ghost-btn move-btn" aria-label={`Convert ${p.token.symbol}`} onClick={() => onMove(p.token.address)}>
+                        Convert
                       </button>
                     ) : (
                       <span />
                     )}
                   </li>
+                ))}
+              </ul>
+            </section>
+          );
+        })}
+      </div>
+      {w.address && (
+        <section className="card recent" aria-label="Recent fills">
+          <h2 className="card-title">Recent fills</h2>
+          {recent.length ? (
+            <ul>
+              {recent.slice(0, 8).map((f) => {
+                const ti = findToken(assets, f.tokenIn)?.token,
+                  to = findToken(assets, f.tokenOut)?.token;
+                return (
+                  <li key={f.txHash + f.logIndex}>
+                    <span>
+                      {ti && to ? `${fmtShares(toShares(BigInt(f.amountIn), ti))} → ${fmtShares(toShares(BigInt(f.amountOut), to))} ${ti.underlying} sh · ${ti.symbol} → ${to.symbol}` : f.kind}
+                    </span>
+                    <span className="muted">
+                      {KIND[f.kind]}
+                      {f.feePips === null ? "" : ` · ${(f.feePips / 100).toFixed(2)} bps`}
+                    </span>
+                    <Hex value={f.txHash} kind="tx" simulated={mocks} />
+                  </li>
                 );
               })}
             </ul>
-          </section>
-        );
-      })}
-      {w.address && recent.length > 0 && (
-        <section className="card recent" aria-label="Recent moves">
-          <h2 className="card-title">Recent moves</h2>
-          <ul>
-            {recent.slice(0, 6).map((f) => {
-              const ti = tokens.find((t) => t.address === f.tokenIn),
-                to = tokens.find((t) => t.address === f.tokenOut);
-              return (
-                <li key={f.txHash + f.logIndex}>
-                  <span>
-                    {ti && to
-                      ? `${fmtShares(toShares(BigInt(f.amountIn), ti))} → ${fmtShares(toShares(BigInt(f.amountOut), to))} ${ti.underlying} shares · ${platformName(ti)} → ${platformName(to)}`
-                      : f.kind}
-                  </span>
-                  <span className="muted">
-                    {f.kind === "PARITY" || f.kind === "FALL-THROUGH" ? "Instant" : "Sealed cross"}
-                    {f.feePips === null ? "" : ` · ${(f.feePips / 100).toFixed(2)} bps`}
-                  </span>
-                  <Hex value={f.txHash} kind="tx" simulated={config.useMocks} />
-                </li>
-              );
-            })}
-          </ul>
+          ) : (
+            <Val status={stats.status} w="100%" h="2em">
+              <p className="muted">No fills from this wallet yet.</p>
+            </Val>
+          )}
         </section>
       )}
     </div>

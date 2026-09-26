@@ -10,18 +10,12 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   const v=DEMO.variants.anvil;
   await injectWallet(page);
   // Move flow: From (Coinbase, amount) → To → How (Instant) → Review; route and fee breakdown sit behind Details.
-  const step=()=>page.locator('.step:not([inert])');
-  await page.goto(webURL+'/app?tab=move');
+  const pane=page.locator('#pane-convert');
+  await page.goto(webURL+'/app?tab=move&asset=AAPL');
   await page.getByRole('button',{name:/connect wallet/i}).click();
-  await step().getByRole('radio',{name:/Coinbase/}).click();
-  await page.getByLabel('Move amount').fill(formatUnits(DEMO.parityFill.amountIn,DEMO.tokens.mcbAAPL.decimals));
-  await step().getByRole('button',{name:'Next'}).click();
-  await step().getByRole('button',{name:'Next'}).click();
-  await step().getByRole('radio',{name:/Instant/}).click();
-  await step().getByRole('button',{name:'Next'}).click();
-  await page.getByRole('button',{name:'Details',exact:true}).click();
-  await expect(page.getByText('PARITY',{exact:true})).toBeVisible();
-  await expect(page.getByTestId('fee-breakdown').getByText(new RegExp(v.parityFill.feeBps.replace('.', '\\.')+'\\s*bps'))).toBeVisible();
+  await pane.getByRole('radio',{name:/Coinbase/}).click();
+  await pane.getByLabel('Amount',{exact:true}).fill(formatUnits(DEMO.parityFill.amountIn,DEMO.tokens.mcbAAPL.decimals));
+  await expect(pane.getByTestId('fee-breakdown').getByText(new RegExp(v.parityFill.feeBps.replace('.', '\\.')+'\\s*bps'))).toBeVisible();
   const base=d.tokens.find(x=>x.symbol==='mcbAAPL')!;
   const quote=d.tokens.find(x=>x.symbol==='mAAPLx')!;
   const query=`?tokenIn=${base.address}&tokenOut=${quote.address}&amount=${DEMO.parityFill.amountIn}&kind=exactIn`;
@@ -32,8 +26,8 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   const onchain=await read('parityHook','quote',[d.pool.key,base.address.toLowerCase()===d.pool.key.currency0.toLowerCase(),DEMO.parityFill.amountSpecified],BigInt(before.block));
   for(const field of ['amountIn','amountOut','grossOut','shares','feeAmount'])expect(before[field]).toBe(onchain[field].toString());
   // Live Convert: ERC-20 approval to WrapSwapRouter, then swapExactIn with the displayed minimum output (§13).
-  await step().getByRole('button',{name:/^move$/i}).click(); // approval then swapExactIn, one action
-  await expect(page.getByText(/conversion confirmed/i)).toBeVisible({timeout:30000});
+  await pane.getByRole('button',{name:/^(approve and )?convert$/i}).click(); // approval then swapExactIn, one action
+  await expect(pane.getByText(/^\s*Converted\b/)).toBeVisible({timeout:30000});
   await expect.poll(async()=> (await chain.readContract({address:base.address,abi:abis.IMockIssuerToken,functionName:'balanceOf',args:[account(1).address]})).toString()).toBe(v.end.demoMcbAAPL.toString());
   await waitHead();
   const fills=await api('/fills','FillListResponse');
@@ -76,11 +70,9 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   expect(await chain.readContract({address:quote.address,abi:abis.IMockIssuerToken,functionName:'balanceOf',args:[account(1).address]})).toBe(v.end.demoMAAPLx);
   // Sealed cross is a Move method: its option shows the cross and the residual route.
   await page.locator('header nav').getByRole('button',{name:'Move',exact:true}).click();
-  await step().getByRole('button',{name:'Move again'}).click();
-  await step().getByRole('button',{name:'Next'}).click();
-  await step().getByRole('button',{name:'Next'}).click();
-  await expect(step().getByText(/cross/i).first()).toBeVisible();
-  await expect(step().getByText(/residual/i).first()).toBeVisible();
+  await page.getByRole('tab',{name:'Dark Cross'}).click();
+  await expect(page.locator('#pane-dark').getByText(/cross/i).first()).toBeVisible();
+  await expect(page.locator('#pane-dark').getByText(/residual/i).first()).toBeVisible();
   mkdirSync('logs/integration',{recursive:true});
   // Complete response bodies are compared, including block numbers, timestamps and tx hashes.
   writeFileSync(`logs/integration/run-${process.env.DEMO_RUN||'1'}.json`,JSON.stringify({before,fills,detail,inventory:inv},null,2));

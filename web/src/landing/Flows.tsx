@@ -22,7 +22,7 @@ export function SimpleFlow() {
       </div>
       <div className="sf-branches">
         <div className="sf-branch">
-          <span className="sf-k">Large order</span> → Sealed cross
+          <span className="sf-k">Large order</span> → Dark Cross
         </div>
         <div className="sf-branch">
           <span className="sf-k">Paying someone</span> → Send on Sui

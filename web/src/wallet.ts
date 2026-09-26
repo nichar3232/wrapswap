@@ -6,6 +6,7 @@ import {
   encodeFunctionData,
   erc20Abi,
   http,
+  parseAbi,
   type Abi,
   type EIP1193Provider,
   type Hash,
@@ -21,6 +22,7 @@ import {
   encodeParityHookData,
   type Address,
   type Deployment,
+  type PoolKey,
 } from "@wrapswap/types";
 import { config } from "./config";
 
@@ -50,19 +52,43 @@ export const hexChainId = (id: number) => "0x" + id.toString(16);
 export const expectedChain = () => CHAINS[config.network];
 
 /**
- * Demo mode: with no injected wallet a simulated wallet (the deployment's demo account) runs every flow:
- * sign → pending → receipt, all marked simulated. Any real injected wallet turns it off.
+ * Who signs. An injected wallet always wins. Without one: in the mock-data build (tests only) a simulated wallet
+ * signs locally; live, the demo relay (a server-side signer, GET/POST {api}/demo/relay) sends real transactions and
+ * returns real hashes, when the backend runs one. The demo key never reaches this bundle.
  */
-export const simulatedWallet = () => !injected();
-/** No chain writes: simulated wallet, or mock data (where an injected wallet still signs, for tests). */
-const offChain = () => config.useMocks || simulatedWallet();
-/** Anything shown or sent is demo (mock data or the simulated wallet); the UI marks it. */
-export const isDemo = offChain;
+export const simulatedWallet = () => config.useMocks && !injected();
+/** No chain writes: mock data (where an injected wallet still signs, for tests). */
+const offChain = () => config.useMocks;
+
+type RelayInfo = { address: Address };
+let relayProbe: Promise<RelayInfo | null> | undefined;
+/** The demo relay's account, or null when the backend runs none (probed once). */
+export function relayInfo(): Promise<RelayInfo | null> {
+  if (config.useMocks || injected()) return Promise.resolve(null);
+  relayProbe ??= fetch(`${config.apiUrl}/demo/relay`)
+    .then(async (r) => {
+      if (!r.ok || !(r.headers.get("content-type") ?? "").includes("json")) return null;
+      const j = (await r.json()) as { address?: string };
+      return j.address && /^0x[0-9a-fA-F]{40}$/.test(j.address) ? { address: j.address as Address } : null;
+    })
+    .catch(() => null);
+  return relayProbe;
+}
+let relayAccount: Address | undefined;
+const usingRelay = () => !injected() && !config.useMocks && !!relayAccount;
+/** Demo: mock data, or transactions signed by the demo relay. The UI marks both. */
+export const isDemo = () => config.useMocks || usingRelay();
 
 export async function requestAccount(d?: Deployment): Promise<Address> {
   if (simulatedWallet())
     return (d?.demoAccounts.accounts.find((a) => a.role === "demo")?.address ??
       DEMO.accounts.demo.anvilAddress) as Address;
+  if (!injected()) {
+    const relay = await relayInfo();
+    if (!relay) throw new WalletError("no-wallet");
+    relayAccount = relay.address;
+    return relay.address;
+  }
   const accounts = (await provider().request({
     method: "eth_requestAccounts",
   })) as Address[] | null;
@@ -71,7 +97,7 @@ export async function requestAccount(d?: Deployment): Promise<Address> {
 }
 
 export async function readChainId(): Promise<number | null> {
-  if (simulatedWallet()) return expectedChain().id;
+  if (simulatedWallet() || !injected()) return expectedChain().id;
   try {
     const id = await provider().request({ method: "eth_chainId" });
     return id ? Number(id) : null;
@@ -116,7 +142,8 @@ export async function connect(d: Deployment): Promise<Address> {
 
 /** Best effort: MetaMask supports revoking the site's account permission. */
 export async function disconnectWallet() {
-  if (simulatedWallet()) return;
+  relayAccount = undefined;
+  if (!injected()) return;
   try {
     await injected()?.request({
       method: "wallet_revokePermissions" as never,
@@ -212,9 +239,25 @@ export async function send(
     await pause(700);
     return { hash, simulated: true };
   }
+  const client = rpc();
+  if (usingRelay()) {
+    // Simulate first so a revert shows its decoded reason before anything is sent.
+    await client.simulateContract({ account, address, abi, functionName, args });
+    const r = await fetch(`${config.apiUrl}/demo/relay`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ to: address, data: encodeFunctionData({ abi, functionName, args }) }),
+    }).catch(() => undefined);
+    const j = r?.ok ? ((await r.json().catch(() => ({}))) as { hash?: string }) : {};
+    if (!j.hash || !/^0x[0-9a-fA-F]{64}$/.test(j.hash)) throw new Error("NoRelay");
+    const hash = j.hash as Hash;
+    opts.onHash?.(hash);
+    const receipt = await client.waitForTransactionReceipt({ hash });
+    if (receipt.status !== "success") throw new Error("The transaction reverted onchain.");
+    return { hash, receipt, simulated: false };
+  }
   const wallet = createWalletClient({ account, transport: custom(provider()) });
   if ((await wallet.getChainId()) !== d.chainId) throw new Error("WrongChain");
-  const client = rpc();
   // Load-balanced public RPCs can serve a backend that has not seen the previous receipt (e.g. the approval),
   // so a failed simulation is retried briefly before it is reported.
   const simulate = () =>
@@ -235,7 +278,7 @@ export async function send(
   });
   opts.onHash?.(hash);
   const receipt = await client.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success") throw new Error("Reverted");
+  if (receipt.status !== "success") throw new Error("The transaction reverted onchain.");
   return { hash, receipt, simulated: false };
 }
 export const approve = (
@@ -247,9 +290,10 @@ export const approve = (
   opts?: SendOptions,
 ) => send(d, account, token, IMockIssuerTokenAbi, "approve", [spender, amount], opts);
 
-/** Exact-in swap through WrapSwapRouter (INTERFACES.md §13); approve tokenIn to the router first. */
+/** Exact-in swap through WrapSwapRouter (INTERFACES.md §13) on the asset's pool; approve tokenIn to the router first. */
 export async function convertExactIn(
   d: Deployment,
+  key: PoolKey,
   account: Address,
   tokenIn: Address,
   amountIn: bigint,
@@ -272,8 +316,8 @@ export async function convertExactIn(
     "swapExactIn",
     [
       {
-        key: d.pool.key,
-        zeroForOne: tokenIn.toLowerCase() === d.pool.key.currency0.toLowerCase(),
+        key,
+        zeroForOne: tokenIn.toLowerCase() === key.currency0.toLowerCase(),
         amountIn,
         amountOutMin,
         recipient: opts?.recipient ?? account,
@@ -285,15 +329,16 @@ export async function convertExactIn(
   );
 }
 
-/** What a swap receipt says about its path through ParityHook, and the tokens the recipient received. */
-export function swapOutcome(receipt: TransactionReceipt, tokenOut: Address, recipient: Address) {
-  let path: "inventory" | "fall-through" | undefined;
+/** The ParityHook Converted event of a swap receipt: the exact shares out, base fee, skew fee and post-trade skew. */
+export type Converted = { sharesOut: bigint; baseFee: bigint; skewFee: bigint; postSkew: bigint; amountOut?: bigint };
+export function convertedOf(receipt: TransactionReceipt, tokenOut: Address, recipient: Address): Converted | undefined {
+  let c: Converted | undefined;
   let amountOut: bigint | undefined;
   for (const log of receipt.logs) {
     try {
       const e = decodeEventLog({ abi: IParityHookAbi, data: log.data, topics: log.topics });
-      if (e.eventName === "InventoryFill") path = "inventory";
-      if (e.eventName === "FallThrough") path ??= "fall-through";
+      if (e.eventName === "Converted")
+        c = { sharesOut: e.args.sharesOut, baseFee: e.args.baseFee, skewFee: e.args.skewFee, postSkew: e.args.postSkew };
     } catch {
       /* not a ParityHook event */
     }
@@ -306,30 +351,46 @@ export function swapOutcome(receipt: TransactionReceipt, tokenOut: Address, reci
         /* not a Transfer */
       }
   }
-  return { path, amountOut };
+  return c && { ...c, amountOut };
 }
 
+/** A call on the asset's DarkCrossHook. */
 export const darkSend = (
   d: Deployment,
+  hook: Address,
   account: Address,
   name: string,
   args: unknown[],
   opts?: SendOptions,
-) => send(d, account, d.contracts.darkCrossHook, IDarkCrossHookAbi, name, args, opts);
+) => send(d, account, hook, IDarkCrossHookAbi, name, args, opts);
 
 export async function verifyOrder(
-  d: Deployment,
+  hook: Address,
   account: Address,
   batchId: string,
   expectedHash?: Address,
 ) {
   if (offChain()) return;
   const order = await rpc().readContract({
-    address: d.contracts.darkCrossHook,
+    address: hook,
     abi: IDarkCrossHookAbi,
     functionName: "order",
     args: [BigInt(batchId), account],
   });
   if (expectedHash ? order.commitHash !== expectedHash : !order.revealed || !order.valid)
     throw new Error(expectedHash ? "CommitNotAccepted" : "RevealNotValid");
+}
+
+const FAUCET_ABI = parseAbi(["function claim()", "function nextClaimAt(address) view returns (uint256)"]);
+/** TestShareFaucet.claim(): every listed test wrapper to the caller, once per COOLDOWN (1 day). */
+export const claimFaucet = (d: Deployment, account: Address, faucet: Address, opts?: SendOptions) =>
+  send(d, account, faucet, FAUCET_ABI, "claim", [], opts);
+
+/** Dark Cross escrow: the account's available (unlocked) balance of each token on the hook; undefined in mock mode. */
+export async function escrowAvailable(hook: Address, account: Address, tokens: Address[]) {
+  if (offChain()) return undefined;
+  const rows = await Promise.all(
+    tokens.map((t) => rpc().readContract({ address: hook, abi: IDarkCrossHookAbi, functionName: "balances", args: [account, t] })),
+  );
+  return rows.map((r) => r[0]);
 }

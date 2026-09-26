@@ -1,46 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { canonical, DEMO } from "@wrapswap/types";
-import { feeAtSkew, inventoryAtSkew, quoteSummary, tradeFee } from "./fees";
+import { canonical, DEMO, type QuoteResponse } from "@wrapswap/types";
+import { quoteBreakdown, skewPct } from "./fees";
+import { mockResponse } from "../mocks/api";
 
-// Values asserted by contracts/test/CanonicalShares.t.sol against the Solidity implementation.
-describe("fee formula pinned to contract output", () => {
-  it("matches CanonicalShares.totalFeePips", () => {
-    const f = (s0: bigint, s1: bigint, open: boolean) => canonical.feeBreakdown(s0, s1, open).totalPips;
-    expect(f(8100n * canonical.ONE, 12150n * canonical.ONE, true)).toBe(460n);
-    expect(f(8100n * canonical.ONE, 12150n * canonical.ONE, false)).toBe(1460n);
-    expect(f(canonical.ONE, 0n, false)).toBe(2500n); // capped
-    expect(f(0n, 1n, false)).toBe(2500n);
-    expect(canonical.feeOnGross(10125n * 10n ** 16n, 460n)).toBe(46575000000000000n);
+// The final fee model: base 2 bps always; skew fee min(ceil(1500·|post skew|), 5000) pips only when |skew| grows.
+describe("fee formula pinned to the contract model", () => {
+  const s0 = 8100n * canonical.ONE,
+    s1 = 12150n * canonical.ONE; // −20% skew (§10)
+  it("a rebalancing trade pays the base fee only", () => {
+    const f = canonical.tradeFeeBreakdown(s0, s1, true, 101n * canonical.ONE);
+    expect(f.skewPips).toBe(0n);
+    expect(f.totalPips).toBe(200n);
+    expect(f.reducesImbalance).toBe(true);
   });
-  it("the curve's skew mapping reproduces the demo pool (-20% skew)", () => {
-    expect(feeAtSkew(-0.2, true).totalPips).toBe(BigInt(DEMO.variants.anvil.parityFill.feePips));
-    expect(feeAtSkew(-0.2, false).totalPips).toBe(1460n); // totalFeePips(8100e18, 12150e18, false)
+  it("an imbalance-increasing trade pays ceil(1500·|post skew|) on top", () => {
+    const f = canonical.tradeFeeBreakdown(s0, s1, false, 101n * canonical.ONE);
+    const post = canonical.skewX18(s0 - 101n * canonical.ONE, s1 + 101n * canonical.ONE);
+    const expected = (1500n * (post < 0n ? -post : post) + canonical.ONE - 1n) / canonical.ONE;
+    expect(f.reducesImbalance).toBe(false);
+    expect(f.skewPips).toBe(expected);
+    expect(f.totalPips).toBe(200n + expected);
   });
-  it("tradeFee is the shared formula plus the trade's direction", () => {
-    const inv = { shares0: 8100n * canonical.ONE, shares1: 12150n * canonical.ONE };
-    const in0 = tradeFee(inv, { sharesIn: 101n * canonical.ONE, inIsToken0: true }, false);
-    const in1 = tradeFee(inv, { sharesIn: 101n * canonical.ONE, inIsToken0: false }, false);
-    expect(in0.totalPips).toBe(canonical.feeBreakdown(inv.shares0, inv.shares1, false).totalPips);
-    expect(in0.rebalances).toBe(true); // selling the scarce side back to the hook
-    expect(in1.rebalances).toBe(false);
-    expect(Math.abs(in0.postSkew)).toBeLessThan(0.2);
-    expect(inventoryAtSkew(0).shares0).toBe(inventoryAtSkew(0).shares1);
+  it("at full imbalance the skew fee is 1500 pips (15 bps)", () => {
+    expect(canonical.tradeFeeBreakdown(99n * canonical.ONE, canonical.ONE, true, canonical.ONE).skewPips).toBe(1500n);
   });
 });
 
-// One quote, pinned: 100 mcbAAPL → mAAPLx at 14.60 bps (the parity quote arithmetic, §10 closed-market figures).
-describe("shares headline pinned to one quote", () => {
-  const mcb = { spt: DEMO.tokens.mcbAAPL.sharesPerTokenX18, decimals: DEMO.tokens.mcbAAPL.decimals };
-  const x = { spt: DEMO.tokens.mAAPLx.sharesPerTokenX18, decimals: DEMO.tokens.mAAPLx.decimals };
-  const q = canonical.parityQuote(mcb, x, -DEMO.parityFill.amountIn, 1460n);
-  const s = quoteSummary(
-    { shares: q.shares.toString(), amountOut: q.amountOut.toString(), feeAmount: q.feeAmount.toString() },
-    { sharesPerTokenX18: x.spt.toString(), decimals: x.decimals },
-  );
-  it("in-shares, out-shares after fee, keep% and fee amount", () => {
-    expect(s.sharesIn).toBe(101_250_000_000_000_000_000n); // 101.25 shares
-    expect(s.sharesOut).toBe(101_102_175_000_000_000_000n); // 101.102175 → shown as 101.10
-    expect(s.keptPct).toBe(99.854);
-    expect(s.feeAmount).toBe(147_825_000_000_000_000n); // 0.147825 mAAPLx → "0.15"
+// One quote, pinned: 100 mcbAAPL → mAAPLx on the §10 pool (a rebalancing trade: base fee only).
+describe("You keep pinned to one quote", () => {
+  const q = mockResponse("quote", "unichain-sepolia") as QuoteResponse;
+  const b = quoteBreakdown(q, { sharesPerTokenX18: DEMO.tokens.mAAPLx.sharesPerTokenX18.toString(), decimals: 18 });
+  it("shares in, shares out after fee, the split, keep", () => {
+    expect(b.sharesIn).toBe(101_250_000_000_000_000_000n); // 101.25 shares
+    expect(b.sharesOut).toBe(101_229_750_000_000_000_000n); // 101.22975 → "101.23"
+    expect(b.baseFee + b.skewFee).toBe(b.sharesIn - b.sharesOut);
+    expect(b.skewFee).toBe(0n);
+    expect(b.reducesImbalance).toBe(true);
+    expect(b.keep).toBeCloseTo(0.9998, 4);
+    expect(q.amountOut).toBe(DEMO.variants["unichain-sepolia"].parityFill.amountOut.toString());
+  });
+  it("falls back to the shared split when the API omits the new fields", () => {
+    const { sharesIn: _a, sharesOut: _b, baseFee: _c, skewFee: _d, youKeep: _e, ...old } = q;
+    const o = quoteBreakdown(old, { sharesPerTokenX18: DEMO.tokens.mAAPLx.sharesPerTokenX18.toString(), decimals: 18 });
+    expect(o.sharesOut).toBe(b.sharesOut);
+    expect(o.baseFee).toBe(b.baseFee);
+  });
+  it("formats signed skew", () => {
+    expect(skewPct(DEMO.skewX18.initial)).toBe("−20.00%");
+    expect(skewPct(0n)).toBe("0.00%");
   });
 });
