@@ -15,7 +15,7 @@ import {
 } from "@wrapswap/types";
 import { useApi } from "./hooks/useApi";
 import { config } from "./config";
-import { ApiState, Fees, RouteBadge } from "./components";
+import { ApiState, Fees, RouteBadge, Tip } from "./components";
 import {
   approve,
   connect,
@@ -28,6 +28,12 @@ import "./style.css";
 const units = (n: string | bigint, decimals = 18) =>
   formatUnits(BigInt(n), decimals);
 const zero32 = toHex(new Uint8Array(32));
+/** [internal tab key, visible name]; keys double as accessible names. */
+const TABS = [
+  ["Convert", "Convert"],
+  ["Dark Cross", "Dark Pool"],
+  ["Pool", "Pool"],
+] as const;
 type Wallet = {
   d: Deployment;
   address?: Address;
@@ -80,15 +86,46 @@ function App() {
         pending,
       }
     : undefined;
+  const closedAt = nyse.data
+    ? new Date(Number(nyse.data.nextTransition) * 1000)
+        .toISOString()
+        .replace("T", " ")
+        .replace(".000Z", " UTC")
+    : "—";
+  const systemTip = [
+    `Next ${nyse.data?.nextState.toLowerCase() ?? "transition"}: ${closedAt}`,
+    `Block ${health.data?.headBlock ?? "—"}`,
+    `Skew ${fees.data ? (Number(fees.data.fee.skewX18) / 1e16).toFixed(1) + "%" : "—"}`,
+    `Peg guard ${pool.data ? (pool.data.pegTripped ? "TRIPPED" : "CLEAR") : "—"}`,
+    `Crank ${crank.data ? (crank.data.ok ? "healthy" : "degraded") : "—"}`,
+    `Indexer lag ${health.data?.lagBlocks ?? "—"} blocks`,
+  ].join(" · ");
   return (
     <>
       <a className="skip" href="#main">
         Skip to content
       </a>
-      <header>
-        <div className="brand">
-          WrapSwap <span className="badge">Settlement engine</span>
-        </div>
+      <header className="nav">
+        <div className="wordmark">WrapSwap</div>
+        <nav aria-label="Main navigation">
+          {TABS.map(([t, name], i) => (
+            <React.Fragment key={t}>
+              {i > 0 && (
+                <span className="sep" aria-hidden="true">
+                  ·
+                </span>
+              )}
+              <button
+                className={tab === t ? "active" : ""}
+                aria-current={tab === t ? "page" : undefined}
+                aria-label={name !== t ? t : undefined}
+                onClick={() => setTab(t)}
+              >
+                {name}
+              </button>
+            </React.Fragment>
+          ))}
+        </nav>
         <div className="wallet">
           {(health.data?.demoMode ?? d?.demoMode) ||
           eligibility.data?.demoMode ? (
@@ -98,7 +135,9 @@ function App() {
             <span className="badge">Simulated transactions</span>
           )}
           <button
+            className="primary"
             disabled={!d || pending}
+            aria-label={address ? undefined : "Connect wallet"}
             onClick={() =>
               void run(async () => {
                 setAddress(await connect(d!));
@@ -108,84 +147,28 @@ function App() {
           >
             {address
               ? address.slice(0, 6) + "…" + address.slice(-4)
-              : "Connect wallet"}
+              : "Connect"}
           </button>
         </div>
       </header>
-      <div className="status-strip" aria-label="Network status">
-        <span>
-          {d?.network || config.network} · Chain {d?.chainId || "—"}
-        </span>
-        <span>Block {health.data?.headBlock ?? "—"}</span>
-        <span>
-          NYSE {nyse.data ? (nyse.data.open ? "OPEN" : "CLOSED") : "—"}
-          {nyse.data && (
-            <small>
-              Next {nyse.data.nextState.toLowerCase()}:{" "}
-              {new Date(Number(nyse.data.nextTransition) * 1000)
-                .toISOString()
-                .replace("T", " ")
-                .replace(".000Z", " UTC")}
-            </small>
-          )}
-        </span>
-        <span>Fee {fees.data?.fee.totalBps ?? "—"} bps</span>
-        <span>
-          Skew{" "}
-          {fees.data
-            ? (Number(fees.data.fee.skewX18) / 1e16).toFixed(1) + "%"
-            : "—"}
-        </span>
-        <span>
-          Peg guard{" "}
-          {pool.data ? (pool.data.pegTripped ? "TRIPPED" : "CLEAR") : "—"}
-        </span>
-        <span>
-          Crank {crank.data ? (crank.data.ok ? "healthy" : "degraded") : "—"}
-        </span>
-        <span>Indexer lag {health.data?.lagBlocks ?? "—"} blocks</span>
-      </div>
-      <nav aria-label="Main navigation">
-        {["Convert", "Dark Cross", "Pool"].map((t) => (
-          <button
-            key={t}
-            className={tab === t ? "active" : ""}
-            aria-current={tab === t ? "page" : undefined}
-            onClick={() => setTab(t)}
-          >
-            {t}
-          </button>
-        ))}
-      </nav>
       <main id="main">
-        <h1>share-for-share conversion, no USDC leg.</h1>
-        <p className="intro">
-          Issuer securities in. Issuer securities out. Every path settles
-          through the hook.
-        </p>
+        {tab === "Convert" ? (
+          <div className="hero">
+            <h1>Swap the wrapper. Keep the share.</h1>
+            <h2 className="sub">share-for-share conversion, no USDC leg.</h2>
+          </div>
+        ) : (
+          <div className="hero compact">
+            <h1>{TABS.find(([t]) => t === tab)![1]}</h1>
+          </div>
+        )}
         <ApiState state={deployment} label="Deployment" />
-        <div className="api-status">
-          {[
-            [health, "Network"],
-            [nyse, "NYSE calendar"],
-            [fees, "Fees"],
-            [pool, "Peg guard"],
-            [crank, "Crank health"],
-          ].map(([s, l]) => (
-            <ApiState
-              key={l as string}
-              state={s as typeof health}
-              label={l as string}
-            />
-          ))}
-        </div>
         {address && (
-          <>
+          <div className="eligibility">
             <ApiState state={eligibility} label="Eligibility" />
             {eligibility.data &&
               (!eligibility.data.eligible ? (
-                <p role="alert">
-                  <RouteBadge route="BLOCKED-ELIGIBILITY" />{" "}
+                <p role="alert" className="error">
                   {eligibility.data.reason.replaceAll("_", " ")}. A valid issuer
                   eligibility attestation is required.
                 </p>
@@ -195,11 +178,13 @@ function App() {
                   {eligibility.data.demoMode ? " · demo mode" : ""}
                 </p>
               ))}
-          </>
+          </div>
         )}
         {props &&
           (d!.tokens.length !== 2 ? (
-            <p role="alert">Deployment must contain two issuer tokens.</p>
+            <p role="alert" className="state error">
+              Deployment must contain two issuer tokens.
+            </p>
           ) : tab === "Convert" ? (
             <Convert
               {...props}
@@ -216,10 +201,37 @@ function App() {
             {message}
           </p>
         )}
+        <div className="api-status">
+          {[
+            [health, "Network"],
+            [nyse, "NYSE calendar"],
+            [fees, "Fees"],
+            [pool, "Peg guard"],
+            [crank, "Crank health"],
+          ].map(([s, l]) => (
+            <ApiState
+              key={l as string}
+              state={s as typeof health}
+              label={l as string}
+            />
+          ))}
+        </div>
       </main>
-      <footer>
-        WrapSwap · ParityHook settlement · Canonical shares are internal
-        accounting units.
+      <footer aria-label="Network status">
+        <span
+          className={`dot ${nyse.data ? (nyse.data.open ? "open" : "closed") : ""}`}
+          aria-hidden="true"
+        />
+        <span>
+          NYSE {nyse.data ? (nyse.data.open ? "open" : "closed") : "—"}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          {d?.network || config.network} · Chain {d?.chainId || "—"}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>{fees.data ? Number(fees.data.fee.totalBps) : "—"} bps</span>
+        <Tip text={systemTip} />
       </footer>
     </>
   );
@@ -236,7 +248,8 @@ function Convert({
 }: Wallet & { onMessage: (s: string) => void; onDark: () => void }) {
   const [reverse, setReverse] = useState(false),
     [input, setInput] = useState("100"),
-    [approved, setApproved] = useState("");
+    [approved, setApproved] = useState(""),
+    [open, setOpen] = useState(false);
   const [a, b] = reverse ? [...d.tokens].reverse() : d.tokens;
   let raw = 0n;
   try {
@@ -282,142 +295,153 @@ function Convert({
     !!quote.error ||
     activeRoute?.startsWith("BLOCKED") ||
     pending;
+  const issuer = (t: typeof a) =>
+    t.issuer === "coinbase" ? "Coinbase" : "xStocks";
   return (
-    <div className="columns">
-      <section>
-        <h2>Convert issuer tokens</h2>
-        <label>
-          From
+    <section className="card swap">
+      <div className="field">
+        <span className="field-label">From · {issuer(a)}</span>
+        <div className="field-row">
+          <input
+            className="amount"
+            aria-label="Conversion amount"
+            inputMode="decimal"
+            placeholder="0"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+          />
           <select
+            className="token"
+            aria-label="From token"
             value={a.address}
             onChange={(e) => setReverse(e.target.value === d.tokens[1].address)}
           >
             {d.tokens.map((t) => (
               <option key={t.address} value={t.address}>
-                {t.issuer === "coinbase" ? "Coinbase" : "xStocks"} · {t.symbol}
+                {t.symbol}
               </option>
             ))}
           </select>
-        </label>
-        <label>
-          To
-          <input
-            readOnly
-            value={`${b.issuer === "coinbase" ? "Coinbase" : "xStocks"} · ${b.symbol}`}
-          />
-        </label>
-        <label>
-          Conversion amount
-          <input
-            inputMode="decimal"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-          />
-        </label>
+        </div>
         {raw <= 0n && (
-          <p role="alert">
-            Enter a positive amount with at most {a.decimals} decimal places.
+          <p role="alert" className="field-error">
+            Enter a positive amount, up to {a.decimals} decimals.
           </p>
         )}
-        <p>
-          Settlement: {a.symbol} → ParityHook → {b.symbol}
-        </p>
-        <p className="muted">
-          Approve only this amount to the deployment’s swap router. Slippage
-          tolerance: 0.5%.
-        </p>
-        {liveUnavailable && (
-          <p role="alert">
-            Live conversion is unavailable: this deployment has no
-            WrapSwapRouter with minimum-output protection.
-          </p>
-        )}
-        <button
-          className="primary"
-          disabled={blocked || liveUnavailable}
-          onClick={() =>
-            void run(async () => {
-              if (activeRoute === "DARK") {
-                onDark();
-                onMessage("Continue with a dark-cross commitment.");
-                return;
-              }
-              if (approved !== approvalKey) {
-                await approve(
-                  d,
-                  address!,
-                  a.address,
-                  router ?? d.contracts.swapRouter,
-                  raw,
-                );
-                setApproved(approvalKey);
-                onMessage(
-                  "Approval confirmed. Review the quote, then convert.",
-                );
-              } else if (config.useMocks) {
-                onMessage(
-                  `Simulated conversion confirmed: ${units(output!, b.decimals)} ${b.symbol} through ParityHook.`,
-                );
-                setApproved("");
-              } else {
-                await convertExactIn(d, address!, a.address, raw, minOut, uid);
-                setApproved("");
-                onMessage(
-                  `Conversion confirmed: at least ${units(minOut, b.decimals)} ${b.symbol} through ParityHook.`,
-                );
-              }
-            })
-          }
-        >
-          {pending
-            ? "Confirming…"
-            : activeRoute === "DARK"
-              ? "Continue to Dark Cross"
-              : approved === approvalKey
-                ? "Convert through ParityHook"
-                : "Approve token"}
-        </button>
-        {!address && (
-          <p>Connect your wallet to verify eligibility and continue.</p>
-        )}
-      </section>
-      <section>
-        <h2>
-          Execution quote {activeRoute && <RouteBadge route={activeRoute} />}
-        </h2>
-        <ApiState state={quote} label="Quote" />
-        {address && <ApiState state={route} label="Route" />}
-        {route.data?.reason && <p>{route.data.reason}</p>}
+      </div>
+      <button
+        type="button"
+        className="flip"
+        aria-label="Reverse direction"
+        onClick={() => setReverse(!reverse)}
+      >
+        ↓
+      </button>
+      <div className="field">
+        <span className="field-label">To · {issuer(b)}</span>
+        <div className="field-row">
+          <output className="amount">
+            {output ? units(output, b.decimals) : "0"}{" "}
+            <span className="unit">{b.symbol}</span>
+          </output>
+          <span className="token">{b.symbol}</span>
+        </div>
+      </div>
+      <div className="meta">
+        {activeRoute ? <RouteBadge route={activeRoute} /> : <span />}
         {q && (
-          <>
+          <span className="fee-line">Fee {Number(q.fee.totalBps)} bps</span>
+        )}
+      </div>
+      {route.data?.reason && <p className="reason">{route.data.reason}</p>}
+      <ApiState state={quote} label="Quote" />
+      {address && <ApiState state={route} label="Route" />}
+      {!q && !quote.loading && !quote.error && (
+        <p className="state">No executable quote.</p>
+      )}
+      {liveUnavailable && (
+        <p role="alert" className="state error">
+          Live conversion is unavailable on this deployment.
+        </p>
+      )}
+
+      <button
+        className="primary wide"
+        disabled={blocked || liveUnavailable}
+        onClick={() =>
+          void run(async () => {
+            if (activeRoute === "DARK") {
+              onDark();
+              onMessage("Continue with a dark-cross commitment.");
+              return;
+            }
+            if (approved !== approvalKey) {
+              await approve(
+                d,
+                address!,
+                a.address,
+                router ?? d.contracts.swapRouter,
+                raw,
+              );
+              setApproved(approvalKey);
+              onMessage("Approval confirmed. Review the quote, then convert.");
+            } else if (config.useMocks) {
+              onMessage(
+                `Simulated conversion confirmed: ${units(output!, b.decimals)} ${b.symbol} through ParityHook.`,
+              );
+              setApproved("");
+            } else {
+              await convertExactIn(d, address!, a.address, raw, minOut, uid);
+              setApproved("");
+              onMessage(
+                `Conversion confirmed: at least ${units(minOut, b.decimals)} ${b.symbol} through ParityHook.`,
+              );
+            }
+          })
+        }
+      >
+        {pending
+          ? "Confirming…"
+          : activeRoute === "DARK"
+            ? "Continue to Dark Cross"
+            : approved === approvalKey
+              ? "Convert through ParityHook"
+              : "Approve token"}
+      </button>
+      {q && (
+        <div className={`details${open ? " open" : ""}`}>
+          <button
+            type="button"
+            className="details-toggle"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            Details
+            <span className="rate">
+              {units(
+                (BigInt(a.sharesPerTokenX18) * 10n ** 18n) /
+                  BigInt(b.sharesPerTokenX18),
+              )}{" "}
+              {b.symbol}/{a.symbol}
+            </span>
+          </button>
+          <div className="details-body">
             <dl>
-              <dt>Parity ratio</dt>
-              <dd>
-                {units(
-                  (BigInt(a.sharesPerTokenX18) * 10n ** 18n) /
-                    BigInt(b.sharesPerTokenX18),
-                )}{" "}
-                {b.symbol}/{a.symbol}
-              </dd>
-              <dt>Canonical shares</dt>
-              <dd>{units(q.shares)}</dd>
-              <dt>Expected output</dt>
-              <dd>
-                {output ? units(output, b.decimals) : "Unavailable"} {b.symbol}
-              </dd>
-              <dt>Minimum output</dt>
+              <dt>
+                Minimum output{" "}
+                <Tip text="0.5% slippage tolerance. Approval is for this amount only." />
+              </dt>
               <dd>
                 {units(minOut, b.decimals)} {b.symbol}
               </dd>
+              <dt>Canonical shares</dt>
+              <dd>{units(q.shares)}</dd>
             </dl>
             <Fees fee={q.fee} />
-          </>
-        )}
-        {!q && !quote.loading && !quote.error && (
-          <p>No executable quote. Check the amount and route eligibility.</p>
-        )}
-      </section>
-    </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 type SavedOrder = {
@@ -466,247 +490,249 @@ function Dark({
     setSaved(o);
   };
   return (
-    <>
-      <div className="columns">
-        <section>
-          <h2>
-            Dark Cross <RouteBadge route="DARK" />
-          </h2>
-          <ApiState state={batch} label="Current batch" />
-          {batch.data && (
-            <>
-              <p>
-                Batch {batch.data.batchId} · <strong>{phase}</strong> ·{" "}
-                {batch.data.participants} participants
+    <div className="cards">
+      <section className="card">
+        <div className="card-head">
+          <span className="label">Batch {batch.data?.batchId ?? "—"}</span>
+          <RouteBadge route="DARK" />
+        </div>
+        <ApiState state={batch} label="Current batch" />
+        {batch.data && (
+          <>
+            <p className="metric" role="timer">
+              {Math.max(
+                0,
+                Number(batch.data.phaseEndsBlock) -
+                  Number(batch.data.blockNumber),
+              )}{" "}
+              <span className="unit">blocks</span>
+            </p>
+            <p className="caption">
+              <strong>{phase}</strong> · {batch.data.participants} participants
+              · ends block {batch.data.phaseEndsBlock}
+            </p>
+            <p className="caption">
+              Oracle{" "}
+              {batch.data.oracle.midX18
+                ? units(batch.data.oracle.midX18)
+                : "Unavailable"}{" "}
+              {b.symbol}/{a.symbol}
+            </p>
+            {batch.data.oracle.stale && (
+              <p role="alert" className="state error">
+                Oracle stale · settlement paused
               </p>
-              <p role="timer">
-                {Math.max(
-                  0,
-                  Number(batch.data.phaseEndsBlock) -
-                    Number(batch.data.blockNumber),
-                )}{" "}
-                blocks until phase transition · block{" "}
-                {batch.data.phaseEndsBlock}
-              </p>
-              <p>
-                Oracle ratio:{" "}
-                {batch.data.oracle.midX18
-                  ? units(batch.data.oracle.midX18)
-                  : "Unavailable"}{" "}
-                {b.symbol}/{a.symbol}
-              </p>
-              {batch.data.oracle.stale && (
-                <p role="alert">Oracle is stale. Settlement is paused.</p>
-              )}
-            </>
-          )}
-          <p>
-            Sell {units(amount, a.decimals)} {a.symbol} · minimum price{" "}
-            {units(limit)} {b.symbol}/{a.symbol}
-          </p>
-          <p>
-            Commit privately, reveal during the next phase, then settle the
-            batch.
-          </p>
-          <p>
-            Residual-to-ParityHook settlement: unmatched issuer tokens route
-            into the ParityHook pool in the same settlement transaction.
-          </p>
-          <div className="actions">
-            <button
-              disabled={
-                pending ||
-                !eligible ||
-                !batch.data ||
-                !!batch.error ||
-                phase !== "COMMIT" ||
-                saved?.confirmed
-              }
-              onClick={() =>
-                void run(async () => {
-                  if (!address || !batch.data) return;
-                  const salt = toHex(
-                    crypto.getRandomValues(new Uint8Array(32)),
-                  );
-                  const o: SavedOrder = {
-                    chainId: d.chainId,
-                    account: address,
-                    hook: d.contracts.darkCrossHook,
-                    batchId: batch.data.batchId,
-                    amount: amount.toString(),
-                    limit: limit.toString(),
-                    salt,
-                    confirmed: false,
-                  };
-                  store(o);
-                  await approve(
-                    d,
-                    address,
-                    a.address,
-                    d.contracts.darkCrossHook,
-                    amount,
-                  );
-                  await darkSend(d, address, "fund", [a.address, amount]);
-                  const hash = keccak256(
-                    encodeAbiParameters(
-                      [
-                        { type: "uint256" },
-                        { type: "address" },
-                        { type: "uint256" },
-                        { type: "address" },
-                        { type: "bool" },
-                        { type: "uint256" },
-                        { type: "uint256" },
-                        { type: "bool" },
-                        { type: "bytes32" },
-                      ],
-                      [
-                        BigInt(d.chainId),
-                        d.contracts.darkCrossHook,
-                        BigInt(o.batchId),
-                        address,
-                        true,
-                        amount,
-                        limit,
-                        true,
-                        salt,
-                      ],
-                    ),
-                  );
-                  await darkSend(d, address, "commit", [
-                    hash,
-                    a.address,
-                    amount,
-                    uid || zero32,
-                  ]);
-                  await verifyOrder(d, address, o.batchId, hash);
-                  store({ ...o, confirmed: true });
-                  if (config.useMocks) setMockPhase("REVEAL");
-                  onMessage(
-                    "Commit confirmed. Reveal secret saved in this browser. Keep this browser data until settlement.",
-                  );
-                })
-              }
-            >
-              Approve, fund & commit
-            </button>
-            <button
-              disabled={
-                pending ||
-                !eligible ||
-                !saved?.confirmed ||
-                phase !== "REVEAL" ||
-                !!batch.error ||
-                saved?.batchId !== batch.data?.batchId
-              }
-              onClick={() =>
-                void run(async () => {
-                  await darkSend(d, address!, "reveal", [
-                    true,
-                    BigInt(saved!.amount),
-                    BigInt(saved!.limit),
-                    true,
-                    saved!.salt,
-                  ]);
-                  await verifyOrder(d, address!, saved!.batchId);
-                  if (config.useMocks) setMockPhase("SETTLE");
-                  onMessage(
-                    "Reveal confirmed. Residual will settle through ParityHook.",
-                  );
-                })
-              }
-            >
-              Reveal order
-            </button>
-            <button
-              disabled={
-                pending ||
-                !eligible ||
-                phase !== "SETTLE" ||
-                !batch.data ||
-                !!batch.error ||
-                batch.data.oracle.stale
-              }
-              onClick={() =>
-                void run(async () => {
-                  await darkSend(d, address!, "settle", [
-                    BigInt(batch.data!.batchId),
-                  ]);
-                  localStorage.removeItem(storageKey);
-                  setSaved(undefined);
-                  onMessage(
-                    "Batch settled: matched issuer tokens crossed; residual routed through ParityHook.",
-                  );
-                })
-              }
-            >
-              Settle batch
-            </button>
-          </div>
-          {!address && <p>Connect a wallet to commit and reveal.</p>}
-          {address && (
-            <>
-              <ApiState
-                state={orders}
-                label="Your orders"
-                empty={orders.data?.items.length === 0}
-              />
-              {orders.data?.items.map((o) => (
-                <p key={o.batchId}>
-                  Batch {o.batchId}: {o.revealed ? "Revealed" : "Committed"} ·{" "}
-                  {o.valid ? "valid" : "awaiting valid reveal"}
-                </p>
-              ))}
-            </>
-          )}
-        </section>
-        <section>
-          <h2>Recent batch settlement</h2>
-          <ApiState
-            state={history}
-            label="Batches"
-            empty={history.data?.items.length === 0}
-          />
-          {history.data?.items.map((h) => (
-            <div key={h.batchId}>
-              <p>
-                Batch {h.batchId} · {h.settled ? "SETTLED" : "Pending"}
-              </p>
-              <dl>
-                <dt>Crossed base</dt>
-                <dd>
-                  {units(h.crossedBase, a.decimals)} {a.symbol}
-                </dd>
-                <dt>Crossed quote</dt>
-                <dd>
-                  {units(h.crossedQuote, b.decimals)} {b.symbol}
-                </dd>
-                <dt>Residual to ParityHook</dt>
-                <dd>
-                  {units(h.residualBaseIn, a.decimals)} {a.symbol}
-                </dd>
-              </dl>
-            </div>
-          ))}
-          <ApiState
-            state={fills}
-            label="Residual fills"
-            empty={fills.data?.items.length === 0}
-          />
-          {fills.data?.items
-            .filter((f) => f.kind === "DARK-RESIDUAL")
-            .map((f) => (
-              <p key={f.txHash + f.logIndex}>
-                ParityHook residual output:{" "}
-                <strong>
-                  {units(f.amountOut, b.decimals)} {b.symbol}
-                </strong>{" "}
-                · {(f.feePips! / 100).toFixed(2)} bps
+            )}
+          </>
+        )}
+      </section>
+      <section className="card">
+        <div className="card-head">
+          <span className="label">Your order</span>
+          <Tip text="Commit privately, reveal in the next phase, then settle. Unmatched size routes into the ParityHook pool in the same transaction." />
+        </div>
+        <p className="metric">
+          {units(amount, a.decimals)} <span className="unit">{a.symbol}</span>
+        </p>
+        <p className="caption">
+          Min {units(limit)} {b.symbol}/{a.symbol}
+        </p>
+        <div className="actions">
+          <button
+            className={phase === "COMMIT" ? "primary" : ""}
+            disabled={
+              pending ||
+              !eligible ||
+              !batch.data ||
+              !!batch.error ||
+              phase !== "COMMIT" ||
+              saved?.confirmed
+            }
+            onClick={() =>
+              void run(async () => {
+                if (!address || !batch.data) return;
+                const salt = toHex(crypto.getRandomValues(new Uint8Array(32)));
+                const o: SavedOrder = {
+                  chainId: d.chainId,
+                  account: address,
+                  hook: d.contracts.darkCrossHook,
+                  batchId: batch.data.batchId,
+                  amount: amount.toString(),
+                  limit: limit.toString(),
+                  salt,
+                  confirmed: false,
+                };
+                store(o);
+                await approve(
+                  d,
+                  address,
+                  a.address,
+                  d.contracts.darkCrossHook,
+                  amount,
+                );
+                await darkSend(d, address, "fund", [a.address, amount]);
+                const hash = keccak256(
+                  encodeAbiParameters(
+                    [
+                      { type: "uint256" },
+                      { type: "address" },
+                      { type: "uint256" },
+                      { type: "address" },
+                      { type: "bool" },
+                      { type: "uint256" },
+                      { type: "uint256" },
+                      { type: "bool" },
+                      { type: "bytes32" },
+                    ],
+                    [
+                      BigInt(d.chainId),
+                      d.contracts.darkCrossHook,
+                      BigInt(o.batchId),
+                      address,
+                      true,
+                      amount,
+                      limit,
+                      true,
+                      salt,
+                    ],
+                  ),
+                );
+                await darkSend(d, address, "commit", [
+                  hash,
+                  a.address,
+                  amount,
+                  uid || zero32,
+                ]);
+                await verifyOrder(d, address, o.batchId, hash);
+                store({ ...o, confirmed: true });
+                if (config.useMocks) setMockPhase("REVEAL");
+                onMessage(
+                  "Commit confirmed. Reveal secret saved in this browser. Keep this browser data until settlement.",
+                );
+              })
+            }
+          >
+            Approve, fund & commit
+          </button>
+          <button
+            className={phase === "REVEAL" ? "primary" : ""}
+            disabled={
+              pending ||
+              !eligible ||
+              !saved?.confirmed ||
+              phase !== "REVEAL" ||
+              !!batch.error ||
+              saved?.batchId !== batch.data?.batchId
+            }
+            onClick={() =>
+              void run(async () => {
+                await darkSend(d, address!, "reveal", [
+                  true,
+                  BigInt(saved!.amount),
+                  BigInt(saved!.limit),
+                  true,
+                  saved!.salt,
+                ]);
+                await verifyOrder(d, address!, saved!.batchId);
+                if (config.useMocks) setMockPhase("SETTLE");
+                onMessage(
+                  "Reveal confirmed. Residual will settle through ParityHook.",
+                );
+              })
+            }
+          >
+            Reveal order
+          </button>
+          <button
+            className={phase === "SETTLE" ? "primary" : ""}
+            disabled={
+              pending ||
+              !eligible ||
+              phase !== "SETTLE" ||
+              !batch.data ||
+              !!batch.error ||
+              batch.data.oracle.stale
+            }
+            onClick={() =>
+              void run(async () => {
+                await darkSend(d, address!, "settle", [
+                  BigInt(batch.data!.batchId),
+                ]);
+                localStorage.removeItem(storageKey);
+                setSaved(undefined);
+                onMessage(
+                  "Batch settled: matched issuer tokens crossed; residual routed through ParityHook.",
+                );
+              })
+            }
+          >
+            Settle batch
+          </button>
+        </div>
+        {address && (
+          <>
+            <ApiState
+              state={orders}
+              label="Orders"
+              empty={orders.data?.items.length === 0}
+            />
+            {orders.data?.items.map((o) => (
+              <p className="caption" key={o.batchId}>
+                Batch {o.batchId} · {o.revealed ? "Revealed" : "Committed"} ·{" "}
+                {o.valid ? "valid" : "awaiting valid reveal"}
               </p>
             ))}
-        </section>
-      </div>
-    </>
+          </>
+        )}
+      </section>
+      <section className="card">
+        <div className="card-head">
+          <span className="label">Last settlement</span>
+        </div>
+        <ApiState
+          state={history}
+          label="Batches"
+          empty={history.data?.items.length === 0}
+        />
+        {history.data?.items.map((h) => (
+          <div className="batch" key={h.batchId}>
+            <p className="metric">
+              {units(h.crossedQuote, b.decimals)}{" "}
+              <span className="unit">{b.symbol}</span>
+            </p>
+            <p className="caption">
+              Crossed · batch {h.batchId} · {h.settled ? "settled" : "pending"}
+            </p>
+            <dl>
+              <dt>Base</dt>
+              <dd>
+                {units(h.crossedBase, a.decimals)} {a.symbol}
+              </dd>
+              <dt>Residual</dt>
+              <dd>
+                {units(h.residualBaseIn, a.decimals)} {a.symbol}
+              </dd>
+            </dl>
+          </div>
+        ))}
+        <ApiState
+          state={fills}
+          label="Residual fills"
+          empty={fills.data?.items.length === 0}
+        />
+        {fills.data?.items
+          .filter((f) => f.kind === "DARK-RESIDUAL")
+          .map((f) => (
+            <p className="caption" key={f.txHash + f.logIndex}>
+              Residual out{" "}
+              <strong>
+                {units(f.amountOut, b.decimals)} {b.symbol}
+              </strong>{" "}
+              · {(f.feePips! / 100).toFixed(2)} bps
+            </p>
+          ))}
+      </section>
+    </div>
   );
 }
 function Pool({ d }: { d: Deployment }) {
@@ -714,80 +740,88 @@ function Pool({ d }: { d: Deployment }) {
     fills = useApi("fills");
   const skew = inventory.data ? Number(inventory.data.skewX18) / 1e18 : 0;
   return (
-    <>
-      <div className="columns">
-        <section>
-          <h2>Hook-owned inventory</h2>
-          <ApiState
-            state={inventory}
-            label="Inventory"
-            empty={inventory.data?.tokens.length === 0}
-          />
-          {inventory.data?.tokens.map((t) => (
-            <dl key={t.address}>
-              <dt>{t.symbol}</dt>
-              <dd>
-                {units(
-                  t.inventory,
-                  d.tokens.find((x) => x.address === t.address)?.decimals,
-                )}{" "}
-                tokens
-              </dd>
-              <dt>Canonical shares</dt>
-              <dd>{units(t.inventoryShares)} shares</dd>
-            </dl>
-          ))}
-          {inventory.data && (
-            <>
-              <label>
-                Inventory skew: {(skew * 100).toFixed(1)}%
-                <meter
-                  min={-1}
-                  max={1}
-                  value={skew}
-                  aria-label="Inventory skew"
-                />
-              </label>
-              <p>Total {units(inventory.data.totalShares)} canonical shares</p>
-              <p className="muted">
-                Accounting for issuer ratios, not a user-held security.
-              </p>
-            </>
-          )}
-        </section>
-        <section>
-          <h2>Hook fee curve</h2>
-          <p>
-            2 + 13 × |skew| + {inventory.data?.fee.marketOpen ? 0 : 10}{" "}
-            closed-market bps · capped at 25 bps
+    <div className="cards">
+      <section className="card">
+        <div className="card-head">
+          <span className="label">Inventory</span>
+          <Tip text="Canonical shares account for issuer ratios; they are not a user-held security." />
+        </div>
+        <ApiState
+          state={inventory}
+          label="Inventory"
+          empty={inventory.data?.tokens.length === 0}
+        />
+        {inventory.data && (
+          <p className="metric">
+            <span className="unit">Total</span>{" "}
+            {units(inventory.data.totalShares)}{" "}
+            <span className="unit">canonical shares</span>
           </p>
-          <svg
-            viewBox="0 0 320 115"
-            role="img"
-            aria-label="Fee increases with absolute inventory skew; off-hours adds 10 basis points"
-          >
-            <path d="M20 10V90H310" fill="none" stroke="currentColor" />
-            <path
-              d="M25 20L165 78L305 20"
-              fill="none"
-              stroke="var(--accent)"
-              strokeWidth="3"
-            />
-            <text x="20" y="110">
-              −100%
-            </text>
-            <text x="150" y="110">
-              0%
-            </text>
-            <text x="265" y="110">
-              +100%
-            </text>
-          </svg>
-          {inventory.data && <Fees fee={inventory.data.fee} />}
-        </section>
-      </div>
-      <section>
-        <h2>Recent fills</h2>
+        )}
+        {inventory.data?.tokens.map((t) => (
+          <dl key={t.address}>
+            <dt>{t.symbol}</dt>
+            <dd>
+              {units(
+                t.inventory,
+                d.tokens.find((x) => x.address === t.address)?.decimals,
+              )}{" "}
+              tokens
+            </dd>
+            <dt className="indent">Shares</dt>
+            <dd>{units(t.inventoryShares)} shares</dd>
+          </dl>
+        ))}
+        {inventory.data && (
+          <label className="skew">
+            <span>
+              Skew <strong>{(skew * 100).toFixed(1)}%</strong>
+            </span>
+            <meter min={-1} max={1} value={skew} aria-label="Inventory skew" />
+          </label>
+        )}
+      </section>
+      <section className="card">
+        <div className="card-head">
+          <span className="label">Hook fee</span>
+          <Tip
+            text={`2 + 13 × |skew| + ${inventory.data?.fee.marketOpen ? 0 : 10} closed-market bps, capped at 25 bps.`}
+          />
+        </div>
+        {inventory.data && (
+          <p className="metric">
+            {Number(inventory.data.fee.totalBps)}{" "}
+            <span className="unit">bps</span>
+          </p>
+        )}
+        <svg
+          viewBox="0 0 320 115"
+          role="img"
+          aria-label="Fee increases with absolute inventory skew; off-hours adds 10 basis points"
+        >
+          <path d="M20 10V90H310" fill="none" stroke="var(--line)" />
+          <path
+            d="M25 20L165 78L305 20"
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="2"
+          />
+          <text x="20" y="110">
+            −100%
+          </text>
+          <text x="150" y="110">
+            0%
+          </text>
+          <text x="265" y="110">
+            +100%
+          </text>
+        </svg>
+        {inventory.data && <Fees fee={inventory.data.fee} />}
+      </section>
+      <section className="card span">
+        <div className="card-head">
+          <span className="label">Recent fills</span>
+        </div>
         <ApiState
           state={fills}
           label="Fills"
@@ -835,7 +869,7 @@ function Pool({ d }: { d: Deployment }) {
           </table>
         </div>
       </section>
-    </>
+    </div>
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);
