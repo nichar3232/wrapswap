@@ -39,18 +39,18 @@ The honest claim is **confidential, not anonymous**. The keeper that applies eac
 1. **Deposit.** A user calls `ShareVault.deposit(issuerToken, amount, suiAddress)` on Unichain. The vault pulls the issuer token into custody, values it in canonical shares (1e18 = one share) with the issuer's multiplier adapter, and emits `Deposited`. The keeper attests the event on Sui with `credit_deposit`. The receipt `evm:1301:<tx>:<logIndex>` is single-use on chain.
 2. **Pay.** The payer Seal-encrypts `{payee, shares, memo}` to the open batch's identity, stores the ciphertext on Walrus and calls `submit`. The Sui transaction sender is the payer, because Sui has no allowance primitive and nothing is ever pulled from an account. Once the 90 s window closes, `seal_approve_batch` lets the keeper decrypt. The keeper applies instructions in submission order, recomputes every leaf, re-encrypts each to its owner, uploads the manifest to Walrus and calls `apply_batch`. The Move code asserts `new_total == total_shares`.
 3. **Withdraw.** A withdrawal is a sealed instruction as well. At apply time the keeper moves `shares ÷ (1 − maxFee)` into an escrow leaf, so the batch total still doesn't move. It then calls `ShareVault.settleWithdrawals` on Unichain. Each withdrawal either transfers directly when custody holds the target wrapper, or swaps the other issuer's token through `WrapSwapRouter.swapExactIn` on the ParityHook pool. That swap is priced from the hook's own exact-output quote, which uses hook-output rounding. Every withdrawal runs in its own `try/catch`: a failure emits `WithdrawalSkipped(commitment, reason)` and never reverts the batch. The keeper then calls `debit_withdrawal`. The total drops by exactly the shares that left custody; unused fee reservation is refunded; a skipped withdrawal's credit returns to its owner in the same root.
-4. **Audit.** `/pay` is one page with three steps, Deposit (Unichain, MetaMask) → Pay (Sui, Slush) → Withdraw (Unichain), and it reads Sui directly from a fullnode. `GET /pay/reserves` reads both chains and returns `invariant: suiTotalShares == vaultShares && vaultSharesHeld >= vaultShares`. The `/pay` UI shows it as a badge next to your Seal-decrypted balance.
+4. **Audit.** The app's **Send** panel ("Send shares to someone", `/app?tab=send`) walks the three steps: Deposit (Unichain) → Send (Sui, sealed for the 90 s window) → the recipient withdraws to any platform's wrapper through the router. It reads Sui directly from a fullnode, takes assets and platforms from `/assets`, and records every leg in a tracker receipt. Demo mode (no injected wallet) runs the whole flow with simulated states; its numbers still come from live data (multipliers, the fee feed with the hook's rounding, the reserves). `GET /pay/reserves` reads both chains and returns `invariant: suiTotalShares == vaultShares && vaultSharesHeld >= vaultShares`. The Send panel shows it next to your Seal-decrypted balance.
 
 ## Sui components and the job each does
 
 | Component | Job | Where |
 | --- | --- | --- |
 | **Move package `unison_pay`** | `Pool` (u128 total, Merkle root, Walrus manifest pointer, single-use EVM receipts), `Batch` (window, envelopes), `OperatorCap`. `submit`, `apply_batch`, `credit_deposit`, `debit_withdrawal`, `pause`, `resume`. `apply_batch` enforces window close, sequence order and an unchanged total. | `sui/unison_pay/sources/pay.move`, 22 Move unit tests |
-| **Seal** | Two access policies make up the whole privacy property. `seal_approve_batch(id, &Batch, &Clock)` releases payment instructions only after the window closes, so not even the keeper can read them early. `seal_approve_leaf(id, &Pool, ctx)` releases a balance leaf only to the address it encodes. Threshold 2 of 3 open testnet key servers. | `pay.move`, `services/crank/sui/{keeper,payer}.ts`, `web/src/pay/PayApp.tsx` |
+| **Seal** | Two access policies make up the whole privacy property. `seal_approve_batch(id, &Batch, &Clock)` releases payment instructions only after the window closes, so not even the keeper can read them early. `seal_approve_leaf(id, &Pool, ctx)` releases a balance leaf only to the address it encodes. Threshold 2 of 3 open testnet key servers. | `pay.move`, `services/crank/sui/{keeper,payer}.ts`, `web/src/app/Send.tsx` |
 | **Walrus** | Stores every sealed payment instruction and one manifest per root holding all encrypted leaves. Holders fetch their own leaf and Merkle path from it. | `services/crank/sui/lib.ts` |
 | **Clock** | Window gating inside `seal_approve_batch` and `apply_batch`. | `pay.move` |
 | **Move object model** | Payer = transaction sender (no allowances), a shared Batch per window, and `OperatorCap` as the capability for root updates. | `pay.move` |
-| **dapp-kit (Slush)** | Sui wallet connection, personal-message signing for the Seal `SessionKey`, and transaction signing on `/pay`. Reads and execution go through `SuiGrpcClient` (public JSON-RPC is retired on testnet). | `web/src/pay/PayApp.tsx` |
+| **dapp-kit (Slush)** | Sui wallet connection, personal-message signing for the Seal `SessionKey`, and transaction signing in the Send panel. Reads and execution go through `SuiGrpcClient` (public JSON-RPC is retired on testnet). | `web/src/app/Send.tsx` |
 
 On the EVM side, `ShareVault.sol` holds custody on Unichain Sepolia and settles through the existing `WrapSwapRouter` → Uniswap v4 `PoolManager` → `ParityHook`.
 
@@ -97,7 +97,9 @@ No key is in the repository. The payee was funded with 0.1 SUI from the payer ([
 ```sh
 pnpm dev:sui-keeper                       # long-lived keeper: credits deposits, applies windows, settles withdrawals
 pnpm dev:pay-api                          # GET /pay/reserves on :5403 (the full API registers the same route)
-API_PORT=5403 WEB_PORT=5402 pnpm dev:web  # then open http://127.0.0.1:5402/pay
+API_PORT=5403 WEB_PORT=5402 pnpm dev:web  # then open http://127.0.0.1:5402/app?tab=send
+# or one process: built web + /api/pay/reserves, everything else proxied to the live stack
+PAY_WEB_DIST=dist/web PAY_UPSTREAM=http://127.0.0.1:13010 PAY_API_PORT=5402 pnpm dev:pay-api
 DEMO_CHECK=1 scripts/dev/sui-demo         # scripted end-to-end check (stop the keeper first: one process per pool)
 ```
 
@@ -233,7 +235,7 @@ Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T13:05:52.515Z (DEMO_CHECK=1
 
 Run on 2026-09-26 against live Sui testnet and Unichain Sepolia, with the keeper running as `pnpm dev:sui-keeper` and the page served from a production build. Eleven screenshots are in `~/wrapswap-run/status/sui-shots/`; harness: `services/crank/sui/clickthrough.ts`.
 
-How it was driven: headless Chromium can't operate the Slush or MetaMask extensions, so the harness injects stand-ins that sign with the same demo keys. One is an EIP-1193 provider in the MetaMask path; the other is a wallet-standard Sui wallet that dapp-kit lists as "Demo Wallet (test harness)". Everything else is real: the `/pay` page, both chains, the Seal key servers, Walrus and the keeper. To do the same by hand, import the two Sui keys into Slush and `DEMO_MNEMONIC` index 1 into MetaMask.
+How it was driven: headless Chromium can't operate the Slush or MetaMask extensions, so the harness injects stand-ins that sign with the same demo keys. One is an EIP-1193 provider in the MetaMask path; the other is a wallet-standard Sui wallet that dapp-kit lists as "Demo Wallet (test harness)". Everything else is real: the page, both chains, the Seal key servers, Walrus and the keeper. To do the same by hand, import the two Sui keys into Slush and `DEMO_MNEMONIC` index 1 into MetaMask.
 
 | # | Step | Evidence |
 | --- | --- | --- |
@@ -255,7 +257,7 @@ After the run, `GET /pay/reserves` returned `suiTotalShares == vaultShares == 31
 
 - Move: `cd sui/unison_pay && sui move test`, 22/22. Covers window gating, sequence ordering, total unchanged on internal batches, u128 above u64, single-use receipts, pause/resume, foreign cap, and allow/deny for both Seal policies.
 - Solidity: `forge test --match-path contracts/test/ShareVault.t.sol`. That's 14 tests × both currency orderings, including a 1000-run solvency fuzz and the forced `WithdrawalSkipped` (`maxFeeBps` below the live fee), plus a fork test against the live Unichain deployment, run when `UNICHAIN_SEPOLIA_RPC_URL` is set.
-- API: `vitest run api/src/routes/pay.test.ts`, 7/7.
+- API: `vitest run api/src/routes/pay.test.ts`, 5/5 (`GET /pay/reserves`).
 - End to end: `DEMO_CHECK=1 scripts/dev/sui-demo`. Output above; the log is written to `~/wrapswap-run/logs/sui-demo.log`.
 
 ## Disclosures and limits

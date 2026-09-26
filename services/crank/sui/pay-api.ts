@@ -1,6 +1,6 @@
 // Standalone /pay server (no Postgres, no indexer): `pnpm dev:pay-api`.
 // Serves GET /pay/reserves (and /api/pay/reserves). With PAY_WEB_DIST pointing at a `vite build` output it also serves
-// the web app with an SPA fallback, so /pay works from a single long-lived process.
+// the web app with an SPA fallback, so the app works from a single long-lived process.
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import Fastify from 'fastify';
@@ -27,8 +27,20 @@ const types: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.woff2': 'font/woff2',
 };
+// PAY_UPSTREAM (e.g. the live stack on http://127.0.0.1:13010) answers every other /api, /rpc and /crank request.
+const upstream = process.env.PAY_UPSTREAM;
+const proxied = (url: string) => /^\/(api|rpc|crank)(\/|$|\?)/.test(url);
+app.addContentTypeParser('application/json', { parseAs: 'string' }, (_req, body, done) => done(null, body));
 if (dist && existsSync(dist)) {
-  app.setNotFoundHandler((req, reply) => {
+  app.setNotFoundHandler(async (req, reply) => {
+    if (upstream && proxied(req.url)) {
+      const r = await fetch(upstream + req.url, {
+        method: req.method,
+        headers: { 'content-type': String(req.headers['content-type'] ?? 'application/json') },
+        body: req.method === 'GET' || req.method === 'HEAD' ? undefined : (req.body as string),
+      });
+      return reply.status(r.status).type(r.headers.get('content-type') ?? 'application/json').send(Buffer.from(await r.arrayBuffer()));
+    }
     if (req.method !== 'GET' || req.url.startsWith('/api/')) return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'Unknown route' } });
     const path = normalize(decodeURIComponent(req.url.split('?')[0])).replace(/^(\.\.[/\\])+/, '');
     const file = join(dist, path);
