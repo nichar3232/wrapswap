@@ -24,6 +24,7 @@ const INTERFACES: [string, string][] = [
   ["IMockIssuerToken.sol", "IMockIssuerToken"],
   ["IIssuerRegistry.sol", "IIssuerRegistry"],
   ["INyseCalendar.sol", "INyseCalendar"],
+  ["IWrapSwapRouter.sol", "IWrapSwapRouter"],
 ];
 // Events inherited from IERC20 are standard and not part of the indexer contract.
 const EXCLUDED_EVENTS = new Set(["Transfer", "Approval"]);

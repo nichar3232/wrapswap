@@ -450,6 +450,9 @@ export const schemas = {
           "darkCrossHook": {
             "$ref": "Address"
           },
+          "wrapSwapRouter": {
+            "$ref": "Address"
+          },
           "eas": {
             "type": [
               "string",
@@ -1913,6 +1916,7 @@ export type Deployment = {
     "oracle": Address;
     "parityHook": Address;
     "darkCrossHook": Address;
+    "wrapSwapRouter"?: Address;
     "eas": `0x${string}` | null;
     "easIndexer": `0x${string}` | null;
   };

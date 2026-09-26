@@ -833,6 +833,7 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
         "oracle": { "$ref": "Address" },
         "parityHook": { "$ref": "Address" },
         "darkCrossHook": { "$ref": "Address" },
+        "wrapSwapRouter": { "$ref": "Address" },
         "eas": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{40}$" },
         "easIndexer": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{40}$" }
       }
@@ -2287,3 +2288,95 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
 | Mock issuer ERC-20s with issuer-faithful decimals and multiplier | `IMockIssuerToken.multiplier/setMultiplier`, §10 decimals 6/18 |
 | Deployment files by network, consumers use NETWORK | §4 `Deployment.network/chainId`, `deploymentPath(network)`, `.gitignore` `deployments/anvil.json` |
 | Demo accounts from DEMO_MNEMONIC by fixed index | `Deployment.demoAccounts` (`mnemonicSource`, `index`), §10 accounts, §7 crank index 4 |
+
+## 13. Addendum (2026-09-26, post-freeze): WrapSwapRouter
+
+Additive change closing `interface-change-requests/web.md` (live Convert had no router with a minimum output). No
+frozen element changes meaning; `Deployment.contracts.wrapSwapRouter` is a new **optional** key so older manifests and
+fixtures stay valid. Every deployment from `Deploy.s.sol` writes it, and consumers treat its absence as "live Convert
+unavailable".
+
+### 13.1 IWrapSwapRouter — `contracts/src/interfaces/IWrapSwapRouter.sol`
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+
+/// @title IWrapSwapRouter
+/// @notice Thin single-pool swap router over the v4 PoolManager with user-side slippage and deadline protection.
+/// @dev Payment is a plain ERC-20 allowance from msg.sender to the router (no Permit2). The router is a trusted
+///      router of the eligibility module, so it only forwards ParityHook hookData v1 naming msg.sender as swapper:
+///      empty hookData is replaced with abi.encode(uint8(1), msg.sender, bytes32(0)); any other hookData must be
+///      exactly that layout with swapper == msg.sender and is passed through unchanged (attestationUid preserved).
+interface IWrapSwapRouter {
+    struct ExactInputParams {
+        PoolKey key;
+        bool zeroForOne;
+        uint128 amountIn;
+        uint128 amountOutMin;
+        address recipient;
+        uint256 deadline;
+        bytes hookData;
+    }
+
+    struct ExactOutputParams {
+        PoolKey key;
+        bool zeroForOne;
+        uint128 amountOut;
+        uint128 amountInMax;
+        address recipient;
+        uint256 deadline;
+        bytes hookData;
+    }
+
+    error NotPoolManager();
+    error DeadlineExpired(uint256 deadline, uint256 timestamp);
+    error TooLittleReceived(uint256 amountOut, uint256 amountOutMin);
+    error TooMuchRequested(uint256 amountIn, uint256 amountInMax);
+    error SwapperMismatch(address swapper, address sender);
+    error InvalidHookData();
+
+    function poolManager() external view returns (IPoolManager);
+
+    /// @notice Sells exactly `amountIn` of the input currency; reverts unless at least `amountOutMin` is received.
+    function swapExactIn(ExactInputParams calldata params) external returns (uint256 amountOut);
+
+    /// @notice Buys exactly `amountOut` of the output currency; reverts if more than `amountInMax` would be paid.
+    function swapExactOut(ExactOutputParams calldata params) external returns (uint256 amountIn);
+}
+```
+
+### 13.2 Semantics
+
+- One swap per `PoolManager.unlock`. The swap runs with the extreme price limit (`MIN_SQRT_PRICE + 1` /
+  `MAX_SQRT_PRICE - 1`), and the slippage bound is checked on the resulting delta. The input is then pulled with
+  `transferFrom(msg.sender → PoolManager)` (`sync`/`settle`), and the output is `take`n to `recipient`. The router
+  holds no balances between calls.
+- Exact input: `amountSpecified = -amountIn`. Reverts `TooLittleReceived(out, amountOutMin)` when `out < amountOutMin`.
+- Exact output: `amountSpecified = +amountOut`. Reverts `TooLittleReceived(out, amountOut)` on a partial fill and
+  `TooMuchRequested(in, amountInMax)` when `in > amountInMax`.
+- `block.timestamp > deadline` reverts `DeadlineExpired(deadline, timestamp)` before unlocking.
+- hookData: empty becomes ParityHook v1 `abi.encode(uint8(1), msg.sender, bytes32(0))`. Otherwise it must be exactly
+  96 bytes of v1 with `swapper == msg.sender` (`SwapperMismatch`), and it is forwarded unchanged, which is how a caller
+  supplies its `attestationUid`. Anything else reverts `InvalidHookData()`.
+- Hook reverts (`NotEligible`, `PegGuardTripped`, `AdapterUnhealthy`, …) surface wrapped by the PoolManager, as with
+  PoolSwapTest.
+- Approval: plain ERC-20 `approve(wrapSwapRouter, amountIn)` (or `amountInMax`). Permit2 is not supported.
+
+### 13.3 Deployment and trust
+
+- `Deploy.s.sol` creates `WrapSwapRouter(poolManager)` immediately after `DarkCrossHook`, so every earlier address
+  and the §10 currency ordering are unchanged. It calls `eligibility.setTrustedRouter(wrapSwapRouter, true)` and
+  writes `contracts.wrapSwapRouter` and `blocks.wrapSwapRouter`.
+- `swapRouter` (PoolSwapTest) is kept for seeding and tests; user-facing Convert uses `wrapSwapRouter`.
+
+### 13.4 TypeScript
+
+`@wrapswap/types` exports `IWrapSwapRouterAbi` (also `abis.IWrapSwapRouter`), generated like the other §1 interfaces.
+Web live Convert, exact input: `approve(tokenIn, wrapSwapRouter, amountIn)`, then
+`swapExactIn({ key: pool.key, zeroForOne: tokenIn == currency0, amountIn, amountOutMin, recipient: account,
+deadline: now + 600, hookData: encodeParityHookData({ swapper: account, attestationUid }) })`, where `amountOutMin`
+is the displayed minimum output (quote − 0.5%).
