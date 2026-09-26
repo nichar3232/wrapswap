@@ -1302,12 +1302,6 @@ export const schemas = {
       },
       "reducesImbalance": {
         "type": "boolean"
-      },
-      "closedPips": {
-        "type": "integer"
-      },
-      "marketOpen": {
-        "type": "boolean"
       }
     }
   },
@@ -1760,49 +1754,6 @@ export const schemas = {
       "anvil",
       "unichain-sepolia"
     ]
-  },
-  "NyseResponse": {
-    "type": "object",
-    "additionalProperties": false,
-    "required": [
-      "open",
-      "block",
-      "chainTimestamp",
-      "nextTransition",
-      "nextState",
-      "secondsUntilTransition",
-      "closedFeePips",
-      "source"
-    ],
-    "properties": {
-      "open": {
-        "type": "boolean"
-      },
-      "block": {
-        "$ref": "UInt"
-      },
-      "chainTimestamp": {
-        "$ref": "UInt"
-      },
-      "nextTransition": {
-        "$ref": "UInt"
-      },
-      "nextState": {
-        "enum": [
-          "OPEN",
-          "CLOSED"
-        ]
-      },
-      "secondsUntilTransition": {
-        "type": "integer"
-      },
-      "closedFeePips": {
-        "type": "integer"
-      },
-      "source": {
-        "const": "chain"
-      }
-    }
   },
   "OrderListResponse": {
     "type": "object",
@@ -3053,8 +3004,6 @@ export type FeeBreakdown = {
   "skewX18": Int;
   "postSkewX18": Int;
   "reducesImbalance": boolean;
-  "closedPips"?: number;
-  "marketOpen"?: boolean;
 };
 
 export type FeesResponse = {
@@ -3160,17 +3109,6 @@ export type InventoryResponse = {
 };
 
 export type Network = "anvil" | "unichain-sepolia";
-
-export type NyseResponse = {
-  "open": boolean;
-  "block": UInt;
-  "chainTimestamp": UInt;
-  "nextTransition": UInt;
-  "nextState": "OPEN" | "CLOSED";
-  "secondsUntilTransition": number;
-  "closedFeePips": number;
-  "source": "chain";
-};
 
 export type OrderListResponse = {
   "items": Array<OrderView>;
@@ -3465,14 +3403,6 @@ export const routes = [
     "backing": "chain: IEligibility.check, ParityHook.quote, V4Quoter simulation, DarkCrossHook.currentBatch, IPriceOracle.getMid; table: eligibility_checks (insert)"
   },
   {
-    "name": "nyse",
-    "method": "GET",
-    "path": "/nyse",
-    "query": null,
-    "response": "NyseResponse",
-    "backing": "chain: latest block timestamp, NyseCalendar.isOpen, nextTransition"
-  },
-  {
     "name": "currentBatch",
     "method": "GET",
     "path": "/batches/current",
@@ -3572,7 +3502,6 @@ export type RouteResponses = {
   "fees": FeesResponse;
   "quote": QuoteResponse;
   "route": RouteResponse;
-  "nyse": NyseResponse;
   "currentBatch": CurrentBatchResponse;
   "batches": BatchListResponse;
   "batch": BatchDetailResponse;
@@ -3594,7 +3523,6 @@ export type RouteQueries = {
   "fees": Record<string, never>;
   "quote": SwapQuery;
   "route": RouteQuery;
-  "nyse": Record<string, never>;
   "currentBatch": AssetQuery;
   "batches": BatchesQuery;
   "batch": AssetQuery;

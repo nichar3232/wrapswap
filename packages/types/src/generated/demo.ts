@@ -136,7 +136,6 @@ export const DEMO = {
       network: "anvil",
       chainId: 31337,
       warpTimestamp: 1790692200,
-      marketOpen: true,
       parityFill: {
         feePips: 200,
         feeBps: "2.00",
@@ -161,8 +160,6 @@ export const DEMO = {
       network: "unichain-sepolia",
       chainId: 1301,
       warpTimestamp: null,
-      marketOpen: false,
-      nextOpen: 1790602200,
       seedBlock: 63586745,
       label: "Seed state at deploy block 63586745",
       seedInventory: {

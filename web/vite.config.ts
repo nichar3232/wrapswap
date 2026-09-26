@@ -16,6 +16,11 @@ export default defineConfig(({ mode }) => {
       port: Number(env.WEB_PORT || 13005),
       strictPort: true,
       proxy: {
+        // Demo relay (services/relay), served as /api/demo/* like scripts/dev/serve-web.mjs. Listed before /api.
+        "/api/demo": {
+          target: `http://127.0.0.1:${env.RELAY_PORT || 18210}`,
+          rewrite: (p) => p.replace(/^\/api/, ""),
+        },
         "/api": {
           target: `http://127.0.0.1:${env.API_PORT || 18005}`,
           rewrite: (p) => p.replace(/^\/api/, ""),

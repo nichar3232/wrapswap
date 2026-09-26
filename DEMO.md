@@ -1,4 +1,4 @@
-# WrapSwap demo runbook
+# Unison demo runbook
 
 All commands run on the Mac mini from `~/wrapswap` on `main`. Nothing is hosted: the demo runs from the mini
 through an SSH tunnel to the presenting laptop. The only live network is **Unichain Sepolia (chain 1301)**, and
@@ -39,11 +39,16 @@ npx playwright test e2e/live/router-assets.spec.ts     # Convert on every asset 
 scripts/dev/dark-batch-live NVDA                       # one Dark Cross batch (AAPL | NVDA | TSLA), settled by the crank
 ```
 
-Before going on stage: `scripts/dev/preflight`. It prints one PASS/FAIL line per check and exits 1 on any failure:
-- stack health (API, crank, web, relay) and the public URL
+Before going on stage, run `pnpm preflight` (`scripts/dev/preflight`). It prints one PASS/FAIL line per check and exits 1 on any failure:
+- stack health: API, crank, local web, relay, and the Sui keeper (live PID and fresh state file)
+- Funnel on every public ingress IP: `/`, `/app`, `/developers`, `/api/health`, `/api/assets`, `/api/pay/reserves`, plus `/mcp` initialize and tools/list, and one external fetch
+- API routes per asset (AAPL, NVDA, TSLA): `/pool`, `/batches`, `/quote`, and the current Dark Cross phase (not stalled, oracle fresh)
 - `CROSS_FEE_PIPS = 100` on every DarkCrossHook
-- ETH for the crank, deployer and demo relay
-- relay token balances covering a 100-share action per wrapper
+- ETH balances: crank, deployer, demo relay, and the wallets in `deployments/preflight-wallets.json`
+- demo relay: each wrapper's balance covers a 100-share action and is approved to the router and to its DarkCrossHook
+- SUI balances: the keeper/operator and the relay's two Sui identities
+- Sui solvency, read from both chains: Sui pool `total_shares` ≤ ShareVault shares held; the pool is not paused
+- the MCP relay budget token is configured
 
 **Demo relay** (`services/relay`, started by `live-up` in tmux window `relay`, port 18210, served as `/api/demo/*`; its public address is in the manifest under `demo.relay`):
 - It signs with a dedicated, freshly generated demo key `0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C`. That key is neither the deployer nor the crank key and is not mnemonic-derived.
@@ -67,7 +72,7 @@ Before going on stage: `scripts/dev/preflight`. It prints one PASS/FAIL line per
 - Secrets come from `~/wrapswap-run/env/onchain.env` (`DEMO_MNEMONIC`, `CRANK_PRIVATE_KEY`, `UNICHAIN_SEPOLIA_RPC_URL`). Override the path with `LIVE_ENV=...`.
 - Web is the **production build** (`dist/web`, rebuilt by `live-up`) served by `scripts/dev/serve-web.mjs`, never the Vite dev server. On the single port 13010 it serves `/` (landing) and `/app`, and proxies `/api` → 18010, `/crank` → 18110 and `/rpc` → `RPC_URL`, so RPC keys stay server-side.
 - `/api`, `/crank` and `/rpc` are rate-limited to 600 requests/min per client IP (`RATE_LIMIT_PER_MIN`); over the limit returns 429. Behind Funnel the client IP comes from `X-Forwarded-For`. One open `/app` tab uses about 100/min.
-- Processes run in the tmux session `wrapswap-live` with one window each for indexer, api, crank and web (`tmux attach -t wrapswap-live`). Logs go to `logs/live-{indexer,api,crank,web}.log`.
+- Processes run in the tmux session `wrapswap-live`, with one window each for indexer, api, crank, sui-keeper, web, relay and mcp (`tmux attach -t wrapswap-live`). Logs go to `logs/live-<window>.log`.
 
 ## 2. Local anvil stack (offline backup)
 
@@ -131,7 +136,7 @@ the hook's inventory (100% to the LP), and there's no market-hours input. Dark C
   - Deployer, imbalance-increasing, at deploy time: 100 mAAPLx → 98.714666 mcbAAPL at 5.14 bps: [0x53058b66…6967](https://sepolia.uniscan.xyz/tx/0x53058b66852381de1aab326442304d553ab204d248215fc7c00a18d36cf06967)
 - Test funds: `TestShareFaucet.claim()` (`0x108fb6DdBCAc39cC49ACB075a04714e17B49d30A`) sends 1,000 of each of the 6 wrappers once per 24 h. `/api/faucet/<address>` shows the next claim time per token.
 
-### 4.2 Pool (per asset)
+### 4.2 Liquidity (per asset)
 
 - `/api/pool/<asset>` gives inventory per wrapper, skew %, the fee in each direction, the cheap direction, and LP fees split into base and skew (from `Converted` events).
 - Talking point: the skew fee prices the inventory imbalance. When inventory can't cover a swap, it falls through to the same pool's liquidity, guarded to within 50 bps of parity.
@@ -150,7 +155,7 @@ Each batch below was settled by the crank. Crossed volume pays 1 bp per side to 
 
 ### 4.4 Uniscan proof
 
-All deployed contracts are verified; the full table is in `~/wrapswap-run/status/unichain.md`.
+All deployed contracts are verified. The full table, generated from the Uniscan API, is under Contracts in [README.md](README.md).
 
 - ParityHook (flags `0x20c8`, one hook for all three pools): https://sepolia.uniscan.xyz/address/0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8#code
 - DarkCrossHooks: AAPL https://sepolia.uniscan.xyz/address/0xBac8C71CfbB1101221cb4699533d79Df188C4898#code · NVDA https://sepolia.uniscan.xyz/address/0xadf79997624aFeCE9d3E9391d7B51F59a8fB691a#code · TSLA https://sepolia.uniscan.xyz/address/0x223a9d724F5bbF4e76830edDf4858fdD838c3a3c#code
@@ -166,3 +171,33 @@ any redeploy, then run `pnpm types` (verify-demo re-derives it):
 ```sh
 NETWORK=unichain-sepolia RPC_URL=https://sepolia.unichain.org pnpm exec tsx scripts/dev/demo-variant.ts && pnpm types
 ```
+
+### 4.6 Send (Unison Pay: Unichain + Sui)
+
+- In the app: **Send**. With a wallet, the panel walks Deposit (Unichain ShareVault) → Send (a Seal-encrypted payment on Sui, applied when the pool's 90 s window closes) → the recipient withdraws into either issuer's wrapper. Without a wallet it calls the relay's `POST /api/demo/send` (the Sui confidential path above) and lists every Unichain and Sui tx with explorer links.
+- Reserves: `/api/pay/reserves` reads both chains. `invariant` means Sui total = vault shares, and `solvent` means Sui total ≤ vault shares held.
+- Talking point: sending costs Sui gas only. A withdrawal into the other issuer's wrapper converts through ParityHook and pays the normal Convert fee. The claim is confidential, not anonymous: the keeper sees amounts.
+- Verified live runs and their hashes: [submission/sui.md](submission/sui.md). Design as shipped: [docs/sui-payments-plan.md](docs/sui-payments-plan.md).
+
+### 4.7 Agents (MCP)
+
+- Remote endpoint: `https://nichars-mac-mini.tail43cacc.ts.net/mcp` (Streamable HTTP). Run `claude mcp add --transport http unison <url>`, then ask for a quote or a convert.
+- Tools: `list_assets`, `get_pool`, `quote_convert`, `get_batch`, `convert`, `commit_dark_order`. Execution goes through the relay with the MCP budget (20 actions per 10 minutes, 100 shares per action). See [packages/mcp/README.md](packages/mcp/README.md).
+
+### 4.8 Market simulation (simulated, not live)
+
+**Simulated.** External prices are synthetic; the contracts are the real deployment on a local Unichain Sepolia fork
+(blocks 63604933–63606682), never the live pools. 1,500 trades over 380 ticks
+(arb 404, regular 1074, whale 18, Claude agents via MCP 4), with a 40 bps outside
+gap opened at the start and again mid-run. Figures below are copied by script from `web/public/sim/run.json`.
+
+| Asset | Outside gap, bps (start → end) | Ticks to < 15 bps (start / 2nd shock) | Max \|skew\| | Max skew fee (bps) | LP fees (shares) | Protocol fees (shares) | Peg deviation, steady state, bps (mean / p95) |
+|---|---|---|---|---|---|---|---|
+| AAPL | +40.0 → -0.3 | 4 / 3 | 0.992 | 15.00 | 24.047 | 1.724 | 11.0 / 22.8 |
+| NVDA | -40.0 → -5.0 | 6 / 3 | 0.826 | 12.54 | 26.483 | 1.572 | 7.4 / 18.8 |
+| TSLA | +40.0 → +0.2 | 2 / 11 | 0.999 | 15.00 | 18.186 | 2.023 | 11.6 / 25.4 |
+
+Replay: `/sim.html` (linked from `/developers`). Finding from the exploratory run: a persistent one-sided gap larger
+than the skew fee at full skew (15 bps) plus the 2 bps base plus the arb threshold drains the short side of the
+inventory (seen at 10k shares per side). Mitigations: deeper inventory, a steeper skew curve or higher cap, or keeper rebalancing.
+Details: `~/wrapswap-run/status/sim.md`, harness in `packages/sim`.

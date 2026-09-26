@@ -54,7 +54,6 @@ export function fixture(eventName: string, index = 0, overrides: any = {}) {
       IPriceOracle: "oracle",
       IMockPriceOracle: "oracle",
       IIssuerRegistry: "registry",
-      INyseCalendar: "calendar",
     } as any
   )[owner];
   const emitter = key
@@ -77,7 +76,7 @@ export function fixture(eventName: string, index = 0, overrides: any = {}) {
   };
 }
 export function chainMock() {
-  const f = canonical.feeBreakdown(600n, 400n, true);
+  const f = canonical.feeBreakdown(600n, 400n);
   return {
     getChainId: async () => 31337,
     getBlockNumber: async () => 1n,
@@ -137,8 +136,6 @@ export function chainMock() {
       if (fn === "extsload") return hash(1);
       if (["inventory", "inventoryShares", "feesAccrued"].includes(fn))
         return 100n;
-      if (fn === "isOpen") return true;
-      if (fn === "nextTransition") return 1790712000n;
       if (fn === "currentBatch") return [1n, 2, 20n];
       if (fn === "participants") return [deployment.deployer];
       if (fn === "getMid") return [1012500000000000000n, 1790692200n];

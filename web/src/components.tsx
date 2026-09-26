@@ -1,68 +1,51 @@
-import type { FeeBreakdown, Route } from "@wrapswap/types";
+import type { Route } from "@wrapswap/types";
+import { fmtShares } from "./lib/format";
+
 export function RouteBadge({ route }: { route: Route }) {
   return (
-    <span
-      className={`pill ${route.startsWith("BLOCKED") ? "error" : "good"}`}
-      data-testid="route-badge"
-    >
+    <span className={`pill ${route.startsWith("BLOCKED") ? "error" : "good"}`} data-testid="route-badge">
       {route}
     </span>
   );
 }
-/** Total fee always visible; the off-hours premium is labelled inline; the breakdown expands on demand. */
-export function Fees({
-  fee,
-  open = false,
-  onToggle,
+
+/**
+ * The Convert fee split, in shares. Both parts go to the LP (the protocol takes nothing on Convert). The skew fee is
+ * charged only when the trade increases the inventory imbalance; a rebalancing trade shows 0 and says so.
+ */
+export function FeeRows({
+  basePips,
+  skewPips,
+  baseFee,
+  skewFee,
+  reducesImbalance,
 }: {
-  fee: FeeBreakdown;
-  open?: boolean;
-  onToggle?: () => void;
+  basePips: number;
+  skewPips: number;
+  baseFee: bigint;
+  skewFee: bigint;
+  reducesImbalance: boolean;
 }) {
   return (
-    <div className={`fees${open ? " open" : ""}`} data-testid="fee-breakdown">
-      <div className="fee-total">
-        <span className="fee-label">
-          Fee{" "}
-          <Tip text="2 bps base + up to 13 bps for inventory skew + 10 bps while NYSE is closed. Max 25 bps." />
-        </span>
-        <span className="fee-value">{fee.totalBps} bps</span>
-        {onToggle && (
-          <button
-            type="button"
-            className="link-btn"
-            aria-expanded={open}
-            onClick={onToggle}
-          >
-            {open ? "Hide breakdown" : "Breakdown"}
-          </button>
-        )}
+    <dl className="fee-rows" data-testid="fee-breakdown">
+      <div>
+        <dt>
+          Base fee <small>{(basePips / 100).toFixed(2)} bps · to LP</small>
+        </dt>
+        <dd>{fmtShares(baseFee, 4)}</dd>
       </div>
-      {!fee.marketOpen && (
-        <p className="premium">
-          NYSE closed: +{fee.closedPips / 100} bps off-hours premium
-        </p>
-      )}
-      <dl className="fee-breakdown">
-        <dt>Base fee</dt>
-        <dd>{fee.basePips / 100} bps</dd>
-        <dt>Inventory skew</dt>
-        <dd>{(fee.skewPips / 100).toFixed(2)} bps</dd>
-        <dt>Closed-market add-on</dt>
-        <dd>{fee.closedPips / 100} bps</dd>
-      </dl>
-    </div>
+      <div>
+        <dt>
+          Skew fee{" "}
+          <small>{reducesImbalance || skewPips === 0 ? "0 — this trade rebalances the pool" : `${(skewPips / 100).toFixed(2)} bps · to LP`}</small>
+        </dt>
+        <dd>{fmtShares(skewFee, 4)}</dd>
+      </div>
+    </dl>
   );
 }
+
 /** Hover/focus tooltip; the glyph and bubble are CSS-only so they never add DOM text. */
 export function Tip({ text }: { text: string }) {
-  return (
-    <span
-      className="tip"
-      tabIndex={0}
-      role="img"
-      aria-label={text}
-      data-tip={text}
-    />
-  );
+  return <span className="tip" tabIndex={0} role="img" aria-label={text} data-tip={text} />;
 }

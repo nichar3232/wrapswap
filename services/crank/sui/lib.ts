@@ -8,15 +8,13 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { decodeSuiPrivateKey } from '@mysten/sui/cryptography';
 import { SealClient, SessionKey } from '@mysten/seal';
 import type { Transaction } from '@mysten/sui/transactions';
+import { loadDeployment } from './config.js';
 
-// Seal testnet key servers, open mode, from docs.sui.io/sui-stack/seal/pricing (verified 2026-09-26). All three
-// answer browser CORS preflights (Studio Mirai's open server does not, so it is not used).
-export const SEAL_SERVERS = [
-  { name: 'mysten-testnet-1', objectId: '0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75', weight: 1 },
-  { name: 'mysten-testnet-2', objectId: '0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8', weight: 1 },
-  { name: 'rubynodes-open', objectId: '0x6068c0acb197dddbacd4746a9de7f025b2ed5a5b6c1b1ab44dade4426d141da2', weight: 1 },
-] as const;
-export const SEAL_THRESHOLD = 2;
+// Seal testnet key servers (open mode) and threshold come from deployments/sui-testnet.json; all of them answer
+// browser CORS preflights, since the web Send panel reads the same list.
+const { seal } = loadDeployment();
+export const SEAL_SERVERS = seal.keyServers.map((k) => ({ ...k, weight: 1 }));
+export const SEAL_THRESHOLD = seal.threshold;
 
 // Walrus testnet public endpoints (docs.wal.app network reference). Unauthenticated uploads are testnet-only.
 export const WALRUS_PUBLISHER = process.env.WALRUS_PUBLISHER ?? 'https://publisher.walrus-testnet.walrus.space';

@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unison Market Replay</title>
+<link rel="icon" href="unison-logo-transparent.svg">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Replay of a recorded simulation run (sim/run-*.json → sim/run.json). No framework; canvas charts. */
+:root, :root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f7fe; --panel: #ffffff; --ink: #05070d; --ink-soft: rgba(5,7,13,.68); --ink-mute: rgba(5,7,13,.5);
+  --hairline: rgba(5,7,13,.12); --grid: rgba(5,7,13,.07); --accent: #1f4fd1;
+  --gap: #2a78d6; --skew: #eb6834; --dark: #1baf7a; --pulse: #1f4fd1; --idle: rgba(5,7,13,.1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #07080c; --panel: #0e1016; --ink: #eef2fb; --ink-soft: rgba(238,242,251,.7); --ink-mute: rgba(238,242,251,.48);
+    --hairline: rgba(238,242,251,.1); --grid: rgba(238,242,251,.06); --accent: #5b8bff;
+    --gap: #3987e5; --skew: #d95926; --dark: #199e70; --pulse: #5b8bff; --idle: rgba(238,242,251,.09);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #07080c; --panel: #0e1016; --ink: #eef2fb; --ink-soft: rgba(238,242,251,.7); --ink-mute: rgba(238,242,251,.48);
+  --hairline: rgba(238,242,251,.1); --grid: rgba(238,242,251,.06); --accent: #5b8bff;
+  --gap: #3987e5; --skew: #d95926; --dark: #199e70; --pulse: #5b8bff; --idle: rgba(238,242,251,.09);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 14px/1.4 "Inter Tight", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-feature-settings: "tnum";
+}
+.mono { font-family: "JetBrains Mono", ui-monospace, Menlo, monospace; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 20px 24px 24px; display: grid; gap: 14px; }
+header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+header .brand { font-weight: 600; font-size: 18px; color: var(--accent); letter-spacing: -.01em; }
+header h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+.label {
+  margin-left: auto; font-size: 12px; color: var(--ink-soft); border: 1px solid var(--hairline); border-radius: 999px;
+  padding: 5px 12px; background: var(--panel);
+}
+.bar { display: flex; align-items: center; gap: 12px; }
+.bar button {
+  font: inherit; font-size: 12px; color: var(--ink); background: var(--panel); border: 1px solid var(--hairline);
+  border-radius: 8px; padding: 5px 10px; cursor: pointer; min-width: 64px;
+}
+.bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.track { flex: 1; height: 4px; background: var(--hairline); border-radius: 2px; position: relative; cursor: pointer; }
+.track > i { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 2px; }
+.track > b { position: absolute; top: -4px; width: 1px; height: 12px; background: var(--ink-mute); }
+.tick { font-size: 12px; color: var(--ink-soft); min-width: 150px; text-align: right; }
+.assets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.panel { background: var(--panel); border: 1px solid var(--hairline); border-radius: 14px; padding: 14px 16px; min-width: 0; }
+.panel h2 { margin: 0; font-size: 15px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
+.panel h2 small { font-weight: 400; font-size: 12px; color: var(--ink-mute); }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 6px; }
+.kpi .k { font-size: 11px; color: var(--ink-mute); text-transform: uppercase; letter-spacing: .04em; display: flex; align-items: center; gap: 6px; }
+.kpi .k i { width: 10px; height: 2px; border-radius: 1px; display: inline-block; }
+.kpi .v { font-size: 20px; font-weight: 500; letter-spacing: -.01em; }
+.kpi .v small { font-size: 12px; color: var(--ink-mute); font-weight: 400; }
+.chart { position: relative; }
+.chart canvas { width: 100%; display: block; }
+.chart .cap { font-size: 11px; color: var(--ink-mute); margin: 8px 0 2px; }
+.tip {
+  position: fixed; pointer-events: none; background: var(--panel); border: 1px solid var(--hairline); border-radius: 8px;
+  padding: 6px 9px; font-size: 12px; color: var(--ink); box-shadow: 0 6px 20px rgba(0,0,0,.25); display: none; z-index: 5; white-space: nowrap;
+}
+.bottom { display: grid; grid-template-columns: 1.05fr 1.25fr 1.2fr; gap: 14px; }
+.hero .v { font-size: 34px; font-weight: 500; letter-spacing: -.02em; }
+.hero .v small { font-size: 14px; color: var(--ink-mute); }
+.hero .sub { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+.hero .row { display: flex; gap: 18px; margin-top: 10px; }
+.hero .row div { font-size: 12px; color: var(--ink-mute); }
+.hero .row b { display: block; font-size: 15px; font-weight: 500; color: var(--ink); }
+.agents h3, .feed h3, .hero h3 { margin: 0 0 8px; font-size: 12px; font-weight: 500; color: var(--ink-mute); text-transform: uppercase; letter-spacing: .04em; }
+.group { display: grid; grid-template-columns: 92px 1fr 44px; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; color: var(--ink-soft); }
+.dots { display: flex; flex-wrap: wrap; gap: 3px; }
+.dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--idle); transition: background .25s, transform .25s; }
+.dots i.on { background: var(--pulse); transform: scale(1.15); }
+.dots.whale i.on { background: var(--dark); }
+.dots.llm i.on { background: var(--skew); }
+.group .n { text-align: right; color: var(--ink); }
+.feed ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 176px; overflow: hidden; }
+.feed li { font-size: 12px; color: var(--ink-soft); display: grid; grid-template-columns: 44px 1fr; gap: 6px; animation: in .4s ease; }
+.feed li > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.feed li .t { color: var(--ink-mute); }
+.feed li b { color: var(--ink); font-weight: 500; }
+.feed li .tag { display: inline-block; font-size: 10px; padding: 0 6px; border-radius: 999px; margin-right: 6px; border: 1px solid currentColor; }
+@keyframes in { from { opacity: 0; transform: translateY(-4px); } }
+footer { font-size: 11px; color: var(--ink-mute); display: flex; gap: 16px; flex-wrap: wrap; }
+.err { color: var(--skew); padding: 40px; }
+@media (max-width: 900px) {
+  .wrap { padding: 16px; }
+  .assets, .bottom { grid-template-columns: 1fr; }
+  .label { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .dots i, .feed li { transition: none; animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header>
+    <span class="brand">Unison</span>
+    <h1>Market replay</h1>
+    <span class="label mono" id="label">Simulated external prices · real deployed contracts on a Unichain Sepolia fork</span>
+  </header>
+  <div class="bar">
+    <button id="play" aria-label="Pause">Pause</button>
+    <div class="track" id="track" role="slider" aria-label="Replay position" tabindex="0"><i id="prog"></i></div>
+    <span class="tick mono" id="tick">tick 0</span>
+  </div>
+  <section class="assets" id="assets"></section>
+  <section class="bottom">
+    <div class="panel hero">
+      <h3>LP fees earned</h3>
+      <div class="v mono" id="lp">0.000 <small>shares</small></div>
+      <div class="sub">Convert fees and Dark Cross residual fees stay in the ParityHook inventory (the LP's). Convert pays the protocol nothing.</div>
+      <div class="row">
+        <div>Trades<b class="mono" id="trades">0</b></div>
+        <div>Dark Cross venue fee<b class="mono" id="proto">0.000</b></div>
+        <div>Dark batches<b class="mono" id="batches">0</b></div>
+      </div>
+    </div>
+    <div class="panel agents">
+      <h3>Agents trading this tick</h3>
+      <div id="groups"></div>
+    </div>
+    <div class="panel feed">
+      <h3>Events</h3>
+      <ol id="feed"></ol>
+    </div>
+  </section>
+  <footer class="mono" id="foot"></footer>
+</div>
+<div class="tip mono" id="tip"></div>
+<script>
+(() => {
+  const DURATION = Number(new URLSearchParams(location.search).get("seconds") || 38) * 1000;
+  const src = new URLSearchParams(location.search).get("run") || "sim/run.json";
+  const theme = new URLSearchParams(location.search).get("theme");
+  if (theme) document.documentElement.dataset.theme = theme;
+  const $ = (id) => document.getElementById(id);
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const fmt = (x, d = 1) => (x >= 0 ? "+" : "−") + Math.abs(x).toFixed(d);
+
+  fetch(src).then((r) => { if (!r.ok) throw Error(`${src}: HTTP ${r.status}`); return r.json(); }).then(start).catch((e) => {
+    $("app").innerHTML = `<p class="err">Could not load the run: ${e.message}</p>`;
+  });
+
+  function start(run) {
+    const T = run.ticks.length, A = run.meta.assets.length, MID = run.meta.midpointTick;
+    $("label").textContent = run.meta.label;
+    document.title = "Unison Market Replay";
+    $("foot").innerHTML = `<span>seed ${run.meta.seed}</span><span>${T} ticks · blocks ${run.summary?.blocks?.from ?? ""}–${run.summary?.blocks?.to ?? ""}</span>` +
+      `<span>ParityHook ${run.meta.contracts.parityHook}</span><span>chain 1301 fork</span>`;
+    // Fixed scales for the whole replay so nothing rescales mid-animation.
+    const gapMax = Math.max(45, ...run.ticks.flatMap((t) => t.assets.map((a) => Math.abs(a.gapBps)))) * 1.05;
+    const skewMax = Math.max(0.1, ...run.ticks.flatMap((t) => t.assets.map((a) => Math.abs(a.skew)))) * 1.15;
+    const tradesByTick = Array.from({ length: T }, () => new Set());
+    for (const tr of run.trades) tradesByTick[tr.tick]?.add(tr.agent);
+    for (const d of run.darkBatches) for (const o of d.orders) tradesByTick[d.tick]?.add(o.whale);
+
+    // ------------------------------------------------ asset panels
+    const panels = run.meta.assets.map((a, i) => {
+      const el = document.createElement("div");
+      el.className = "panel";
+      el.innerHTML = `<h2>${a.symbol} <small>${a.wrappers[0].symbol} ⇄ ${a.wrappers[1].symbol}</small></h2>
+        <div class="kpis">
+          <div class="kpi"><div class="k"><i style="background:var(--gap)"></i>Outside gap</div><div class="v mono" data-k="gap">–</div></div>
+          <div class="kpi"><div class="k"><i style="background:var(--skew)"></i>Pool skew</div><div class="v mono" data-k="skew">–</div></div>
+          <div class="kpi"><div class="k" title="Quoted skew fee for 100 shares: skew-increasing direction / rebalancing direction">Skew fee ↗ / ↘</div><div class="v mono" data-k="fee">–</div></div>
+        </div>
+        <div class="chart"><div class="cap">Outside-venue gap, ${a.wrappers[1].symbol} vs ${a.wrappers[0].symbol} (bps) · 0 = parity</div><canvas data-c="gap" height="140"></canvas></div>
+        <div class="chart"><div class="cap">ParityHook inventory skew · ◆ Dark Cross batch</div><canvas data-c="skew" height="100"></canvas></div>`;
+      $("assets").appendChild(el);
+      return { el, gap: el.querySelector('[data-c="gap"]'), skew: el.querySelector('[data-c="skew"]'), k: (n) => el.querySelector(`[data-k="${n}"]`) };
+    });
+
+    // ------------------------------------------------ agent grid
+    const kinds = [
+      ["Arbitrageurs", "arb", run.meta.arbs.map((a) => a.name)],
+      ["Users", "regular", Array.from({ length: run.meta.agents.regulars }, (_, k) => `user-${k}`)],
+      ["Whales", "whale", [...new Set(run.darkBatches.flatMap((d) => d.orders.map((o) => o.whale)))]],
+      ["Claude agents", "llm", Array.from({ length: typeof run.meta.agents.llm === "number" ? run.meta.agents.llm : 0 }, (_, k) => `llm-${k}`)],
+    ];
+    const dotOf = new Map(), countEl = {};
+    for (const [label, kind, names] of kinds) {
+      const g = document.createElement("div");
+      g.className = "group";
+      g.innerHTML = `<span>${label} · ${names.length}</span><div class="dots ${kind}"></div><span class="n mono">0</span>`;
+      const dots = g.querySelector(".dots");
+      for (const n of names) { const d = document.createElement("i"); d.title = n; dots.appendChild(d); dotOf.set(n, d); }
+      if (!names.length) dots.innerHTML = `<span style="color:var(--ink-mute)">skipped</span>`;
+      countEl[kind] = g.querySelector(".n");
+      $("groups").appendChild(g);
+    }
+
+    // ------------------------------------------------ event feed (built once, revealed as ticks pass)
+    const evts = [];
+    evts.push({ tick: 0, tag: "shock", html: `<b>40 bps gap opens</b> on all three assets` });
+    evts.push({ tick: MID, tag: "shock", html: `<b>Second 40 bps gap</b>, the other way` });
+    for (const d of run.darkBatches)
+      evts.push({ tick: d.tick, tag: "dark", html: `<b>Dark Cross ${d.asset}</b> batch ${d.batchId}: ${Math.round(d.crossedShares).toLocaleString()} crossed · ${Math.round(d.residualShares).toLocaleString()} residual → LP` });
+    for (const l of run.llm || [])
+      evts.push({ tick: l.tick, tag: "claude", html: `<b>Claude (${l.agent})</b> ${l.asset}: ${escapeHtml(l.decision.replace(/^.*DECISION:\s*/i, "").slice(0, 90))}` });
+    evts.sort((a, b) => a.tick - b.tick);
+    let evtShown = 0;
+    const tagColor = { shock: "var(--gap)", dark: "var(--dark)", claude: "var(--skew)" };
+    function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]); }
+
+    // markers on the progress track
+    for (const m of [0, MID]) { const b = document.createElement("b"); b.style.left = `${(m / (T - 1)) * 100}%`; $("track").appendChild(b); }
+
+    // ------------------------------------------------ drawing
+    function sizeCanvas(c) {
+      const dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = Number(c.getAttribute("height"));
+      if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); c.style.height = h + "px"; }
+      const ctx = c.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { ctx, w, h };
+    }
+    const PAD = { l: 38, r: 8, t: 10, b: 18 };
+    const xOf = (w, t) => PAD.l + (t / (T - 1)) * (w - PAD.l - PAD.r);
+    function frame(c, h, max, ticksLabels, fmtY) {
+      const { ctx, w } = c;
+      ctx.clearRect(0, 0, w, h);
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.fillStyle = css("--ink-mute");
+      ctx.strokeStyle = css("--grid");
+      ctx.lineWidth = 1;
+      for (const v of ticksLabels) {
+        const y = yOf(h, v, max);
+        ctx.beginPath(); ctx.moveTo(PAD.l, y + 0.5); ctx.lineTo(w - PAD.r, y + 0.5); ctx.stroke();
+        ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.fillText(fmtY(v), PAD.l - 6, y);
+      }
+      ctx.strokeStyle = css("--hairline");
+      ctx.setLineDash([3, 3]);
+      const xm = xOf(w, MID);
+      ctx.beginPath(); ctx.moveTo(xm + 0.5, PAD.t); ctx.lineTo(xm + 0.5, h - PAD.b); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+      ctx.fillText("start", xOf(w, 0) + 12, h - 3);
+      ctx.fillText("2nd gap", xm, h - 3);
+    }
+    const yOf = (h, v, max) => PAD.t + (1 - (v + max) / (2 * max)) * (h - PAD.t - PAD.b);
+    function line(c, h, max, get, upto, color) {
+      const { ctx, w } = c;
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.lineCap = "round";
+      ctx.beginPath();
+      const n = Math.floor(upto);
+      for (let t = 0; t <= n; t++) { const x = xOf(w, t), y = yOf(h, get(t), max); t ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      if (upto > n && n + 1 < T) { const f = upto - n; ctx.lineTo(xOf(w, n + f), yOf(h, get(n) + (get(n + 1) - get(n)) * f, max)); }
+      ctx.stroke();
+      const t = Math.min(upto, T - 1), last = Math.floor(t);
+      const v = last + 1 < T ? get(last) + (get(last + 1) - get(last)) * (t - last) : get(last);
+      ctx.fillStyle = color;
+      ctx.beginPath(); ctx.arc(xOf(w, t), yOf(h, v, max), 4, 0, 7); ctx.fill();
+      ctx.strokeStyle = css("--panel"); ctx.lineWidth = 2; ctx.stroke();
+    }
+    const gapTicks = [-40, -20, 0, 20, 40].filter((v) => Math.abs(v) < gapMax);
+    const sk = skewMax > 0.6 ? 0.5 : skewMax > 0.3 ? 0.25 : 0.1;
+    const skewTicks = [-2 * sk, -sk, 0, sk, 2 * sk].filter((v) => Math.abs(v) < skewMax);
+
+    function draw(tf) {
+      const t = Math.min(tf, T - 1), ti = Math.floor(t), row = run.ticks[ti];
+      panels.forEach((p, i) => {
+        const g = sizeCanvas(p.gap), s = sizeCanvas(p.skew);
+        frame(g, 140, gapMax, gapTicks, (v) => (v > 0 ? "+" : "") + v);
+        line(g, 140, gapMax, (k) => run.ticks[k].assets[i].gapBps, t, css("--gap"));
+        frame(s, 100, skewMax, skewTicks, (v) => (v > 0 ? "+" : "") + v.toFixed(sk < 0.25 ? 1 : 2));
+        line(s, 100, skewMax, (k) => run.ticks[k].assets[i].skew, t, css("--skew"));
+        // Dark Cross batches as diamonds on the skew line
+        const ctx = s.ctx;
+        for (const d of run.darkBatches) {
+          if (d.asset !== run.meta.assets[i].symbol || d.tick > t) continue;
+          const x = xOf(s.w, d.tick), y = yOf(100, run.ticks[d.tick].assets[i].skew, skewMax);
+          ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4);
+          ctx.fillStyle = css("--dark"); ctx.strokeStyle = css("--panel"); ctx.lineWidth = 2;
+          ctx.fillRect(-4.5, -4.5, 9, 9); ctx.strokeRect(-4.5, -4.5, 9, 9); ctx.restore();
+        }
+        const a = row.assets[i];
+        p.k("gap").innerHTML = `${fmt(a.gapBps)} <small>bps</small>`;
+        p.k("skew").textContent = fmt(a.skew, 3);
+        const fee = Math.max(...a.skewFeeBps);
+        p.k("fee").innerHTML = `${fee.toFixed(1)}<small> / ${Math.min(...a.skewFeeBps).toFixed(0)} bps</small>`;
+      });
+      const lp = row.assets.reduce((x, a) => x + a.lpFeesCum, 0);
+      const pr = row.assets.reduce((x, a) => x + a.protocolFeesCum, 0);
+      $("lp").innerHTML = `${lp.toFixed(3)} <small>shares</small>`;
+      $("proto").textContent = pr.toFixed(3);
+      const c = row.cumTrades;
+      $("trades").textContent = (c.arb + c.regular + c.whale + c.llm).toLocaleString();
+      $("batches").textContent = run.darkBatches.filter((d) => d.tick <= ti).length;
+      for (const k of ["arb", "regular", "whale", "llm"]) countEl[k].textContent = c[k].toLocaleString();
+      const active = tradesByTick[ti];
+      for (const [n, d] of dotOf) d.classList.toggle("on", active.has(n));
+      while (evtShown < evts.length && evts[evtShown].tick <= ti) {
+        const e = evts[evtShown++], li = document.createElement("li");
+        li.innerHTML = `<span class="t mono">t${e.tick}</span><span><span class="tag" style="color:${tagColor[e.tag]}">${e.tag}</span>${e.html}</span>`;
+        $("feed").prepend(li);
+      }
+      $("tick").textContent = `tick ${ti} / ${T - 1} · block ${row.block}`;
+      $("prog").style.width = `${(t / (T - 1)) * 100}%`;
+    }
+
+    // ------------------------------------------------ playback
+    let playing = true, pos = 0, last = performance.now();
+    function reset(to) { pos = to; evtShown = 0; $("feed").innerHTML = ""; }
+    function loop(now) {
+      if (playing) {
+        pos += ((now - last) / DURATION) * (T - 1);
+        if (pos >= T - 1) { pos = T - 1; playing = false; $("play").textContent = "Replay"; }
+      }
+      last = now;
+      draw(pos);
+      requestAnimationFrame(loop);
+    }
+    $("play").onclick = () => {
+      if (!playing && pos >= T - 1) reset(0);
+      playing = !playing;
+      $("play").textContent = playing ? "Pause" : "Play";
+    };
+    const seek = (clientX) => { const r = $("track").getBoundingClientRect(); reset(Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * (T - 1)); };
+    $("track").onclick = (e) => seek(e.clientX);
+    $("track").onkeydown = (e) => { if (e.key === "ArrowRight") pos = Math.min(T - 1, pos + 5); if (e.key === "ArrowLeft") reset(Math.max(0, pos - 5)); };
+    // Hover: crosshair values for the tick under the cursor (drawn portion only).
+    const tip = $("tip");
+    panels.forEach((p, i) => {
+      for (const c of [p.gap, p.skew]) {
+        c.onmousemove = (e) => {
+          const r = c.getBoundingClientRect();
+          const tk = Math.round(((e.clientX - r.left - PAD.l) / (r.width - PAD.l - PAD.r)) * (T - 1));
+          if (tk < 0 || tk > pos) return (tip.style.display = "none");
+          const a = run.ticks[tk].assets[i];
+          tip.innerHTML = `${run.meta.assets[i].symbol} · tick ${tk}<br>gap ${fmt(a.gapBps)} bps · skew ${fmt(a.skew, 3)}<br>skew fee ${a.skewFeeBps[0].toFixed(1)} / ${a.skewFeeBps[1].toFixed(1)} bps`;
+          tip.style.display = "block"; tip.style.left = e.clientX + 12 + "px"; tip.style.top = e.clientY + 12 + "px";
+        };
+        c.onmouseleave = () => (tip.style.display = "none");
+      }
+    });
+    if (new URLSearchParams(location.search).get("at")) { pos = Number(new URLSearchParams(location.search).get("at")); playing = false; $("play").textContent = "Play"; }
+    requestAnimationFrame((n) => { last = n; loop(n); });
+    window.__replay = { T, seek: (t) => { reset(t); }, pause: () => { playing = false; }, play: () => { playing = true; } };
+  }
+})();
+</script>
+</body>
+</html>

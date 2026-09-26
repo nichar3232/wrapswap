@@ -34,3 +34,17 @@ export function parityOutput(
     (toRatio * 10n ** BigInt(fromDecimals))
   );
 }
+/** Share counts with fixed decimals (default two), e.g. "101.25", "101.10"; fees use four. */
+export const fmtShares = (x: bigint | string, digits = 2) => {
+  const [w, f = ""] = amount(x, 18, digits).split(".");
+  return digits ? `${w}.${f.padEnd(digits, "0")}` : w;
+};
+/** Seconds as "23h 04m", "4m 09s" or "9s". */
+export function duration(seconds: number) {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600),
+    m = Math.floor((s % 3600) / 60),
+    r = s % 60;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return h ? `${h}h ${two(m)}m` : m ? `${m}m ${two(r)}s` : `${r}s`;
+}

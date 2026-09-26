@@ -1,4 +1,15 @@
 import type { Page } from "@playwright/test";
+import { encodeErrorResult, parseAbi } from "viem";
+
+// Real revert payloads (ABI-encoded custom errors), returned the way MetaMask wraps a node's revert.
+const errors = parseAbi([
+  "error PegGuardTripped(bytes32 poolId, uint256 deviationBps)",
+  "error TooLittleReceived(uint256 amountOut, uint256 amountOutMin)",
+]);
+const REVERTS = {
+  peg: encodeErrorResult({ abi: errors, errorName: "PegGuardTripped", args: [`0x${"11".repeat(32)}`, 75n] }),
+  slippage: encodeErrorResult({ abi: errors, errorName: "TooLittleReceived", args: [1n, 2n] }),
+};
 
 export type TxMode = "ok" | "reject" | "revert-peg" | "revert-slippage";
 /**
@@ -9,7 +20,7 @@ export async function injectTestWallet(
   page: Page,
   opts: { account: string; chainId: string; known?: string[] },
 ) {
-  await page.addInitScript(({ account, chainId, known }) => {
+  await page.addInitScript(({ account, chainId, known, reverts }) => {
     const w = window as any;
     const listeners: Record<string, ((...a: unknown[]) => void)[]> = {};
     const emit = (e: string, v: unknown) => (listeners[e] || []).forEach((f) => f(v));
@@ -51,10 +62,11 @@ export async function injectTestWallet(
             await new Promise((r) => setTimeout(r, 150));
             if (w.__txMode === "reject")
               throw Object.assign(new Error("MetaMask Tx Signature: User denied transaction signature."), { code: 4001 });
-            if (w.__txMode === "revert-peg")
-              throw Object.assign(new Error("execution reverted"), { code: -32603, data: { errorName: "PegGuardTripped" } });
-            if (w.__txMode === "revert-slippage")
-              throw Object.assign(new Error("execution reverted"), { code: -32603, data: { errorName: "TooLittleReceived" } });
+            if (w.__txMode === "revert-peg" || w.__txMode === "revert-slippage")
+              throw Object.assign(new Error("Internal JSON-RPC error."), {
+                code: -32603,
+                data: { originalError: { code: 3, message: "execution reverted", data: reverts[w.__txMode === "revert-peg" ? "peg" : "slippage"] } },
+              });
             return "0x" + (++n).toString(16).padStart(64, "a");
           }
           default:
@@ -62,7 +74,7 @@ export async function injectTestWallet(
         }
       },
     };
-  }, { known: [], ...opts });
+  }, { known: [], ...opts, reverts: REVERTS });
 }
 export const setTxMode = (page: Page, mode: TxMode) =>
   page.evaluate((m) => ((window as any).__txMode = m), mode);

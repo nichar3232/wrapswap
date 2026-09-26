@@ -19,7 +19,11 @@ export class FeedError extends Error {
   }
 }
 
-/** Fetch one API route. Empty, non-JSON, non-OK or schema-invalid responses become a typed FeedError. */
+/**
+ * Fetch one API route. `params` is the query string, or for a route with a path parameter (/pool/:asset,
+ * /faucet/:address, /batches/:batchId …) the parameter value, optionally followed by "?query".
+ * Empty, non-JSON, non-OK or schema-invalid responses become a typed FeedError.
+ */
 export async function request<N extends RouteName>(
   name: N,
   params = "",
@@ -27,13 +31,16 @@ export async function request<N extends RouteName>(
 ): Promise<RouteResponses[N]> {
   const route = routes.find((r) => r.name === name)!;
   let value: unknown;
-  if (config.useMocks) {
+  // Compared on import.meta.env directly so the production build drops the mock module entirely.
+  if (import.meta.env.VITE_USE_MOCKS === "true") {
     const { mockResponse } = await import("../mocks/api");
     value = mockResponse(name, config.network, params);
   } else {
-    const path = route.path.includes(":address")
-      ? route.path.replace(":address", params)
-      : route.path + (params ? "?" + params : "");
+    let path = route.path + (params ? "?" + params : "");
+    if (route.path.includes(":")) {
+      const [value, query] = params.split("?");
+      path = route.path.replace(/:[A-Za-z]+/, encodeURIComponent(value)) + (query ? "?" + query : "");
+    }
     let r: Response;
     try {
       r = await fetch(

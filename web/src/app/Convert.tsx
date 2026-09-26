@@ -1,89 +1,91 @@
 import { useEffect, useState } from "react";
-import { formatUnits, parseUnits } from "viem";
+import { formatUnits, parseUnits, type Hash } from "viem";
 import type { Deployment, Route } from "@wrapswap/types";
-import { Fees, RouteBadge, Tip } from "../components";
-import { config } from "../config";
+import { FeeRows } from "../components";
 import { useApi, type Feed } from "../hooks/useApi";
-import { amount } from "../lib/format";
-import { allowance, approve, convertExactIn, swapOutcome } from "../wallet";
-import { SwapAnatomy, type SwapPath } from "./SwapAnatomy";
+import { amount, fmtShares } from "../lib/format";
+import { relayAmount, relayConvert } from "../relay";
+import { allowance, approve, convertExactIn, convertedOf, waitReceipt } from "../wallet";
+import { RelayLimitNote, useRelayCooldown } from "./relayUi";
+import { toShares, type Asset } from "./assets";
+import { quoteBreakdown, skewPct } from "./fees";
 import { useTx } from "./tx";
-import { Hex, Skeleton, Spinner, TxPanel, Val } from "./ui";
+import type { MoveIntent } from "./types";
+import { Hex, Spinner, TxPanel, Val } from "./ui";
 import { useWallet } from "./wallet";
 
-const ROUTE_TIPS: Record<Route, string> = {
-  PARITY: "Filled from ParityHook inventory at exact share parity.",
-  "FALL-THROUGH": "Inventory short; the remainder routes through the v4 pool curve.",
-  DARK: "Size is better crossed in the next Dark Cross batch.",
-  "BLOCKED-PEG": "Paused: the pool is more than 50 bps from NAV parity.",
-  "BLOCKED-ELIGIBILITY": "This wallet has no valid issuer eligibility attestation.",
-};
-const issuer = (t: { issuer: string }) => (t.issuer === "coinbase" ? "Coinbase" : "xStocks");
-
 type Receipt = {
-  amountIn: bigint;
-  amountOut: bigint;
-  feeAmount: bigint;
-  feeBps: string;
-  path?: SwapPath;
+  hash?: Hash;
+  simulated: boolean;
+  /** Figures read from the ParityHook Converted event (false: the quote the trade executed against). */
   exact: boolean;
+  from: string;
+  to: string;
+  basePips: number;
+  skewPips: number;
+  sharesIn: bigint;
+  sharesOut: bigint;
+  baseFee: bigint;
+  skewFee: bigint;
+  preSkew: bigint;
+  postSkew: bigint;
+  amountOut: bigint;
 };
 
-export function Convert({
-  d,
-  pool,
-  onDark,
-}: {
-  d: Deployment | undefined;
-  pool: Feed<"pool">;
-  onDark: () => void;
-}) {
+/** Convert: one wrapper to the other at share parity, through the asset's ParityHook pool. */
+export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asset; pool: Feed<"poolAsset">; intent?: MoveIntent }) {
   const w = useWallet();
-  const [reverse, setReverse] = useState(false);
+  const [fromAddr, setFromAddr] = useState<string>();
   const [input, setInput] = useState("100");
   const [approvedKey, setApprovedKey] = useState("");
-  const [lastPath, setLastPath] = useState<SwapPath>();
-  const [anatomy, setAnatomy] = useState(false);
-  const [details, setDetails] = useState(false);
-  const tx = useTx<Receipt | "approved">();
+  const [receipt, setReceipt] = useState<Receipt>();
+  const tx = useTx<unknown>();
+  const cooldown = useRelayCooldown(w.relay);
 
-  const tokens = d?.tokens;
-  const [a, b] = tokens ? (reverse ? [tokens[1], tokens[0]] : [tokens[0], tokens[1]]) : [];
+  useEffect(() => {
+    if (!intent) return;
+    setFromAddr(intent.fromToken);
+    setReceipt(undefined);
+    tx.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intent?.nonce]);
+
+  const from = asset.platforms.find((p) => p.token.address.toLowerCase() === fromAddr?.toLowerCase()) ?? asset.platforms[0];
+  const to = asset.platforms.find((p) => p !== from)!;
+  const a = from.token,
+    b = to.token;
+
   let raw = 0n;
-  const validFormat = !!a && /^\d+(\.\d*)?$/.test(input) && (input.split(".")[1]?.length || 0) <= a.decimals;
   try {
-    if (validFormat) raw = parseUnits(input, a!.decimals);
+    if (/^\d+(\.\d*)?$/.test(input) && (input.split(".")[1]?.length || 0) <= a.decimals) raw = parseUnits(input, a.decimals);
   } catch {
     raw = 0n;
   }
-  const params =
-    a && b && raw > 0n
-      ? new URLSearchParams({ tokenIn: a.address, tokenOut: b.address, amount: raw.toString(), kind: "exactIn" })
-      : null;
-  const quote = useApi("quote", params ? params.toString() : null);
-  if (params) {
-    params.set("swapper", w.address || a!.address);
+  const balance = w.balances.values[a.address];
+  const overBalance = w.balances.status === "ok" && balance !== undefined && raw > balance;
+
+  // The quote (GET /quote → ParityHook.quote()), and the route when a wallet is known (eligibility, peg guard).
+  const params = raw > 0n ? new URLSearchParams({ tokenIn: a.address, tokenOut: b.address, amount: raw.toString(), kind: "exactIn" }) : null;
+  const quote = useApi("quote", params ? params.toString() : null, 6000);
+  if (params && w.address) {
+    params.set("swapper", w.address);
     params.set("allowDark", "false");
     if (w.uid) params.set("attestationUid", w.uid);
   }
-  const route = useApi("route", w.address && params ? params.toString() : null);
-  const q = w.address ? route.data?.quote ?? quote.data : quote.data;
-  const eligibilityKnown = !!w.eligibility.data;
+  const route = useApi("route", w.address && params ? params.toString() : null, 6000);
+  const q = route.data?.quote ?? quote.data;
+  const qb = q ? quoteBreakdown(q, b) : undefined;
   const activeRoute: Route | undefined =
-    w.address && eligibilityKnown && !w.eligible
-      ? "BLOCKED-ELIGIBILITY"
-      : route.data?.route || (q ? (q.fillable ? "PARITY" : "FALL-THROUGH") : undefined);
-  const output =
-    route.data?.route === "FALL-THROUGH" ? route.data.fallThrough?.amountOut : q?.amountOut;
+    w.address && w.eligibility.data && !w.eligible ? "BLOCKED-ELIGIBILITY" : route.data?.route || (q ? (q.fillable ? "PARITY" : "FALL-THROUGH") : undefined);
+  const output = route.data?.route === "FALL-THROUGH" ? route.data.fallThrough?.amountOut : q?.amountOut;
   const minOut = output ? (BigInt(output) * 995n) / 1000n : 0n;
-  const router = d?.contracts.wrapSwapRouter ?? undefined;
-  const approvalKey = `${w.address}:${a?.address}:${raw}`;
-  const balance = a ? w.balances.values[a.address] : undefined;
-  const insufficient = w.balances.status === "ok" && balance !== undefined && raw > balance;
+  const quoteStatus = !params ? "ok" : route.data ? "ok" : quote.status;
 
-  // Live: skip the approval when the router already has enough allowance.
+  const router = d.contracts.wrapSwapRouter ?? d.router ?? undefined;
+  const approvalKey = `${w.address}:${a.address}:${raw}`;
   useEffect(() => {
-    if (config.useMocks || !w.ready || !a || !router || raw === 0n) return;
+    if (w.demo) return; // mock wallet, or the relay (which approves for itself)
+    if (!w.ready || !router || raw === 0n) return;
     let live = true;
     allowance(a.address, w.address!, router).then(
       (v) => live && v >= raw && setApprovedKey(approvalKey),
@@ -92,349 +94,207 @@ export function Convert({
     return () => {
       live = false;
     };
-  }, [w.ready, w.address, a, router, raw, approvalKey]);
+  }, [w.demo, w.relay, w.ready, w.address, a.address, router, raw, approvalKey]);
 
-  const quoteStatus = !params ? "ok" : w.address ? (route.data ? "ok" : route.status) : quote.status;
-  const blockedReason =
-    !params
-      ? input.trim() === ""
-        ? "Enter an amount to convert."
-        : `Enter a positive amount, up to ${a?.decimals ?? 18} decimals.`
-      : activeRoute === "BLOCKED-ELIGIBILITY"
-        ? `${w.eligibility.data?.reason.replaceAll("_", " ").toLowerCase()}. A valid issuer eligibility attestation is required.`
-        : activeRoute === "BLOCKED-PEG"
-          ? route.data?.reason || "Peg guard: the pool is more than 50 bps from NAV parity."
-          : insufficient
-            ? `Insufficient ${a!.symbol} balance.`
-            : !router && !config.useMocks
-              ? "Conversions are unavailable on this deployment."
-              : "";
   const blocked =
-    !!blockedReason || !q || !output || quoteStatus !== "ok" || activeRoute?.startsWith("BLOCKED") || tx.busy;
-  const approved = approvedKey === approvalKey;
+    raw === 0n
+      ? "Enter an amount."
+      : overBalance
+        ? `Not enough ${a.symbol} on ${from.name}.`
+        : activeRoute === "BLOCKED-ELIGIBILITY"
+          ? "This wallet has no issuer eligibility attestation, which Convert requires."
+          : activeRoute === "BLOCKED-PEG"
+            ? route.data?.reason || "Paused: the pool is more than 50 bps from NAV parity."
+            : activeRoute === "FALL-THROUGH"
+              ? "Hook inventory is short for this size. Try a smaller amount."
+              : w.relay && qb && qb.sharesIn > 100n * 10n ** 18n
+                ? "The demo relay moves at most 100 shares per action."
+                : "";
 
-  const doApprove = () =>
-    tx.run("Approval", async (onHash) => {
-      const sent = await approve(d!, w.address!, a!.address, router ?? d!.contracts.swapRouter, raw, { onHash });
-      setApprovedKey(approvalKey);
-      return { hash: sent.hash, simulated: sent.simulated, result: "approved" as const };
+  const finish = (hash: Hash | undefined, simulated: boolean, c: ReturnType<typeof convertedOf>, out: bigint) => {
+    setApprovedKey("");
+    w.adjust(a.address, -raw);
+    w.adjust(b.address, out);
+    pool.refresh();
+    setReceipt({
+      hash,
+      simulated,
+      exact: !!c,
+      from: from.name,
+      to: to.name,
+      basePips: q!.fee.basePips,
+      skewPips: q!.fee.skewPips,
+      sharesIn: qb!.sharesIn,
+      sharesOut: c?.sharesOut ?? qb!.sharesOut,
+      baseFee: c?.baseFee ?? qb!.baseFee,
+      skewFee: c?.skewFee ?? qb!.skewFee,
+      preSkew: qb!.preSkewX18,
+      postSkew: c?.postSkew ?? qb!.postSkewX18,
+      amountOut: out,
     });
-  const doConvert = () =>
-    tx.run("Conversion", async (onHash) => {
-      const sent = await convertExactIn(d!, w.address!, a!.address, raw, minOut, w.uid, { onHash });
-      const outcome = sent.receipt ? swapOutcome(sent.receipt, b!.address, w.address!) : undefined;
-      const path: SwapPath =
-        outcome?.path ?? (activeRoute === "FALL-THROUGH" ? "fall-through" : "inventory");
-      const out = outcome?.amountOut ?? BigInt(output!);
-      setApprovedKey("");
-      setLastPath(path);
-      w.adjust(a!.address, -raw);
-      w.adjust(b!.address, out);
-      return {
-        hash: sent.hash,
-        simulated: sent.simulated,
-        result: {
-          amountIn: raw,
-          amountOut: out,
-          feeAmount: BigInt(q!.feeAmount),
-          feeBps: q!.fee.totalBps,
-          path,
-          exact: !!outcome?.amountOut,
-        },
-      };
+  };
+  const run = async () => {
+    if (!w.address || !q || !qb || !asset.pool) return;
+    if (w.relay) {
+      // Demo relay: the server signs approve + swapExactIn; the receipt figures come from the real transaction.
+      const done = await tx.run("Convert (demo relay)", async (onHash) => {
+        const r = await relayConvert({ asset: asset.symbol, from: a.symbol, to: b.symbol, amount: relayAmount(input) });
+        onHash(r.txHash);
+        const c = convertedOf(await waitReceipt(r.txHash), b.address, w.address!);
+        finish(r.txHash, false, c, c?.amountOut ?? BigInt(r.quotedOut));
+        return { hash: r.txHash, simulated: false, result: "converted" };
+      });
+      if (done) tx.reset();
+      return;
+    }
+    if (approvedKey !== approvalKey) {
+      const ok = await tx.run("Approval", async (onHash) => {
+        const spender = router ?? d.contracts.swapRouter;
+        if (!spender) throw new Error("NoRouter");
+        const sent = await approve(d, w.address!, a.address, spender, raw, { onHash });
+        setApprovedKey(approvalKey);
+        return { hash: sent.hash, simulated: sent.simulated, result: "approved" };
+      });
+      if (!ok) return;
+    }
+    const done = await tx.run("Convert", async (onHash) => {
+      const sent = await convertExactIn(d, asset.pool!.key, w.address!, a.address, raw, minOut, w.uid, { onHash, recipient: w.address });
+      const c = sent.receipt ? convertedOf(sent.receipt, b.address, w.address!) : undefined;
+      finish(sent.hash, sent.simulated, c, c?.amountOut ?? BigInt(output!));
+      return { hash: sent.hash, simulated: sent.simulated, result: "converted" };
     });
+    // The receipt card carries the result; clear the pending panel so it isn't shown twice.
+    if (done) tx.reset();
+  };
 
-  const primary = (() => {
-    if (!d) return { label: "Connecting…", disabled: true, onClick: () => undefined };
-    if (!w.address)
-      return { label: w.busy === "connect" ? "Connecting…" : "Connect to convert", disabled: !!w.busy, onClick: w.connect };
-    if (w.wrongChain)
-      return { label: `Switch to ${w.expected.name}`, disabled: !!w.busy, onClick: w.switchChain };
-    if (activeRoute === "DARK") return { label: "Continue to Dark Cross", disabled: false, onClick: onDark };
-    if (tx.state.step === "signing") return { label: "Confirm in wallet…", disabled: true, busy: true, onClick: () => undefined };
-    if (tx.state.step === "pending")
-      return { label: approved ? "Converting…" : "Approving…", disabled: true, busy: true, onClick: () => undefined };
-    return approved
-      ? { label: "Convert through ParityHook", disabled: blocked, onClick: doConvert }
-      : { label: "Approve token", disabled: blocked, onClick: doApprove };
-  })();
-
-  const rate =
-    a && b ? (BigInt(a.sharesPerTokenX18) * 10n ** 18n) / BigInt(b.sharesPerTokenX18) : undefined;
-  const pegStatus = pool.status;
-  const offHours = q ? !q.fee.marketOpen : false;
-
-  return (
-    <>
-      <section className="card swap" aria-label="Convert">
-        <div className="field">
-          <div className="field-top">
-            <span className="field-label">From{a ? ` · ${issuer(a)}` : ""}</span>
-            {w.address && a && (
-              <span className="balance">
-                Balance{" "}
-                <Val status={w.balances.status} w="4em">
-                  {amount(balance ?? 0n, a.decimals, 4)}
-                </Val>
-                {w.balances.status === "ok" && balance !== undefined && balance > 0n && (
-                  <button
-                    type="button"
-                    className="max"
-                    onClick={() => setInput(formatUnits(balance, a.decimals))}
-                  >
-                    Max
-                  </button>
-                )}
-              </span>
-            )}
+  if (receipt)
+    return (
+      <div className="receipt" aria-live="polite">
+        <p className="receipt-title">
+          <span className="ok-dot" aria-hidden="true" /> Converted{receipt.simulated ? " (mock)" : ""}
+        </p>
+        <p className="review-line">
+          <strong>{fmtShares(receipt.sharesIn)}</strong> {asset.symbol} shares on {receipt.from} → <strong>{fmtShares(receipt.sharesOut)}</strong> on {receipt.to}
+        </p>
+        <FeeRows
+          basePips={receipt.basePips}
+          skewPips={receipt.skewFee === 0n ? 0 : receipt.skewPips}
+          baseFee={receipt.baseFee}
+          skewFee={receipt.skewFee}
+          reducesImbalance={receipt.skewFee === 0n}
+        />
+        <dl className="receipt-rows">
+          <div>
+            <dt>Received</dt>
+            <dd>
+              {amount(receipt.amountOut, b.decimals, 6)} {b.symbol}
+            </dd>
           </div>
-          <div className="field-row">
-            <input
-              className="amount"
-              aria-label="Conversion amount"
-              inputMode="decimal"
-              placeholder="0"
-              value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                if (tx.state.step !== "signing" && tx.state.step !== "pending") tx.reset();
-              }}
-            />
-            {tokens ? (
-              <select
-                className="token"
-                aria-label="From token"
-                value={a!.address}
-                onChange={(e) => setReverse(e.target.value === tokens[1].address)}
-              >
-                {tokens.map((t) => (
-                  <option key={t.address} value={t.address}>
-                    {t.symbol}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <Skeleton w="7em" h="2.1em" />
-            )}
+          <div>
+            <dt>Pool skew</dt>
+            <dd data-testid="receipt-skew">
+              {skewPct(receipt.preSkew)} → {skewPct(receipt.postSkew)}
+            </dd>
           </div>
-          {input.trim() !== "" && !params && tokens && (
-            <p role="alert" className="field-error">
-              Enter a positive amount, up to {a!.decimals} decimals.
-            </p>
-          )}
-        </div>
-        <button
-          type="button"
-          className="flip"
-          aria-label="Reverse direction"
-          onClick={() => {
-            setReverse(!reverse);
-            tx.reset();
-          }}
-        >
-          ↓
-        </button>
-        <div className="field">
-          <div className="field-top">
-            <span className="field-label">To{b ? ` · ${issuer(b)}` : ""}</span>
-            {w.address && b && w.balances.status === "ok" && (
-              <span className="balance">Balance {amount(w.balances.values[b.address] ?? 0n, b.decimals, 4)}</span>
-            )}
-          </div>
-          <div className="field-row">
-            <output className="amount" aria-label="You receive">
-              {params ? (
-                <Val status={quoteStatus} w="5em" h="1.1em">
-                  {output ? amount(output, b!.decimals, 6) : "0"}
-                </Val>
-              ) : (
-                "0"
-              )}
-              {b && <span className="unit"> {b.symbol}</span>}
-            </output>
-            {tokens ? (
-              <select
-                className="token"
-                aria-label="To token"
-                value={b!.address}
-                onChange={(e) => setReverse(e.target.value === tokens[0].address)}
-              >
-                {tokens.map((t) => (
-                  <option key={t.address} value={t.address}>
-                    {t.symbol}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <Skeleton w="7em" h="2.1em" />
-            )}
-          </div>
-        </div>
-
-        <dl className="quote">
-          <dt>
-            Route <Tip text="How this conversion will fill." />
-          </dt>
-          <dd>
-            {activeRoute ? (
-              <span className="route">
-                <RouteBadge route={activeRoute} />
-                <Tip text={ROUTE_TIPS[activeRoute]} />
-              </span>
-            ) : params ? (
-              <Val status={quoteStatus} w="4.5em">
-                —
-              </Val>
-            ) : (
-              "—"
-            )}
-          </dd>
-          <dt>
-            NAV reference <Tip text="Share-for-share: the rate is the issuers' shares-per-token ratio, not a pool price." />
-          </dt>
-          <dd>
-            {rate !== undefined ? (
-              <span>{`${amount(rate, 18, 6)} ${b!.symbol}/${a!.symbol}`}</span>
-            ) : (
-              <Skeleton w="8em" />
-            )}
-          </dd>
-          <dt>
-            Peg guard <Tip text="Conversions pause if the pool drifts more than 50 bps from NAV parity." />
-          </dt>
-          <dd>
-            <Val status={pegStatus} w="5em">
-              {pool.data &&
-                (pool.data.pegTripped ? (
-                  <span className="bad">Tripped · {pool.data.deviationBps} bps</span>
-                ) : (
-                  <span className="good">Clear · {pool.data.deviationBps} bps from NAV</span>
-                ))}
-            </Val>
-          </dd>
-          {output && q && (
-            <>
-              <dt>
-                Minimum received <Tip text="0.5% slippage tolerance. The approval covers this amount only." />
-              </dt>
+          {receipt.hash && (
+            <div>
+              <dt>Transaction</dt>
               <dd>
-                {amount(minOut, b!.decimals, 6)} {b!.symbol}
+                <Hex value={receipt.hash} kind="tx" simulated={receipt.simulated} />
               </dd>
-            </>
+            </div>
           )}
         </dl>
-        <div className={`fee-row${offHours ? " off-hours" : ""}`}>
-          {q ? (
-            <Fees fee={q.fee} open={details} onToggle={() => setDetails(!details)} />
-          ) : params ? (
-            <Val status={quoteStatus} w="7em">
-              —
-            </Val>
-          ) : (
-            <span className="muted">Fee shown with a quote</span>
-          )}
-        </div>
+        {!receipt.exact && !receipt.simulated && <p className="hint">Figures from the executed quote; the Converted event wasn't in the receipt.</p>}
+        <button type="button" className="ghost-btn" onClick={() => setReceipt(undefined)}>
+          Convert again
+        </button>
+      </div>
+    );
 
-        {w.address && (
-          <p className={`eligibility ${w.eligible ? "good" : ""}`}>
-            {w.eligibility.data ? (
-              w.eligible ? (
-                <>Eligibility verified{w.eligibility.data.demoMode ? " · demo mode" : ""}</>
-              ) : null
-            ) : (
-              <Val status={w.eligibility.status} w="9em">
-                {null}
-              </Val>
-            )}
-          </p>
-        )}
-        {blockedReason && params !== null && (
-          <p role="alert" className="block-reason">
-            {blockedReason}
-          </p>
-        )}
-        {w.notice && (
-          <p role="alert" className="block-reason">
-            {w.notice}
-          </p>
-        )}
-        <button
-          className="primary wide"
-          disabled={primary.disabled}
-          aria-busy={"busy" in primary ? true : undefined}
-          onClick={() => void primary.onClick()}
-        >
-          {"busy" in primary && <Spinner />}
-          {primary.label}
+  return (
+    <div className="convert">
+      <div className="pair">
+        <div className="choices" role="radiogroup" aria-label="From wrapper">
+          {asset.platforms.map((p) => (
+            <button key={p.token.address} type="button" role="radio" aria-checked={p === from} className="choice" onClick={() => setFromAddr(p.token.address)}>
+              <span className="choice-name">{p.name}</span>
+              <span className="choice-sub">
+                {p.token.symbol}
+                {w.balances.status === "ok" && w.balances.values[p.token.address] !== undefined &&
+                  ` · ${fmtShares(toShares(w.balances.values[p.token.address]!, p.token))} sh`}
+              </span>
+            </button>
+          ))}
+        </div>
+        <button type="button" className="flip" aria-label={`Flip: convert ${to.name} to ${from.name}`} onClick={() => setFromAddr(to.token.address)}>
+          ⇄
         </button>
-        <TxPanel
-          tx={tx.state}
-          onRetry={tx.retry}
-          receipt={(r) =>
-            r === "approved" ? (
-              <p>
-                <span className="ok-dot" aria-hidden="true" /> Approval confirmed
-                {config.useMocks ? " (simulated)" : ""}. Now convert.
-              </p>
-            ) : (
-              <div className="receipt">
-                <p className="receipt-title">
-                  <span className="ok-dot" aria-hidden="true" /> Conversion confirmed
-                  {config.useMocks ? " (simulated)" : ""}
-                </p>
-                <dl>
-                  <dt>In</dt>
-                  <dd>
-                    {amount(r.amountIn, a!.decimals, 6)} {a!.symbol}
-                  </dd>
-                  <dt>Out</dt>
-                  <dd>
-                    {amount(r.amountOut, b!.decimals, 6)} {b!.symbol}
-                    {!r.exact && <span className="muted"> (quoted)</span>}
-                  </dd>
-                  <dt>Fee</dt>
-                  <dd>
-                    {r.feeBps} bps · {amount(r.feeAmount, b!.decimals, 6)} {b!.symbol}
-                  </dd>
-                  <dt>Path</dt>
-                  <dd>{r.path === "fall-through" ? "Fell through to the AMM" : "Filled from hook inventory"}</dd>
-                  {tx.state.step === "confirmed" && tx.state.hash && (
-                    <>
-                      <dt>Transaction</dt>
-                      <dd>
-                        <Hex value={tx.state.hash} kind="tx" simulated={config.useMocks} />
-                      </dd>
-                    </>
-                  )}
-                </dl>
-                <button type="button" className="ghost-btn" onClick={tx.reset}>
-                  Convert again
-                </button>
-              </div>
-            )
-          }
-        />
-      </section>
-      <section className={`anatomy-card${anatomy ? " open" : ""}`}>
-        <button
-          type="button"
-          className="details-toggle"
-          aria-expanded={anatomy}
-          onClick={() => setAnatomy(!anatomy)}
-        >
-          Anatomy of this swap
-          {lastPath && <span className="muted"> · last swap highlighted</span>}
-        </button>
-        {anatomy && (
-          <SwapAnatomy
-            path={
-              lastPath ??
-              (activeRoute === "BLOCKED-PEG" ? "peg" : undefined)
-            }
-          />
+        <p className="pair-line">
+          {from.name} → <strong>{to.name}</strong>
+        </p>
+      </div>
+      <div className="input-row big">
+        <input className="amount" inputMode="decimal" aria-label="Amount" value={input} onChange={(e) => setInput(e.target.value)} />
+        <span className="unit">{a.symbol}</span>
+        {balance !== undefined && balance > 0n && (
+          <button type="button" className="max" onClick={() => setInput(formatUnits(balance, a.decimals))}>
+            Max
+          </button>
         )}
+      </div>
+
+      <section className="quote-card" aria-label="Quote" aria-live="polite">
+        <div className="qc-row">
+          <span>Shares in</span>
+          <strong>
+            <Val status={quoteStatus} w="4em">
+              {qb ? fmtShares(qb.sharesIn) : raw > 0n ? "—" : "0.00"}
+            </Val>
+          </strong>
+        </div>
+        {qb && q ? (
+          <FeeRows basePips={q.fee.basePips} skewPips={q.fee.skewPips} baseFee={qb.baseFee} skewFee={qb.skewFee} reducesImbalance={qb.reducesImbalance} />
+        ) : (
+          <Val status={quoteStatus} w="100%" h="2.4em">
+            {null}
+          </Val>
+        )}
+        <div className="keep-tile" data-testid="you-keep">
+          <span className="tile-k">You keep</span>
+          <span className="keep-v">
+            {qb ? (
+              <>
+                {fmtShares(qb.sharesIn)} → <strong>{fmtShares(qb.sharesOut)}</strong>
+              </>
+            ) : (
+              "—"
+            )}{" "}
+            <small>{asset.symbol} shares</small>
+          </span>
+          {qb && <span className="tile-s">{(qb.keep * 100).toFixed(2)}% · pool skew {skewPct(qb.preSkewX18)} → {skewPct(qb.postSkewX18)}</span>}
+        </div>
       </section>
-    </>
+      <p className="parity-line">Same share, converted at parity. Price gap between issuers is not charged.</p>
+
+      {blocked && raw > 0n && (
+        <p role="alert" className="block-reason">
+          {blocked}
+        </p>
+      )}
+      {!w.address ? (
+        <button className="primary wide" disabled={w.busy === "connect"} onClick={() => void w.connect()}>
+          {w.busy === "connect" ? "Connecting…" : "Connect to convert"}
+        </button>
+      ) : (
+        <button className="primary wide" disabled={!!blocked || tx.busy || !qb || cooldown > 0} aria-busy={tx.busy || undefined} onClick={() => void run()}>
+          {tx.busy && <Spinner />}
+          {tx.state.step === "signing" ? "Confirm in wallet…" : tx.busy ? "Converting…" : approvedKey === approvalKey || w.demo ? "Convert" : "Approve and convert"}
+        </button>
+      )}
+      {w.notice && <p className="block-reason">{w.notice}</p>}
+      <RelayLimitNote left={cooldown} />
+      <TxPanel tx={tx.state} onRetry={() => void run()} />
+    </div>
   );
 }
-

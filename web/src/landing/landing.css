@@ -524,8 +524,9 @@ section[id] {
   width: 100%;
   height: auto;
 }
-.dg-stacked {
-  display: none;
+.dg-main {
+  max-width: 1400px;
+  margin: 0 auto;
 }
 .dg-zone-label {
   font: 500 10.5px var(--mono);
@@ -628,12 +629,8 @@ section[id] {
   stroke-width: 2;
 }
 @media (max-width: 899px) {
-  .dg-wide {
-    display: none;
-  }
-  .dg-stacked {
-    display: block;
-    min-width: 1080px;
+  .dg-main {
+    min-width: 860px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -699,8 +696,23 @@ section[id] {
 .proof td.link a:hover {
   color: var(--black-ink);
 }
-.tx-card {
+.tx-cards {
   margin-top: 48px;
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 16px;
+}
+.tx-card.secondary {
+  border-color: var(--black-hairline);
+  background: #05070d;
+}
+@media (max-width: 900px) {
+  .tx-cards {
+    grid-template-columns: 1fr;
+  }
+}
+.tx-card {
+  margin-top: 0;
   display: grid;
   gap: 10px;
   padding: 28px;
@@ -864,4 +876,231 @@ section[id] {
   * {
     transition: none !important;
   }
+}
+
+/* ---------- Pass 3: full-height sections, snap, view transition ---------- */
+/* Proximity, not mandatory: Developers and Proof are taller than 100svh at 800px, so mandatory would trap readers. */
+html {
+  scroll-snap-type: y proximity;
+}
+.hero,
+.one-price,
+.how,
+.developers,
+.proof {
+  min-height: 100svh;
+  scroll-snap-align: start;
+}
+.lfoot {
+  scroll-snap-align: end;
+}
+@view-transition {
+  navigation: auto;
+}
+::view-transition-old(root) {
+  animation: 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both slide-out-left;
+}
+::view-transition-new(root) {
+  animation: 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both slide-in-right;
+}
+@keyframes slide-out-left {
+  to {
+    transform: translateX(-30%);
+    opacity: 0;
+  }
+}
+@keyframes slide-in-right {
+  from {
+    transform: translateX(30%);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-snap-type: none;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+/* Simple flow: You → Unison → You, with two branches */
+.simple-flow {
+  margin: 64px 0 0;
+  padding: 40px;
+  border: 1px solid var(--black-hairline);
+  background: #05070d;
+}
+.sf-main {
+  display: grid;
+  grid-template-columns: 1fr auto 1.2fr auto 1fr;
+  align-items: center;
+  gap: 18px;
+}
+.sf-node {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 22px 24px;
+  border: 1px solid rgba(238, 242, 251, 0.18);
+  border-radius: 14px;
+  background: #0b0e15;
+}
+.sf-core {
+  border-color: #5b8bff;
+  background: rgba(91, 139, 255, 0.1);
+}
+.sf-k {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--black-ink-soft);
+}
+.sf-v {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.sf-arrow {
+  font-size: 26px;
+  color: #8fb0ff;
+}
+.sf-branches {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.sf-branch {
+  padding: 10px 16px;
+  border: 1px dashed rgba(238, 242, 251, 0.25);
+  border-radius: 999px;
+  font-size: 15px;
+}
+.sf-branch .sf-k {
+  margin-right: 6px;
+}
+
+/* Developers: lanes of nodes (HTML, so nothing clips) */
+.developers {
+  padding-top: 96px;
+}
+.dev-diagram {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.lane {
+  padding: 22px 24px;
+  border: 1px solid var(--black-hairline);
+  border-radius: 16px;
+  background: #05070d;
+}
+.lane.secondary {
+  opacity: 0.7;
+  transition: opacity 200ms ease;
+}
+.lane.secondary:hover,
+.lane.secondary:focus-within {
+  opacity: 1;
+}
+.lane-label {
+  display: block;
+  margin-bottom: 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--black-ink-soft);
+}
+.lane-nodes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 10px 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lane-nodes li {
+  display: flex;
+  align-items: center;
+}
+.dn-arrow {
+  padding: 0 10px;
+  color: #8fb0ff;
+}
+.dn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 170px;
+  max-width: 260px;
+  padding: 14px 16px;
+  border: 1px solid rgba(238, 242, 251, 0.16);
+  border-radius: 12px;
+  background: #0b0e15;
+  color: var(--black-ink);
+}
+.dn-link:hover {
+  border-color: var(--black-ink);
+}
+.dn-accent {
+  border-color: #5b8bff;
+  background: rgba(91, 139, 255, 0.1);
+}
+.dn-does {
+  font-size: 16px;
+  font-weight: 500;
+}
+.dn-contract {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #8fb0ff;
+}
+.dn-sub {
+  font-size: 12px;
+  color: var(--black-ink-soft);
+}
+.dev-links {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+.dev-links a {
+  color: #8fb0ff;
+}
+@media (max-width: 900px) {
+  .sf-main {
+    grid-template-columns: 1fr;
+  }
+  .sf-arrow {
+    transform: rotate(90deg);
+    justify-self: center;
+  }
+  .simple-flow {
+    padding: 20px;
+  }
+}
+
+/* Developers page */
+.dev-page-top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.proof .table-wrap + .table-wrap {
+  margin-top: 28px;
+}
+.proof caption {
+  caption-side: top;
+  text-align: left;
+  padding: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }

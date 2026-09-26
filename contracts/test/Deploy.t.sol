@@ -81,7 +81,7 @@ contract DeployTest is Test {
         assertEq(vm.parseJsonKeys(json, ".contracts").length, 17);
         assertEq(vm.parseJsonAddress(json, ".contracts.wrapSwapRouter"), d.wrapSwapRouter);
         // anvil nulls.
-        string[6] memory nulls = ["positionManager", "stateView", "permit2", "universalRouter", "eas", "easIndexer"];
+        string[7] memory nulls = ["positionManager", "stateView", "permit2", "universalRouter", "calendar", "eas", "easIndexer"];
         for (uint256 i; i < nulls.length; i++) {
             assertTrue(vm.indexOf(json, string.concat('"', nulls[i], '":null')) != type(uint256).max, nulls[i]);
         }

@@ -45,16 +45,16 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
   const [baseBefore, quoteBefore] = [await balance(base.address), await balance(quote.address)];
   const q = await api(`/quote?tokenIn=${base.address}&tokenOut=${quote.address}&amount=${DEMO.parityFill.amountIn}&kind=exactIn`, 'QuoteResponse');
 
-  await page.goto(webURL+'/app');
-  await page.getByRole('button', { name: 'Convert', exact: true }).click();
+  const pane = page.locator('#pane-convert');
+  await page.goto(webURL+'/app?tab=move&asset=AAPL');
   await page.getByRole('button', { name: /connect wallet/i }).click();
-  await page.getByLabel('Conversion amount').fill(formatUnits(DEMO.parityFill.amountIn, base.decimals));
-  await expect(page.getByText('PARITY', { exact: true })).toBeVisible({ timeout: 30000 });
-  const convert = page.getByRole('button', { name: /^convert through parityhook$/i });
-  await page.getByRole('button', { name: /^approve token$/i }).click();
-  await expect(convert).toBeEnabled({ timeout: 90000 });
-  await convert.click();
-  await expect(page.getByText(/conversion confirmed/i)).toBeVisible({ timeout: 90000 });
+  await pane.getByRole('radio', { name: /Coinbase/ }).click();
+  await pane.getByLabel('Amount', { exact: true }).fill(formatUnits(DEMO.parityFill.amountIn, base.decimals));
+  await expect(pane.getByTestId('you-keep')).toContainText('→', { timeout: 30000 });
+  const convert = pane.getByRole('button', { name: /^(approve and )?convert$/i });
+  await expect(convert).toBeEnabled({ timeout: 30000 });
+  await convert.click(); // approval then swapExactIn
+  await expect(pane.getByText(/^\s*Converted\b/)).toBeVisible({ timeout: 90000 });
 
   const swapTx = hashes.at(-1)!;
   const receipt = await chain.getTransactionReceipt({ hash: swapTx as `0x${string}` });

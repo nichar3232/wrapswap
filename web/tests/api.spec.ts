@@ -10,16 +10,19 @@ const chainHex = network === "unichain-sepolia" ? "0x515" : "0x7a69";
 
 type Mutate = (name: string, value: any) => any;
 /** Serve fixtures for every route; a mutator returns "EMPTY" (200, empty body), "ERROR" (503) or a replacement value. */
-async function api(page: Page, mutate: Mutate = (_, v) => v) {
-  await injectTestWallet(page, { account: DEMO.accounts.demo.anvilAddress, chainId: chainHex, known: [chainHex] });
-  await page.route(/\/(api|crank)\//, async (route) => {
+async function api(page: Page, mutate: Mutate = (_, v) => v, opts: { wallet?: boolean } = {}) {
+  if (opts.wallet !== false) await injectTestWallet(page, { account: DEMO.accounts.demo.anvilAddress, chainId: chainHex, known: [chainHex] });
+  // Only the proxied API paths (not dev modules such as /services/crank/…).
+  await page.route(/^https?:\/\/[^/]+\/(api|crank)\//, async (route) => {
     const url = new URL(route.request().url()),
       path = url.pathname.replace(/^\/(api|crank)/, "");
-    const r = routes.find(
-      (r) => r.path === path || (r.path.includes(":address") && path.startsWith(r.path.split(":")[0])),
-    );
+    const r =
+      routes.find((r) => r.path === path) ??
+      routes.find((r) => r.path.includes(":") && new RegExp(`^${r.path.replace(/:[A-Za-z]+/, "[^/]+")}$`).test(path));
     if (!r) return route.fulfill({ status: 404, json: { error: { code: "NOT_FOUND", message: "Missing fixture" } } });
-    const params = r.path.includes(":address") ? path.split("/").pop()! : url.search.slice(1);
+    const params = r.path.includes(":")
+      ? decodeURIComponent(path.split("/").pop()!) + (url.search ? `?${url.search.slice(1)}` : "")
+      : url.search.slice(1);
     const value = mutate(r.name, mockResponse(r.name, network, params));
     if (value === "EMPTY") return route.fulfill({ status: 200, body: "" });
     if (value === "ERROR")
@@ -34,25 +37,31 @@ function watchConsole(page: Page) {
   return errors;
 }
 
-test("API down (empty bodies): Connecting pill, skeleton cards, zero raw errors on every tab", async ({ page }) => {
+const convert = (page: Page) => page.locator("#pane-convert");
+const tab = (page: Page, name: string) => page.locator("header nav").getByRole("button", { name, exact: true });
+async function toQuote(page: Page) {
+  await page.goto("/app?tab=move&asset=AAPL");
+  await page.getByRole("button", { name: "Connect wallet" }).click();
+  await convert(page).getByLabel("Amount", { exact: true }).fill("100");
+}
+
+test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on every panel", async ({ page }) => {
   const errors = watchConsole(page);
   await api(page, () => "EMPTY");
-  await page.goto("/app");
+  await page.goto("/app?tab=liquidity");
   const pill = page.getByTestId("status-pill");
-  await expect(pill).toHaveText(/^Connecting to (Unichain Sepolia|Anvil)…$/);
-  await expect(page.locator(".swap .skeleton").first()).toBeVisible();
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  await expect(pill).toHaveText(/^(Unichain Sepolia|Anvil) · connecting…$/);
   // After a few failed attempts values settle on "unavailable" while the pill keeps retrying.
-  await page.getByRole("button", { name: "Pool", exact: true }).click();
-  await expect(page.getByText("unavailable").first()).toBeVisible({ timeout: 15000 });
-  await expect(pill).toHaveText(/Connecting to/);
-  for (const [tab, card] of [
-    ["Pool", "Hook inventory"],
-    ["Dark Cross", "Your order"],
-    ["Convert", "Route"],
+  await expect(page.locator('[data-panel="liquidity"]').getByText("unavailable").first()).toBeVisible({ timeout: 15000 });
+  await expect(pill).toHaveText(/connecting…/);
+  for (const [t, text] of [
+    ["Liquidity", "unavailable"],
+    ["Move", "Same share, converted at parity"], // platforms from the committed manifest
+    ["Send", "Confidential, not anonymous"],
+    ["Portfolio", "AAPL"],
   ]) {
-    await page.getByRole("button", { name: tab, exact: true }).click();
-    await expect(page.locator("main").getByText(card, { exact: true }).first()).toBeVisible();
+    await tab(page, t).click();
+    await expect(page.locator(`[data-panel="${t.toLowerCase()}"]`).getByText(text, { exact: false }).first()).toBeVisible();
     await expect(page.locator("main")).not.toContainText(RAW_ERROR);
   }
   await pill.click();
@@ -61,57 +70,123 @@ test("API down (empty bodies): Connecting pill, skeleton cards, zero raw errors 
 });
 
 test("degraded names only the failing feeds; everything else stays live", async ({ page }) => {
-  await api(page, (name, v) => (["crankStatus", "pool"].includes(name) ? "ERROR" : v));
-  await page.goto("/app");
+  await api(page, (name, v) => (["crankStatus", "poolAsset"].includes(name) ? "ERROR" : v));
+  await page.goto("/app?asset=AAPL");
   const pill = page.getByTestId("status-pill");
-  await expect(pill).toHaveText("Degraded · Peg guard, Crank", { timeout: 15000 });
-  await expect(page.getByText("PARITY", { exact: true })).toBeVisible();
+  await expect(pill).toHaveText(/^(Unichain Sepolia|Anvil) · degraded$/, { timeout: 15000 });
+  await expect(pill).toHaveAttribute("title", "Degraded: AAPL pool, Crank");
   await pill.click();
-  await expect(page.locator("#feed-status")).toContainText("Fees");
+  const feeds = page.locator("#feed-status");
+  await expect(feeds.getByRole("listitem").filter({ hasText: "Assets" })).toContainText("live");
+  await expect(feeds.getByRole("listitem").filter({ hasText: "AAPL pool" })).not.toContainText("live");
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
 });
 
-test("all feeds loaded: Live pill", async ({ page }) => {
+test("all feeds loaded: Live badge; a real wallet turns demo off", async ({ page }) => {
   await api(page);
   await page.goto("/app");
-  await expect(page.getByTestId("status-pill")).toHaveText(/^Live · (Unichain Sepolia|Anvil)$/);
+  await expect(page.getByTestId("status-pill")).toHaveText(/^(Unichain Sepolia|Anvil)$/);
+  await expect(page.locator("header").getByText("Demo", { exact: true })).toHaveCount(0);
 });
 
-test("eligibility denial disables the action with a reason", async ({ page }) => {
+test("eligibility denial blocks Convert with a reason", async ({ page }) => {
   await api(page, (name, value) =>
     name === "eligibility" ? { ...value, eligible: false, reason: "RESTRICTED_COUNTRY", reasonCode: 7 } : value,
   );
-  await page.goto("/app");
-  await page.getByRole("button", { name: "Connect wallet" }).click();
-  await expect(page.getByText("A valid issuer eligibility attestation is required.", { exact: false })).toBeVisible();
-  await expect(page.getByTestId("route-badge")).toHaveText("BLOCKED-ELIGIBILITY");
-  await expect(page.getByRole("button", { name: "Approve token", exact: true })).toBeDisabled();
-  await expect(page.getByText("Simulated transactions", { exact: true })).toHaveCount(0);
+  await toQuote(page);
+  await expect(convert(page).getByText("no issuer eligibility attestation", { exact: false })).toBeVisible();
+  await expect(convert(page).getByRole("button", { name: /convert$/i })).toBeDisabled();
 });
 
-test("blocked peg route is visible and cannot submit", async ({ page }) => {
+test("blocked peg route is visible and cannot proceed", async ({ page }) => {
   await api(page, (name, value) =>
     name === "route" ? { ...value, route: "BLOCKED-PEG", reason: "Peg deviation exceeds 50 bps", quote: null } : value,
   );
-  await page.goto("/app");
-  await page.getByRole("button", { name: "Connect wallet" }).click();
-  await expect(page.getByTestId("route-badge")).toHaveText("BLOCKED-PEG");
-  await expect(page.getByText("Peg deviation exceeds 50 bps")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Approve token", exact: true })).toBeDisabled();
+  await toQuote(page);
+  await expect(convert(page).getByText("Peg deviation exceeds 50 bps")).toBeVisible();
+  await expect(convert(page).getByRole("button", { name: /convert$/i })).toBeDisabled();
 });
 
-test("slow and malformed responses show skeletons, never blank screens or raw errors", async ({ page }) => {
+test("slow and malformed responses never produce blank screens or raw errors", async ({ page }) => {
   await api(page, (name, v) => (name === "fills" || name === "batches" ? { items: [], nextCursor: null } : v));
   await page.route("**/api/deployment", async (route) => {
     await new Promise((r) => setTimeout(r, 800));
     await route.fulfill({ json: {} });
   });
-  await page.goto("/app");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  await expect(page.locator(".skeleton").first()).toBeVisible();
-  await page.getByRole("button", { name: "Pool", exact: true }).click();
-  await expect(page.getByText(/No fills yet/)).toBeVisible();
-  await page.getByRole("button", { name: "Dark Cross", exact: true }).click();
-  await expect(page.getByText(/No batches yet/)).toBeVisible();
+  await page.goto("/app?tab=move");
+  // While /deployment is slow (then malformed) the committed Unichain manifest still names the platforms.
+  await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toBeVisible();
+  await page.getByRole("tab", { name: "Dark Cross" }).click();
+  await expect(page.getByText("No settled batches for AAPL yet.")).toBeVisible();
+  await tab(page, "Liquidity").click();
+  await expect(page.getByText("LP economics")).toBeVisible();
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
+});
+
+// ---- Demo relay (no wallet): real actions through POST /api/demo/*, rate-limited per IP.
+const RELAY = "0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C";
+const status = { ok: true, address: RELAY, ethWei: "1", tokens: [], limits: { actionsPer10Min: 3, maxShares: "100" }, pendingReveals: [], recent: [] };
+const tx = (n: number) => "0x" + n.toString(16).padStart(64, "0");
+async function relay(page: Page, routes: Record<string, (r: import("@playwright/test").Route) => Promise<void>>) {
+  await page.route(/^https?:\/\/[^/]+\/api\/demo\//, async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/^\/api\/demo/, "");
+    const handler = routes[path] ?? (path.startsWith("/send/") ? routes["/send/:id"] : undefined);
+    if (path === "/status" && !handler) return route.fulfill({ json: status });
+    if (!handler) return route.fulfill({ status: 404, json: { error: { code: "NOT_FOUND", message: "Unknown route" } } });
+    await handler(route);
+  });
+}
+
+test("no wallet: the demo relay connects itself; a 429 shows a live countdown and blocks the action", async ({ page }) => {
+  await api(page, undefined, { wallet: false });
+  let posted: unknown;
+  await relay(page, {
+    "/convert": async (r) => {
+      posted = r.request().postDataJSON();
+      await r.fulfill({ status: 429, headers: { "retry-after": "125" }, json: { error: { code: "RATE_LIMITED", message: "3 demo actions per 10 minutes" } } });
+    },
+  });
+  await page.goto("/app?tab=move&asset=AAPL");
+  await expect(page.getByRole("button", { name: /^Account 0x8f2e/ })).toBeVisible();
+  await expect(page.locator("header").getByText("Demo", { exact: true })).toBeVisible();
+  await convert(page).getByLabel("Amount", { exact: true }).fill("10");
+  await convert(page).getByRole("button", { name: "Convert", exact: true }).click();
+  expect(posted).toEqual({ asset: "AAPL", from: expect.stringMatching(/^m/), to: expect.stringMatching(/^m/), amount: "10" });
+  await expect(convert(page).getByTestId("relay-cooldown")).toHaveText(/Demo limit: 3 actions per 10 minutes\. Next action in 2m \d\ds\./);
+  await expect(convert(page).getByText(/Demo limit reached/)).toBeVisible();
+  await expect(convert(page).getByRole("button", { name: "Convert", exact: true })).toBeDisabled();
+  await page.getByRole("tab", { name: "Dark Cross" }).click();
+  await expect(page.locator("#pane-dark").getByTestId("relay-cooldown")).toBeVisible(); // one limit for every action
+});
+
+test("no wallet: Send runs POST /api/demo/send and lists the real Unichain and Sui transactions", async ({ page }) => {
+  await api(page, undefined, { wallet: false });
+  const step = (n: number, chain: "unichain" | "sui", label: string) => ({
+    step: label,
+    at: "2026-09-26T18:00:00Z",
+    chain,
+    tx: chain === "sui" ? `Dig${n}estSuiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX` : tx(n),
+    url: chain === "sui" ? `https://suiscan.xyz/testnet/tx/Dig${n}` : `https://sepolia.uniscan.xyz/tx/${tx(n)}`,
+  });
+  const job = { id: "send-1", status: "deposited", asset: "AAPL", from: "mcbAAPL", to: "mAAPLx", amountIn: "10000000", shares: "10125000000000000000", recipient: RELAY, depositTx: tx(1), steps: [step(1, "unichain", "deposit mcbAAPL into ShareVault")] };
+  let body: any;
+  await relay(page, {
+    "/send": async (r) => {
+      body = r.request().postDataJSON();
+      await r.fulfill({ json: { ...job, txHash: job.depositTx, path: "sui-confidential", track: "/demo/send/send-1" } });
+    },
+    "/send/:id": (r) =>
+      r.fulfill({ json: { ...job, status: "settled", steps: [...job.steps, step(2, "sui", "sealed pay A → B"), step(3, "sui", "sealed withdraw into mAAPLx"), step(4, "unichain", "settled through the router")] } }),
+  });
+  await page.goto("/app?tab=send");
+  const s = page.locator('[data-panel="send"]');
+  await s.getByLabel("Send amount").fill("10");
+  await s.getByRole("button", { name: "Send confidentially" }).click();
+  expect(body).toMatchObject({ asset: "AAPL", from: "mcbAAPL", to: "mAAPLx", amount: "10", recipient: RELAY });
+  const steps = s.getByRole("list", { name: "Send transactions" }).getByRole("listitem");
+  await expect(steps).toHaveCount(4, { timeout: 10000 });
+  await expect(s.getByTestId("relay-send-status")).toContainText("Settled");
+  await expect(steps.nth(0).getByRole("link")).toHaveAttribute("href", `https://sepolia.uniscan.xyz/tx/${tx(1)}`);
+  await expect(steps.nth(1).getByRole("link")).toHaveAttribute("href", "https://suiscan.xyz/testnet/tx/Dig2");
+  await expect(s).not.toContainText(/simulated/i);
 });

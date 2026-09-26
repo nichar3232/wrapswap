@@ -51,7 +51,6 @@ export const contractAbis: Record<string, Abi> = {
   eligibility: abis.IEASEligibility,
   oracle: abis.IMockPriceOracle,
   registry: abis.IIssuerRegistry,
-  calendar: abis.INyseCalendar,
 };
 export const stringify = (value: unknown) =>
   JSON.stringify(value, (_, v) => (typeof v === "bigint" ? v.toString() : v));

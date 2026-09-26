@@ -92,33 +92,9 @@ interface IIssuerRegistry {
 }
 ```
 
-### 1.3 INyseCalendar — `contracts/src/interfaces/INyseCalendar.sol`
+### 1.3 (retired)
 
-```solidity
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
-
-/// @title INyseCalendar
-/// @notice NYSE regular-session clock evaluated at a unix timestamp (always block.timestamp on-chain).
-/// @dev day = floor((ts - utcOffset) / 86400) where utcOffset is 4h (EDT) or 5h (EST). Sessions 09:30-16:00 local,
-///      or 09:30-earlyClose. Weekends and holidays are closed.
-interface INyseCalendar {
-    event HolidaySet(uint256 indexed day, bool closed);
-    event EarlyCloseSet(uint256 indexed day, uint256 secondsAfterMidnight);
-
-    error InvalidEarlyClose(uint256 secondsAfterMidnight);
-    error NoTransitionWithinYear(uint256 ts);
-
-    function isOpen(uint256 ts) external view returns (bool);
-    /// @notice First timestamp strictly after ts at which isOpen flips.
-    function nextTransition(uint256 ts) external view returns (uint256);
-    function holidays(uint256 day) external view returns (bool);
-    function earlyClose(uint256 day) external view returns (uint256);
-
-    function setHoliday(uint256 day, bool closed) external;
-    function setEarlyClose(uint256 day, uint256 secondsAfterMidnight) external;
-}
-```
+Numbering kept; the final fee model has no calendar input.
 
 ### 1.4 IEligibility / IEASEligibility — `contracts/src/interfaces/IEligibility.sol`
 
@@ -714,8 +690,6 @@ eligibility or by the peg guard is visible only through the API's simulation (§
 | IIssuerRegistry | `IssuerAdded(address indexed token, address indexed adapter, bytes32 indexed underlying)` | `0x9a172aaa4b741a5bfd1e350bffba82b575efb6409f5f82dbdd320d139102d3a3` |
 | IIssuerRegistry | `IssuerPaused(address indexed token, bool paused)` | `0x979f4e0374470ec015c3cc6253737d7164d952442b14f03d37e8a07ee29412b2` |
 | IIssuerRegistry | `IssuerRemoved(address indexed token, address indexed adapter, bytes32 indexed underlying)` | `0xdd3d7cebca8ca0e1f9767e76f4d3d7a954e35bb31f69df8b8f078c6f29ed0925` |
-| INyseCalendar | `EarlyCloseSet(uint256 indexed day, uint256 secondsAfterMidnight)` | `0x2d17e58ec72408e3ae8782d6799b572c338706eb2c739bd7ad1f2e256f82ca6d` |
-| INyseCalendar | `HolidaySet(uint256 indexed day, bool closed)` | `0x9b15843c04fd3c44a6e229cbc7fb2d66a1e6859d73444b1f8224b592fed25379` |
 <!-- END GENERATED: events -->
 
 Coverage of the required state changes:
@@ -1183,7 +1157,6 @@ that cannot be read is an error, never a default. Chain-read values carry the `b
   { "name": "fees", "method": "GET", "path": "/fees", "query": null, "response": "FeesResponse", "backing": "chain: ParityHook.feeBreakdown; table: parity_fee_quotes (recent)" },
   { "name": "quote", "method": "GET", "path": "/quote", "query": "SwapQuery", "response": "QuoteResponse", "backing": "chain: ParityHook.quote" },
   { "name": "route", "method": "GET", "path": "/route", "query": "RouteQuery", "response": "RouteResponse", "backing": "chain: IEligibility.check, ParityHook.quote, V4Quoter simulation, DarkCrossHook.currentBatch, IPriceOracle.getMid; table: eligibility_checks (insert)" },
-  { "name": "nyse", "method": "GET", "path": "/nyse", "query": null, "response": "NyseResponse", "backing": "chain: latest block timestamp, NyseCalendar.isOpen, nextTransition" },
   { "name": "currentBatch", "method": "GET", "path": "/batches/current", "query": "AssetQuery", "response": "CurrentBatchResponse", "backing": "chain: DarkCrossHook.currentBatch, participants, IPriceOracle.getMid" },
   { "name": "batches", "method": "GET", "path": "/batches", "query": "BatchesQuery", "response": "BatchListResponse", "backing": "view: v_dark_batches" },
   { "name": "batch", "method": "GET", "path": "/batches/:batchId", "query": "AssetQuery", "response": "BatchDetailResponse", "backing": "view: v_dark_batches, v_dark_orders, v_fills; table: dark_forfeits, dark_residual_skips" },
@@ -1284,9 +1257,7 @@ Path parameters: `:batchId` is a `UInt`; `:address` is an `Address`. Pagination:
     "totalBps": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{2}$" },
     "skewX18": { "$ref": "Int" },
     "postSkewX18": { "$ref": "Int" },
-    "reducesImbalance": { "type": "boolean" },
-    "closedPips": { "type": "integer" },
-    "marketOpen": { "type": "boolean" }
+    "reducesImbalance": { "type": "boolean" }
   }
 }
 ```
@@ -1577,26 +1548,6 @@ Route decision, first match wins:
    else `BLOCKED-PEG` (`reason` = `"PEG_GUARD"`).
 
 `quote` is filled whenever step 3 was reached. Every `/route` call inserts one `eligibility_checks` row.
-
-`GET /nyse`
-
-```json wrapswap:schema NyseResponse
-{
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["open", "block", "chainTimestamp", "nextTransition", "nextState", "secondsUntilTransition", "closedFeePips", "source"],
-  "properties": {
-    "open": { "type": "boolean" },
-    "block": { "$ref": "UInt" },
-    "chainTimestamp": { "$ref": "UInt" },
-    "nextTransition": { "$ref": "UInt" },
-    "nextState": { "enum": ["OPEN", "CLOSED"] },
-    "secondsUntilTransition": { "type": "integer" },
-    "closedFeePips": { "type": "integer" },
-    "source": { "const": "chain" }
-  }
-}
-```
 
 `GET /batches/current`
 
@@ -2613,6 +2564,9 @@ sections, blocking yes/no) and codes against the frozen interface meanwhile. Lan
 
 ## 10. Canonical demo narrative
 
+> The worked arithmetic in this section predates the final fee model (base + skew, 1 bp Dark Cross fee). The
+> `wrapswap:demo` block below is authoritative: its variants are generated from chain reads and checked by `pnpm types`.
+
 Fixed values; `packages/types` exports them as `DEMO` and `make types` recomputes every derived number with
 `packages/types/src/canonical.ts` and fails on any mismatch. Base token of the dark pair = `mcbAAPL`, quote =
 `mAAPLx`. Skews below are stated as `(mcbAAPL − mAAPLx)/(sum)`; the on-chain `skewX18` has this sign when mcbAAPL is
@@ -2650,9 +2604,9 @@ Fixed values; `packages/types` exports them as `DEMO` and `make types` recompute
   minOut = floor(10,000,000 · 1.01e18 · 1e18 / (1e18 · 1e6)) = 10.1e18. Inventory after: mcbAAPL 8,110 (8,211.375 shares),
   mAAPLx 12,038.625. Skew₂ = −3,827.25/20,250 = **−0.189**.
 
-### Variant ANVIL (video, NYSE OPEN)
+### Variant ANVIL (video)
 
-Warp the next block to `1790692200` (Tue 2026-09-29 14:30:00 UTC = 10:30 EDT, a regular session day) before Step 1.
+Warp the next block to `1790692200` (Tue 2026-09-29 14:30:00 UTC = 10:30 EDT) before Step 1.
 
 - Step 1 fee: 200 + 260 + 0 = **460 pips = 4.60 bps**; feeAmount = ceil(101.25e18 · 460 / 1e6) =
   **46,575,000,000,000,000 wei** (0.046575 mAAPLx); amountOut = **101,203,425,000,000,000,000** (101.203425 mAAPLx).
@@ -2661,9 +2615,9 @@ Warp the next block to `1790692200` (Tue 2026-09-29 14:30:00 UTC = 10:30 EDT, a 
 - End state: demo wallet 400 mcbAAPL + 601.203425 mAAPLx; A escrow 60.720161625 mAAPLx; B escrow 49.975 mcbAAPL;
   hook feesAccrued(mAAPLx) = 51,100,875,000,000,000.
 
-### Variant UNICHAIN-SEPOLIA (live, real clock, NYSE CLOSED Sat 2026-09-26 – Mon 2026-09-28 13:30 UTC)
+### Variant UNICHAIN-SEPOLIA (live)
 
-Real clock; while `isOpen` is false the off-hours premium applies to skew-increasing trades only (next open `1790602200`, Mon 2026-09-28 13:30 UTC). Both §10 trades sell mcbAAPL into a book long mAAPLx (|skew| 0.20 → 0.19 → 0.189), so neither pays it: the numbers equal Variant ANVIL. The trade-less `feeBreakdown` shows closedPips = ceil(1500 · 0.2) = 300 (what a skew-increasing trade would pay).
+Figures are regenerated from the deployment by `scripts/dev/demo-variant.ts` into the `unichain-sepolia` entry of the block below.
 
 - Step 1 fee: 200 + 260 + 0 = **460 pips = 4.60 bps**; feeAmount = 46,575,000,000,000,000; amountOut = **101,203,425,000,000,000,000**.
 - Step 2 residual fee: 200 + 247 + 0 = 447 pips = 4.47 bps; feeAmount = 4,525,875,000,000,000;
@@ -2723,13 +2677,13 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
   },
   "variants": {
     "anvil": {
-      "network": "anvil", "chainId": 31337, "warpTimestamp": 1790692200, "marketOpen": true,
+      "network": "anvil", "chainId": 31337, "warpTimestamp": 1790692200,
       "parityFill": { "feePips": 200, "feeBps": "2.00", "feeAmount": "20250000000000000", "amountOut": "101229750000000000000" },
       "residual": { "feePips": 200, "feeBps": "2.00", "feeAmount": "2025000000000000", "amountOut": "10122975000000000000" },
       "end": { "demoMAAPLx": "601229750000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60742912500000000000", "counterpartyBEscrowMcbAAPL": "49995000", "hookFeesMAAPLx": "22275000000000000" }
     },
     "unichain-sepolia": {
-      "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200, "seedBlock": 63586745, "label": "Seed state at deploy block 63586745", "seedInventory": {"mcbAAPL": "7901234568", "mAAPLx": "12000000000000000000000"},
+      "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "seedBlock": 63586745, "label": "Seed state at deploy block 63586745", "seedInventory": {"mcbAAPL": "7901234568", "mAAPLx": "12000000000000000000000"},
       "parityFill": { "feePips": 200, "feeBps": "2.00", "feeAmount": "20250000000000000", "amountOut": "101229750000000000000" },
       "residual": { "feePips": 200, "feeBps": "2.00", "feeAmount": "2025000000000000", "amountOut": "10122975000000000000" },
       "end": { "demoMAAPLx": "601229750000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60742912500000000000", "counterpartyBEscrowMcbAAPL": "49995000", "hookFeesMAAPLx": "22275000000000000" }
@@ -2745,7 +2699,6 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
 - `contracts/src/CanonicalStock.sol` is a user-facing ERC20 (uAAPL); it must not be deployed as a user token (share accounting moves to `CanonicalShares`) [contracts].
 - `contracts/src/IssuerRegistry.sol` has no `underlyingOf`, takes an adapter in `pause`/`remove`, non-indexed events [contracts].
 - `contracts/src/adapters/*` implement the legacy `IIssuerAdapter` (no `underlying`, `tokenDecimals`, `health`, `ratio`) [contracts].
-- `contracts/src/NyseCalendar.sol` lacks `EarlyCloseSet`, custom errors, and indexed `HolidaySet.day` [contracts].
 - `contracts/src/mocks/MockB20.sol` / `MockIssuerToken.sol` use 8 decimals / `sharesPerToken` instead of `IMockIssuerToken` (mcbAAPL 6 decimals, `multiplier`) [contracts].
 - `contracts/src/mocks/MockOracle.sol` is an AggregatorV3 mock, not `IMockPriceOracle`; no `IEligibility` implementation exists [contracts].
 - `contracts/test/ParityVault.t.sol`, `contracts/test/DarkCrossHook.t.sol` test the legacy vault/USDC design; they compile but will not exercise the frozen interfaces [contracts].
@@ -2771,7 +2724,6 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
 | Pitch "share-for-share conversion, no USDC leg" | PoolKey = two issuer tokens; `IDarkCrossHook` prices are issuer-token-per-issuer-token (`midX18`), no USDC anywhere in §1/§4 |
 | The hook is the settlement engine | `IParityHook` `beforeSwapReturnDelta` inventory fill; `IDarkCrossHook.settle` routes residuals into the ParityHook pool inside one `unlock` (`ResidualRouted`) |
 | Eligibility: Coinbase Verified Country (non-US) EAS, demoMode retained | `IEASEligibility` (`schemaUid`, `trustedAttester`, `restrictedCountry = "US"`), `IEligibility.demoMode/setDemoMode` + `DemoModeSet`; hooks revert `NotEligible` / commit returns false |
-| Demo video on local anvil with NYSE warped to OPEN | §10 Variant ANVIL `warpTimestamp = 1790692200`; `INyseCalendar.isOpen(block.timestamp)`; API `/nyse` `source: "chain"` |
 | Skew fee only on imbalance-increasing trades (cheap direction pays the 2 bps base only) | `IParityHook.quote(asset, from, to, amountIn)` → `reducesImbalance`, `FeeBreakdown.skewPips/postSkewX18`, `Converted` |
 | PoolKey sorted, DYNAMIC_FEE_FLAG, hooks = ParityHook | `beforeInitialize` `DynamicFeeRequired`; `Deployment.pool.key` rule (fee 8388608, hooks = parityHook) |
 | Inventory = hook-owned ERC-6909 claims, keeper deposit/withdraw | `IParityHook.depositInventory/withdrawInventory/isKeeper/setKeeper`, `inventory`, `InventoryChanged` |

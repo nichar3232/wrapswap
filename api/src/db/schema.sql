@@ -262,7 +262,7 @@ CREATE TABLE registry_events (                    -- IssuerAdded, IssuerRemoved,
 );
 CREATE INDEX registry_events_token ON registry_events (chain_id, token, block_number DESC);
 
-CREATE TABLE admin_events (  -- KeeperSet, TrustedRouterSet, PusherSet, HolidaySet, EarlyCloseSet, AdapterPaused, TransfersPaused
+CREATE TABLE admin_events (  -- KeeperSet, TrustedRouterSet, PusherSet, AdapterPaused, TransfersPaused
   chain_id INTEGER NOT NULL, block_number NUMERIC(78,0) NOT NULL, block_hash TEXT NOT NULL,
   block_timestamp NUMERIC(78,0) NOT NULL, tx_hash TEXT NOT NULL, log_index INTEGER NOT NULL, contract TEXT NOT NULL,
   event_name TEXT NOT NULL, args JSONB NOT NULL,
