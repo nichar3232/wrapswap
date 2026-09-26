@@ -15,12 +15,28 @@ test("Landing: Unison brand, three products; Developers page lists every contrac
   await expect(page).toHaveTitle("Unison");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unison");
   await expect(page.getByText("WrapSwap", { exact: true })).toHaveCount(0);
-  await expect(page.locator(".steps3 h3")).toHaveText(["Convert", "Dark Cross", "Send"]);
-  await expect(page.locator(".steps3 p")).toHaveCount(3);
+  const how = page.locator("#how-it-works");
+  await expect(how.locator(".steps4 p")).toHaveText([
+    "Convert — Swap one issuer's AAPL wrapper for another's share-for-share, based on what each wrapper represents, not the market price. Fee: 2 bps + skew, to the LP.",
+    "Dark Cross — On-chain dark pool. Orders are sealed until matched, cross at the 30-minute oracle midpoint for a 1 bp venue fee, residual routes through Convert.",
+    "Send — Confidential payment on Sui. Amount hidden by Seal encryption; recipient withdraws into any issuer's wrapper.",
+    "Liquidity — Supply both wrappers, earn every Convert fee. Skew fee rises against imbalance so inventory stays balanced.",
+  ]);
+  await expect(how).not.toContainText(/\b0[1-4]\b|Try it/);
+  expect(await how.locator("h2").evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeLessThanOrEqual(32);
+  expect(await how.locator(".steps4 p").first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(14);
+  // One row of four at desktop width.
+  const tops = await how.locator(".steps4 li").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(new Set(tops).size).toBe(1);
   await expect(page.locator("#proof, #developers")).toHaveCount(0); // moved to /developers
   await page.goto("/developers");
   const contracts = page.locator("#contracts");
-  await expect(contracts.getByRole("heading")).toContainText("Live on Unichain Sepolia");
+  await expect(contracts.getByRole("heading")).toContainText("Contracts");
+  for (const path of ["/", "/developers"]) {
+    await page.goto(path);
+    await expect(page.getByText(/Live on|chain 1301/)).toHaveCount(0);
+  }
+  await page.goto("/developers");
   if (d) {
     await expect(contracts.getByRole("link", { name: "Uniscan ↗" }).first()).toHaveAttribute(
       "href",
@@ -48,7 +64,10 @@ test("Landing: Unison brand, three products; Developers page lists every contrac
   await expect(page.getByText(/Inventory · skew/)).toBeVisible();
 });
 
-/** The target is scrolled to the top of the viewport, or the page is scrolled to its end. */
+/**
+ * The target is scrolled to the top of the viewport, or the page is scrolled to its end. On the landing deck a target
+ * inside a slide (a How it works card) snaps to its slide: that slide is at the top and the target is fully in view.
+ */
 async function expectScrolledTo(page: Page, id: string) {
   await expect(page).toHaveURL(new RegExp(`#${id}$`));
   await expect
@@ -60,7 +79,10 @@ async function expectScrolledTo(page: Page, id: string) {
         const atEnd =
           Math.ceil(scrollY + innerHeight) >=
           document.documentElement.scrollHeight - 1;
-        return r.top < innerHeight && (Math.abs(r.top) < 2 || atEnd);
+        const slide = el.closest("section");
+        const inSlide =
+          !!slide && slide !== el && Math.abs(slide.getBoundingClientRect().top) < 2 && r.top >= 0 && r.bottom <= innerHeight;
+        return r.top < innerHeight && (Math.abs(r.top) < 2 || atEnd || inSlide);
       }, id),
     )
     .toBe(true);
@@ -112,9 +134,10 @@ test.describe("Landing controls all navigate or scroll", () => {
       [
         "How it works",
         [
-          ["01 Convert", (p) => expectScrolledTo(p, "how-convert")],
-          ["02 Dark Cross", (p) => expectScrolledTo(p, "how-dark")],
-          ["03 Send", (p) => expectScrolledTo(p, "how-send")],
+          ["Convert", (p) => expectScrolledTo(p, "how-convert")],
+          ["Dark Cross", (p) => expectScrolledTo(p, "how-dark")],
+          ["Send", (p) => expectScrolledTo(p, "how-send")],
+          ["Liquidity", (p) => expectScrolledTo(p, "how-liquidity")],
         ],
       ],
       [
@@ -122,6 +145,7 @@ test.describe("Landing controls all navigate or scroll", () => {
         [
           ["Architecture", (p) => expectScrolledTo(p, "architecture")],
           ["Contracts", (p) => expectScrolledTo(p, "contracts")],
+          ["MCP", (p) => expectScrolledTo(p, "agents")],
         ],
       ],
     ];
@@ -162,7 +186,7 @@ test.describe("Landing controls all navigate or scroll", () => {
     }
   });
 
-  test("CTAs, Try it links, brand links, theme and footer", async ({
+  test("CTAs, product cards, brand links, theme and footer", async ({
     page,
   }) => {
     for (const [where, name] of [
@@ -176,9 +200,9 @@ test.describe("Landing controls all navigate or scroll", () => {
     await page.goto("/");
     await page.getByRole("link", { name: "See it onchain →" }).click();
     await expectScrolledTo(page, "contracts");
-    for (const [i, tab] of ["Move", "Move", "Send"].entries()) {
+    for (const [i, tab] of ["Move", "Move", "Send", "Liquidity"].entries()) {
       await page.goto("/");
-      await page.getByRole("link", { name: "Try it →" }).nth(i).click();
+      await page.locator("#how-it-works .steps4 a").nth(i).click();
       await expectAppTab(page, tab);
       if (i === 1) await expect(page.getByRole("tab", { name: "Dark Cross" })).toHaveAttribute("aria-selected", "true");
     }
@@ -212,13 +236,31 @@ test.describe("Landing controls all navigate or scroll", () => {
       await expectPopup(page, () => explorer.nth(i).click(), /uniscan\.xyz\/address\//);
   });
 
-  test("diagrams: simple flow, developer lanes in v4 call order, Unichain node opens its explorer page", async ({ page }) => {
+  test("diagrams: Convert flow (landing + Developers), developer lanes in v4 call order, Unichain node opens its explorer page", async ({ page }) => {
     const file = new URL("../../deployments/unichain-sepolia.resolved.json", import.meta.url);
     const d = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : undefined;
     await page.goto("/");
-    const simple = page.locator(".simple-flow");
-    for (const text of ["AAPL on Coinbase", "Uniswap v4 hook · NAV parity", "AAPL on xStocks", "Dark Cross", "Send on Sui"])
-      await expect(simple.getByText(text, { exact: false })).toBeVisible();
+    const flow = page.locator("#flow .convert-flow");
+    const nodes = [
+      ["Oracle · peg guard", "Stops trade if gap > 50 bps"],
+      ["User sends", "100 mcbAAPL, issuer A"],
+      ["ParityHook, in the v4 pool", "Share for share, minus fee"],
+      ["User receives", "101.08 mAAPLx, issuer B"],
+      ["LP inventory", "Takes the other side, earns fee"],
+    ];
+    await expect(flow.locator(".cf-title")).toHaveText(nodes.map((n) => n[0]));
+    await expect(flow.locator(".cf-sub")).toHaveText(nodes.map((n) => n[1]));
+    await expect(flow.locator(".cf-caption")).toHaveText("Exchange A price · Exchange B price feed only this");
+    await expect(flow.locator("figcaption")).toHaveText("Exchange prices never enter the conversion. Only the multipliers do.");
+    expect(await flow.locator("rect").evaluateAll((r) => r.map((x) => x.getAttribute("height")))).toEqual(["56", "56", "56", "56", "56"]);
+    expect(await flow.evaluate((e) => e.getBoundingClientRect().width)).toBeLessThanOrEqual(720);
+    expect(await flow.locator("svg").innerHTML()).not.toMatch(/Gradient/);
+    await page.goto("/developers");
+    const devFlow = page.locator(".convert-flow.dev");
+    await expect(devFlow.locator(".cf-title")).toHaveText(["Exchange A price", "Exchange B price", ...nodes.map((n) => n[0])]);
+    await expect(devFlow.locator(".cf-sub").first()).toHaveText("mcbAAPL at $200.10");
+    await expect(devFlow.locator(".cf-sub").nth(1)).toHaveText("mAAPLx at $200.00");
+    await expect(devFlow.locator(".cf-arb")).toHaveText("Arb buys the cheap wrapper, converts toward the expensive one at parity, sells it. Profit = price gap − base fee − skew fee.");
     await page.goto("/developers");
     const dev = page.locator(".dev-diagram");
     await expect(dev.locator(".lane-uniswap .dn-contract")).toHaveText(["your wallet", "WrapSwapRouter.swapExactIn", "PoolManager.swap", "ParityHook.beforeSwap", "PoolManager delta settled"]);
@@ -234,20 +276,91 @@ test.describe("Landing controls all navigate or scroll", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 
-  test("landing sections are full height and snap (proximity)", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.emulateMedia({ reducedMotion: "no-preference" });
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+  ]) {
+    const mobile = width < 600;
+    test.describe(`${width}×${height}`, () => {
+      test.use({ viewport: { width, height }, hasTouch: mobile, isMobile: mobile });
+      test("landing is a snap deck: full-height sections, hero fits, one scroll lands on the next", async ({ page }) => {
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+        await page.goto("/");
+        // Styles are injected by the module graph in dev; wait for the rendered landing before reading them.
+        await expect(page.locator(".hero h1")).toHaveText("Unison");
+        await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).toBe("y mandatory");
+        const ids = ["product", "one-price", "how-it-works", "flow"];
+        const boxes = await page.evaluate(
+          (ids) =>
+            [...ids.map((id) => document.getElementById(id)!), document.querySelector("footer.lfoot")!].map((e) => ({
+              h: e.getBoundingClientRect().height,
+              snap: getComputedStyle(e).scrollSnapAlign,
+            })),
+          ids,
+        );
+        for (const [i, b] of boxes.entries()) {
+          expect(b.h, ids[i] ?? "footer").toBeGreaterThanOrEqual(height);
+          expect(b.snap, ids[i] ?? "footer").toBe("start");
+        }
+        expect(boxes[0].h, "hero fits in one viewport").toBe(height);
+        // One scroll from the top lands the second section flush with the viewport top: a single arrow step (~40 px,
+        // directional snap) on desktop; on mobile one touch swipe across 60% of the screen, with no fling so the
+        // result is deterministic (a fling's distance varies run to run). Synthetic pixel wheel events snap to the
+        // nearest section, unlike a notched wheel, so they can't stand in for one.
+        if (mobile) {
+          const cdp = await page.context().newCDPSession(page);
+          await cdp.send("Input.synthesizeScrollGesture", {
+            x: width / 2,
+            y: height * 0.8,
+            yDistance: -Math.round(height * 0.6),
+            speed: 1500,
+            gestureSourceType: "touch",
+            preventFling: true,
+          });
+        } else {
+          await page.locator(".hero h1").click();
+          await page.keyboard.press("ArrowDown");
+        }
+        await expect
+          .poll(() => page.evaluate(() => Math.round(document.getElementById("one-price")!.getBoundingClientRect().top)), { timeout: 5000 })
+          .toBe(0);
+      });
+    });
+  }
+
+  test("MCP is findable: landing callout, footer link, Developers Agents section with tools, setup and the recorded run", async ({ page }) => {
     await page.goto("/");
-    // Styles are injected by the module graph in dev; wait for the rendered landing before reading them.
-    await expect(page.locator(".hero h1")).toHaveText("Unison");
-    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).not.toBe("none");
-    // "y" alone serializes proximity, the default strictness; mandatory would read "y mandatory".
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).toMatch(/^y( proximity)?$/);
-    for (const id of ["product", "one-price", "how-it-works"]) {
-      const box = await page.locator(`#${id}`).evaluate((e) => ({ h: e.getBoundingClientRect().height, snap: getComputedStyle(e).scrollSnapAlign }));
-      expect(box.h, id).toBeGreaterThanOrEqual(900);
-      expect(box.snap, id).toBe("start");
-    }
+    await expect(page.locator("#how-it-works .mcp-callout")).toContainText("Agents can use Unison too");
+    await page.locator("#how-it-works .mcp-callout").getByRole("link", { name: "MCP setup →" }).click();
+    await expectScrolledTo(page, "agents");
+    await page.goto("/");
+    await page.locator("footer").getByRole("link", { name: "MCP", exact: true }).click();
+    await expectScrolledTo(page, "agents");
+    const a = page.locator("#agents");
+    // From /developers, the nav's landing links arrive at the section, not the hero.
+    await page.locator("header").getByRole("link", { name: "How it works", exact: true }).click();
+    await expectScrolledTo(page, "how-it-works");
+    await page.goto("/developers#agents");
+    await expect(a.locator(".mcp-endpoint code")).toHaveText("https://nichars-mac-mini.tail43cacc.ts.net/mcp");
+    await expect(a.locator(".mcp-tools li code")).toHaveText([
+      "list_assets()",
+      "get_pool(asset)",
+      "quote_convert(asset, fromWrapper, toWrapper, amount)",
+      "convert(asset, fromWrapper, toWrapper, amount, recipient?)",
+      "get_batch(asset)",
+      "commit_dark_order(asset, side, amount)",
+    ]);
+    await expect(a.locator(".mcp-setup pre")).toHaveText("claude mcp add unison --transport http https://nichars-mac-mini.tail43cacc.ts.net/mcp");
+    await expect(a.locator(".mcp-setup")).toContainText("Settings → Connectors → Add custom connector.");
+    // The transcript comes from the generated file (scripts/gen-mcp-demo.py); check the page against it, not typed values.
+    const demo = JSON.parse(readFileSync(new URL("../../deployments/unichain-sepolia.mcp-demo.json", import.meta.url), "utf8"));
+    const t = page.locator("#agent-transcript");
+    await expect(t.locator("blockquote")).toHaveText(demo.prompt);
+    await expect(t.locator(".mcp-steps code")).toHaveText(demo.steps.map((s: { tool: string }) => new RegExp(`^${s.tool}\\(`)));
+    await expect(t.locator(".tx-card")).toHaveAttribute("href", `https://sepolia.uniscan.xyz/tx/${demo.tx}`);
+    await expect(t.locator(".tx-hash")).toHaveText(demo.tx);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 
   test("mobile menu opens without chevrons and its items scroll", async ({

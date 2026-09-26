@@ -2,7 +2,7 @@ import type { PoolAssetResponse } from "@wrapswap/types";
 import type { Feed } from "../hooks/useApi";
 import { amount, fmtShares } from "../lib/format";
 import type { Asset } from "./assets";
-import { skewPct } from "./fees";
+import { keeperSetInventory, skewPct } from "./fees";
 import { Skeleton, Val } from "./ui";
 
 type Wrapper = PoolAssetResponse["wrappers"][number];
@@ -120,6 +120,11 @@ export function Liquidity({ asset, pool, onMove }: { asset: Asset | undefined; p
               );
             })}
           </ul>
+          {keeperSetInventory(p) && (
+            <p className="muted small" data-testid="keeper-set">
+              Inventory set by pool keeper
+            </p>
+          )}
         </section>
       </div>
       <section className="card lp" aria-label="LP economics">

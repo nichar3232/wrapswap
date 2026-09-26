@@ -1,0 +1,38 @@
+{
+  "client": "Claude Code 2.1.283",
+  "endpoint": "https://nichars-mac-mini.tail43cacc.ts.net/mcp",
+  "prompt": "Convert 50 AAPL into whichever wrapper is cheapest right now.",
+  "steps": [
+    {
+      "tool": "get_pool",
+      "args": {
+        "asset": "AAPL"
+      },
+      "result": "AAPL skew 18.79%; cheapest now: mcbAAPL \u2192 mAAPLx at 2.00 bps; mcbAAPL\u2192mAAPLx 2.00 bps, mAAPLx\u2192mcbAAPL 4.83 bps"
+    },
+    {
+      "tool": "quote_convert",
+      "args": {
+        "asset": "AAPL",
+        "fromWrapper": "mcbAAPL",
+        "toWrapper": "mAAPLx",
+        "amount": 50
+      },
+      "result": "49.999999 shares mcbAAPL \u2192 49.989999 shares mAAPLx (49.98999995001 mAAPLx); fee 2.00 bps (base 0.009999, skew 0 shares), reduces imbalance"
+    },
+    {
+      "tool": "convert",
+      "args": {
+        "asset": "AAPL",
+        "fromWrapper": "mcbAAPL",
+        "toWrapper": "mAAPLx",
+        "amount": 50
+      },
+      "result": "Converted 49.999999 shares mcbAAPL \u2192 49.98999995001 mAAPLx: 0x8ab08c71d47c6354ad972e0629182d9809dede261af8b5329cf0d4c8f79e482d (https://sepolia.uniscan.xyz/tx/0x8ab08c71d47c6354ad972e0629182d9809dede261af8b5329cf0d4c8f79e482d); fee 2.00 bps = base 0.009999 + skew 0 shares"
+    }
+  ],
+  "tx": "0x8ab08c71d47c6354ad972e0629182d9809dede261af8b5329cf0d4c8f79e482d",
+  "block": 63592305,
+  "explorer": "https://sepolia.uniscan.xyz/tx/0x8ab08c71d47c6354ad972e0629182d9809dede261af8b5329cf0d4c8f79e482d",
+  "source": "submission/mcp-demo.md"
+}

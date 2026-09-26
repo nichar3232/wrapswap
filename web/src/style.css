@@ -474,7 +474,7 @@ select.token option {
   gap: 8px;
 }
 
-/* Dark Pool */
+/* Dark Cross */
 .stack {
   width: 100%;
   max-width: 460px;
@@ -554,7 +554,7 @@ select.token option {
   margin-bottom: -4px;
 }
 
-/* Pool */
+/* Liquidity */
 .skew {
   display: flex;
   flex-direction: column;
@@ -1297,7 +1297,7 @@ dl.quote dd {
   color: var(--muted);
 }
 
-/* Pool */
+/* Liquidity */
 .inv-row {
   display: flex;
   flex-direction: column;
@@ -1855,7 +1855,7 @@ main.app-main {
   gap: 4px;
 }
 
-/* Pool: three tiles */
+/* Liquidity: tiles */
 .tiles {
   display: grid;
   grid-template-columns: 1fr 1.4fr 1fr;
@@ -2892,4 +2892,7 @@ table.sees th[scope="row"] {
   .relay-steps .hex {
     grid-column: 1 / -1;
   }
+}
+.relay-steps li.leg-wait {
+  color: var(--muted);
 }

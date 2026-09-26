@@ -652,12 +652,6 @@ section[id] {
   align-items: baseline;
   gap: 8px 20px;
 }
-.chain {
-  font-family: var(--mono);
-  font-size: 13px;
-  letter-spacing: 0;
-  color: var(--black-ink-soft);
-}
 .pending {
   margin: 0;
   padding: 18px 0;
@@ -926,62 +920,6 @@ html {
 }
 
 /* Simple flow: You → Unison → You, with two branches */
-.simple-flow {
-  margin: 64px 0 0;
-  padding: 40px;
-  border: 1px solid var(--black-hairline);
-  background: #05070d;
-}
-.sf-main {
-  display: grid;
-  grid-template-columns: 1fr auto 1.2fr auto 1fr;
-  align-items: center;
-  gap: 18px;
-}
-.sf-node {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 22px 24px;
-  border: 1px solid rgba(238, 242, 251, 0.18);
-  border-radius: 14px;
-  background: #0b0e15;
-}
-.sf-core {
-  border-color: #5b8bff;
-  background: rgba(91, 139, 255, 0.1);
-}
-.sf-k {
-  font-size: 13px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--black-ink-soft);
-}
-.sf-v {
-  font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-}
-.sf-arrow {
-  font-size: 26px;
-  color: #8fb0ff;
-}
-.sf-branches {
-  display: flex;
-  justify-content: center;
-  gap: 16px;
-  margin-top: 18px;
-  flex-wrap: wrap;
-}
-.sf-branch {
-  padding: 10px 16px;
-  border: 1px dashed rgba(238, 242, 251, 0.25);
-  border-radius: 999px;
-  font-size: 15px;
-}
-.sf-branch .sf-k {
-  margin-right: 6px;
-}
 
 /* Developers: lanes of nodes (HTML, so nothing clips) */
 .developers {
@@ -1075,16 +1013,6 @@ html {
   color: #8fb0ff;
 }
 @media (max-width: 900px) {
-  .sf-main {
-    grid-template-columns: 1fr;
-  }
-  .sf-arrow {
-    transform: rotate(90deg);
-    justify-self: center;
-  }
-  .simple-flow {
-    padding: 20px;
-  }
 }
 
 /* Developers page */
@@ -1092,6 +1020,7 @@ html {
   position: sticky;
   top: 0;
   z-index: 10;
+  padding: 0; /* only the nav bar sticks, not a section's worth of padding */
 }
 .proof .table-wrap + .table-wrap {
   margin-top: 28px;
@@ -1103,4 +1032,294 @@ html {
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+/* How it works: one compact row of four product cards (overrides the full-height section above). */
+.how {
+  min-height: 0;
+  padding-top: 72px;
+  padding-bottom: 56px;
+}
+.how h2 {
+  margin-bottom: 24px;
+  font-size: clamp(24px, 2.4vw, 32px);
+  letter-spacing: -0.02em;
+}
+.steps4 {
+  list-style: none;
+  margin: 0 0 40px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.steps4 a {
+  display: block;
+  height: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--black-hairline);
+  border-radius: 12px;
+  color: var(--black-ink-soft);
+  transition: border-color 160ms, background 160ms;
+}
+.steps4 a:hover,
+.steps4 a:focus-visible {
+  border-color: rgba(238, 242, 251, 0.35);
+  background: rgba(238, 242, 251, 0.04);
+}
+.steps4 p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.steps4 strong {
+  color: var(--black-ink);
+  font-weight: 600;
+}
+@media (max-width: 1000px) {
+  .steps4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .steps4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Convert flow diagram (landing and Developers): flat, translucent tints that read on light and dark. */
+.convert-flow {
+  max-width: 720px;
+  margin: 8px auto 0;
+  color: inherit;
+}
+.convert-flow svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.cf-node rect {
+  stroke-width: 1.25;
+}
+.cf-user rect {
+  fill: rgb(91 139 255 / 0.16);
+  stroke: rgb(91 139 255 / 0.7);
+}
+.cf-hook rect {
+  fill: rgb(45 190 160 / 0.16);
+  stroke: rgb(45 190 160 / 0.75);
+}
+.cf-lp rect {
+  fill: rgb(230 170 60 / 0.16);
+  stroke: rgb(230 170 60 / 0.75);
+}
+.cf-neutral rect {
+  fill: rgb(150 155 165 / 0.14);
+  stroke: rgb(150 155 165 / 0.6);
+}
+.cf-title {
+  fill: currentColor;
+  font-size: 14px;
+  font-weight: 600;
+}
+.cf-sub {
+  fill: currentColor;
+  opacity: 0.72;
+  font-size: 12.5px;
+}
+.cf-caption {
+  fill: currentColor;
+  opacity: 0.6;
+  font-size: 12px;
+}
+.cf-arrow {
+  fill: none;
+  stroke: currentColor;
+  stroke-opacity: 0.5;
+  stroke-width: 1.5;
+}
+.cf-arrowhead {
+  fill: currentColor;
+  fill-opacity: 0.6;
+}
+.convert-flow figcaption,
+.cf-arb {
+  margin: 14px 0 0;
+  text-align: center;
+  font-size: 14px;
+  opacity: 0.75;
+}
+.cf-arb {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+/* ---------- Landing deck: each top-level section is one full-viewport slide ---------- */
+/* Mandatory here only (html.deck, set by Landing.tsx); Developers keeps proximity above. A section taller than the
+   viewport still scrolls natively inside itself: browsers let a snap area larger than the snapport scroll freely. */
+html.deck {
+  scroll-snap-type: y mandatory;
+}
+html.deck .hero,
+html.deck .one-price,
+html.deck .how,
+html.deck .flow-sec,
+html.deck .lfoot {
+  min-height: 100vh;
+  scroll-snap-align: start;
+}
+html.deck .how,
+html.deck .flow-sec {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+html.deck .flow-sec .convert-flow {
+  width: 100%;
+}
+html.deck .lfoot {
+  align-content: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.deck {
+    scroll-snap-type: none;
+  }
+}
+
+/* ---------- Agents (Developers): MCP endpoint, tools, setup, recorded run ---------- */
+.agents {
+  border-top: 1px solid var(--black-hairline);
+}
+.agents h3 {
+  margin: 48px 0 16px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--black-ink);
+}
+.agents-lead,
+.muted-line {
+  max-width: 760px;
+  color: var(--black-ink-soft);
+}
+.muted-line {
+  font-size: 15px;
+}
+.mcp-endpoint {
+  margin-top: 32px;
+  display: grid;
+  gap: 8px;
+  padding: 20px 24px;
+  border: 1px solid rgba(91, 139, 255, 0.45);
+  border-radius: 4px;
+  background: #05070d;
+}
+.mcp-endpoint .tile-k {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8fb0ff;
+}
+.mcp-endpoint code {
+  font-size: 15px;
+  color: var(--black-ink);
+  overflow-wrap: anywhere;
+}
+.mcp-tools {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.mcp-tools li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--black-hairline);
+  border-radius: 12px;
+}
+.mcp-tools code {
+  color: var(--black-ink);
+  overflow-wrap: anywhere;
+}
+.mcp-tools p {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 14px;
+  color: var(--black-ink-soft);
+}
+.mcp-kind {
+  align-self: start;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--black-hairline);
+  color: var(--black-ink-soft);
+}
+.mcp-kind.executes {
+  border-color: rgba(230, 170, 60, 0.6);
+  color: rgb(240, 190, 90);
+}
+.mcp-setup {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 40px;
+}
+.mcp-setup ol {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  color: var(--black-ink-soft);
+  font-size: 16px;
+}
+.mcp-setup pre {
+  margin: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--black-hairline);
+  border-radius: 8px;
+  background: #05070d;
+  color: var(--black-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mcp-demo blockquote {
+  margin: 16px 0 24px;
+  padding: 12px 20px;
+  border-left: 3px solid #8fb0ff;
+  font-size: 20px;
+  color: var(--black-ink);
+}
+.mcp-steps {
+  margin: 0 0 24px;
+  padding-left: 22px;
+  display: grid;
+  gap: 14px;
+}
+.mcp-steps code {
+  color: var(--black-ink);
+  overflow-wrap: anywhere;
+}
+.mcp-steps p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--black-ink-soft);
+  overflow-wrap: anywhere;
+}
+.mcp-callout {
+  margin: 28px 0 0;
+  font-size: 15px;
+  color: var(--black-ink-soft);
+}
+.mcp-callout a {
+  color: #8fb0ff;
+}
+@media (max-width: 800px) {
+  .mcp-tools,
+  .mcp-setup {
+    grid-template-columns: 1fr;
+  }
 }

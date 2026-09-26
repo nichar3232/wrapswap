@@ -191,7 +191,7 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
             </dd>
           </div>
           <div>
-            <dt>Pool skew</dt>
+            <dt>Inventory skew</dt>
             <dd data-testid="receipt-skew">
               {skewPct(receipt.preSkew)} → {skewPct(receipt.postSkew)}
             </dd>
@@ -272,7 +272,7 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
             )}{" "}
             <small>{asset.symbol} shares</small>
           </span>
-          {qb && <span className="tile-s">{(qb.keep * 100).toFixed(2)}% · pool skew {skewPct(qb.preSkewX18)} → {skewPct(qb.postSkewX18)}</span>}
+          {qb && <span className="tile-s">{(qb.keep * 100).toFixed(2)}% · inventory skew {skewPct(qb.preSkewX18)} → {skewPct(qb.postSkewX18)}</span>}
         </div>
       </section>
       <p className="parity-line">Same share, converted at parity. Price gap between issuers is not charged.</p>

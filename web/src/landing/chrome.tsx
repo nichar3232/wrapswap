@@ -21,9 +21,10 @@ const NAV: (Link & { key: string; menu: Link[] })[] = [
     label: "How it works",
     href: "#how-it-works",
     menu: [
-      { label: "01 Convert", href: "#how-convert" },
-      { label: "02 Dark Cross", href: "#how-dark" },
-      { label: "03 Send", href: "#how-send" },
+      { label: "Convert", href: "#how-convert" },
+      { label: "Dark Cross", href: "#how-dark" },
+      { label: "Send", href: "#how-send" },
+      { label: "Liquidity", href: "#how-liquidity" },
     ],
   },
   {
@@ -33,6 +34,7 @@ const NAV: (Link & { key: string; menu: Link[] })[] = [
     menu: [
       { label: "Architecture", href: "/developers#architecture" },
       { label: "Contracts", href: "/developers#contracts" },
+      { label: "MCP", href: "/developers#agents" },
       { label: "GitHub ↗", href: GITHUB, external: true },
     ],
   },
@@ -150,6 +152,7 @@ export function Footer() {
         unison
       </span>
       <span>Built at ETHGlobal Tokyo 2026 · Uniswap v4</span>
+      <a href="/developers#agents">MCP</a>
       <a href={GITHUB} target="_blank" rel="noreferrer">
         GitHub ↗
       </a>
