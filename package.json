@@ -12,7 +12,8 @@
     "test:smoke": "playwright test --config web/playwright.config.ts",
     "types": "pnpm --filter @wrapswap/types generate && pnpm --filter @wrapswap/types build && pnpm --filter @wrapswap/types verify",
     "dev:sui-keeper": "tsx services/crank/sui/index.ts",
-    "dev:pay-api": "tsx services/crank/sui/pay-api.ts"
+    "dev:pay-api": "tsx services/crank/sui/pay-api.ts",
+    "preflight": "bash scripts/dev/preflight"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",

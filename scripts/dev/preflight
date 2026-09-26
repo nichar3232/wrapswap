@@ -1,54 +1,103 @@
 #!/usr/bin/env bash
-# Pre-demo checks for the live Unichain Sepolia stack. Prints one PASS/FAIL line per check; exits 1 on any FAIL.
-# Addresses come from the resolved manifest and from keys in ~/wrapswap-run/env/ (keys are never printed).
+# Pre-demo checks for the live stack (Unichain Sepolia + Sui testnet). Prints one PASS/FAIL line per check; exits 1 on any FAIL.
+# Addresses come from deployments/*.json and from keys in ~/wrapswap-run/env/ (keys are never printed).
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 R=${RPC_URL:-https://sepolia.unichain.org}
+SUI_GQL=${SUI_GRAPHQL_URL:-https://graphql.testnet.sui.io/graphql}
 M=deployments/unichain-sepolia.resolved.json
+S=deployments/sui-testnet.json
+W=deployments/preflight-wallets.json
+API=${API_URL:-http://127.0.0.1:18010}
 PUBLIC=${PUBLIC_URL:-https://nichars-mac-mini.tail43cacc.ts.net}
+SUI_STATE=${SUI_STATE_DIR:-$HOME/wrapswap-run/sui-state}
 fails=0
 check() { if [[ $2 == ok ]]; then printf 'PASS  %s\n' "$1"; else printf 'FAIL  %s: %s\n' "$1" "$2"; fails=$((fails + 1)); fi; }
-ge() { python3 -c "import sys; sys.exit(0 if int('$1') >= int('$2') else 1)"; }
+ge() { python3 -c "import sys; sys.exit(0 if int('${1:-0}') >= int('$2') else 1)"; }
 eth() { cast balance "$1" -r $R 2>/dev/null || echo 0; }
 keyaddr() { cast wallet address --private-key "$1" 2>/dev/null; }
-set -a; source "$HOME/wrapswap-run/env/onchain.env"; source "$HOME/wrapswap-run/env/demo-relay.env"; set +a
+json() { python3 -c "import json,sys; d=json.loads(sys.argv[1] or '{}'); $2" "$1" 2>/dev/null || echo "unreadable"; }
+suigql() { curl -s -m 10 "$SUI_GQL" -H 'content-type: application/json' -d "$(jq -cn --arg q "$1" '{query: $q}')"; }
+set -a; source "$HOME/wrapswap-run/env/onchain.env"; source "$HOME/wrapswap-run/env/demo-relay.env"; source "$HOME/wrapswap-run/env/demo-relay-sui.env"; set +a
+ASSETS=$(jq -r '.assets[].symbol' $M)
 
 # Stack
-h=$(curl -s 127.0.0.1:18010/health)
-check "api health (chain 1301, lag <= 5)" "$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '{}'); print('ok' if d.get('ok') and d.get('chainId')==1301 and (d.get('lagBlocks') or 99)<=5 else 'ok=%s lag=%s' % (d.get('ok'), d.get('lagBlocks')))" "$h")"
+h=$(curl -s "$API/health")
+check "api health (chain 1301, lag <= 5)" "$(json "$h" "print('ok' if d.get('ok') and d.get('chainId')==1301 and (d.get('lagBlocks') or 99)<=5 else 'ok=%s lag=%s' % (d.get('ok'), d.get('lagBlocks')))")"
 c=$(curl -s 127.0.0.1:18110/status)
-check "crank" "$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '{}'); print('ok' if d.get('ok') else 'lastError=%s' % d.get('lastError'))" "$c")"
+check "crank" "$(json "$c" "print('ok' if d.get('ok') else 'lastError=%s' % d.get('lastError'))")"
 check "web (local /app)" "$([[ $(curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:13010/app) == 200 ]] && echo ok || echo down)"
 check "demo relay" "$(curl -sf 127.0.0.1:18210/demo/status >/dev/null && echo ok || echo down)"
+
+# Sui keeper: its lockfile names a live PID and it has written the active pool's state in the last 5 minutes.
+pool=$(jq -r '.sui.poolId' $S); lock="$SUI_STATE/keeper-${pool:2:8}.lock"; st="$SUI_STATE/state-${pool:2:8}.json"
+if [[ -f $lock ]] && kill -0 "$(cat "$lock")" 2>/dev/null; then
+  age=$(( $(date +%s) - $(stat -f %m "$st" 2>/dev/null || echo 0) ))
+  check "sui keeper (pid $(cat "$lock"), state written ${age}s ago)" "$([[ $age -le 300 ]] && echo ok || echo stale)"
+else check "sui keeper" "not running (no live pid in $lock)"; fi
+
+# Funnel (public URL) and MCP through it.
 host=${PUBLIC#https://}; ip=$(dig +short @1.1.1.1 "$host" | head -1)
-for p in / /app /api/health /api/assets; do
-  check "public $p" "$([[ $(curl -s -o /dev/null -w '%{http_code}' --resolve "$host:443:$ip" "$PUBLIC$p") == 200 ]] && echo ok || echo 'not 200')"
+for p in / /app /developers /api/health /api/assets /api/pay/reserves; do
+  check "funnel $p" "$([[ $(curl -s -o /dev/null -w '%{http_code}' --resolve "$host:443:$ip" "$PUBLIC$p") == 200 ]] && echo ok || echo 'not 200')"
+done
+t=$(curl -s -m 15 --resolve "$host:443:$ip" -X POST "$PUBLIC/mcp" -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | sed -n 's/^data: //p;/^{/p' | head -1)
+n=$(json "$t" "print(len(d['result']['tools']))")
+check "funnel /mcp tools/list ($n tools)" "$([[ $n =~ ^[0-9]+$ && $n -gt 0 ]] && echo ok || echo "no tools")"
+
+# API routes per asset; current dark batch phase per asset.
+for a in $ASSETS; do
+  read w0 w1 d0 <<<"$(jq -r ".assets[] | select(.symbol==\"$a\") | \"\(.wrappers[0].symbol) \(.wrappers[1].symbol) \(.wrappers[0].decimals)\"" $M)"
+  for p in "pool/$a" "batches?asset=$a&settled=true" "quote?asset=$a&from=$w0&to=$w1&amount=$((10 ** d0))"; do
+    check "api $a /${p%%\?*}" "$([[ $(curl -s -o /dev/null -w '%{http_code}' "$API/$p") == 200 ]] && echo ok || echo 'not 200')"
+  done
+  b=$(curl -s "$API/batches/current?asset=$a")
+  ph=$(json "$b" "print('%s #%s, %ss left' % (d['phase'], d['batchId'], d.get('secondsRemaining')))")
+  check "$a dark batch: $ph" "$(json "$b" "print('ok' if d.get('phase') and not d['oracle']['stale'] and int(d['phaseEndsBlock']) >= int(d['blockNumber']) - 30 else 'stalled or oracle stale')")"
 done
 
 # Contracts: Dark Cross protocol fee is 1 bp on every asset.
-for a in $(jq -r '.assets[].symbol' $M); do
+for a in $ASSETS; do
   hk=$(jq -r ".assets[] | select(.symbol==\"$a\") | .darkCrossHook" $M)
   v=$(cast call "$hk" 'CROSS_FEE_PIPS()(uint24)' -r $R 2>/dev/null)
   check "$a DarkCrossHook CROSS_FEE_PIPS = 100" "$([[ $v == 100 ]] && echo ok || echo "is $v")"
 done
 
-# Keys: ETH for gas.
-CRANK=$(keyaddr "$CRANK_PRIVATE_KEY"); DEPLOYER=$(keyaddr "$DEPLOYER_PRIVATE_KEY"); RELAY=$DEMO_RELAY_ADDRESS
-[[ $(keyaddr "$DEMO_RELAY_PRIVATE_KEY") == "$RELAY" ]] || check "relay key file" "address does not match its key"
-for row in "crank $CRANK 3000000000000000" "deployer $DEPLOYER 5000000000000000" "demo-relay $RELAY 3000000000000000"; do
-  read name addr min <<<"$row"; bal=$(eth "$addr")
-  check "$name $addr ETH $(cast from-wei "$bal") >= $(cast from-wei $min)" "$(ge "$bal" "$min" && echo ok || echo low)"
-done
+# ETH for gas: deployer, crank, demo relay, and the watched wallets.
+CRANK=$(keyaddr "$CRANK_PRIVATE_KEY"); DEPLOYER=$(keyaddr "$DEPLOYER_PRIVATE_KEY"); RELAY=$(jq -r '.demo.relay' $M)
+[[ $(keyaddr "$DEMO_RELAY_PRIVATE_KEY") == "$RELAY" ]] || check "relay key file" "address does not match the manifest's demo.relay"
+while read name addr min; do
+  bal=$(eth "$addr")
+  check "$name $addr ETH $(cast from-wei "$bal") >= $(cast from-wei "$min")" "$(ge "$bal" "$min" && echo ok || echo low)"
+done < <(printf '%s\n' "crank $CRANK 3000000000000000" "deployer $DEPLOYER 5000000000000000" "demo-relay $RELAY 3000000000000000"
+  jq -r '.evm[] | "\(.label) \(.address) \(.minWei)"' $W)
 
-# Demo relay: every wrapper must cover one max action (100 shares).
-for a in $(jq -r '.assets[].symbol' $M); do
-  jq -r ".assets[] | select(.symbol==\"$a\") | .wrappers[] | \"\(.symbol) \(.token) \(.multiplier) \(.decimals)\"" $M | while read sym tok mult dec; do
-    bal=$(cast call "$tok" 'balanceOf(address)(uint256)' "$RELAY" -r $R 2>/dev/null | awk '{print $1}')
-    need=$(python3 -c "print(-(-100 * 10**18 * 10**$dec // $mult))")
-    printf '%s  demo-relay %s %s (needs %s for 100 shares)\n' "$(ge "${bal:-0}" "$need" && echo PASS || echo FAIL)" "$sym" "${bal:-0}" "$need"
-    ge "${bal:-0}" "$need" || touch /tmp/.preflight-fail.$$
+# Demo relay: every wrapper covers one max action (100 shares) and is approved to the router and its DarkCrossHook.
+ROUTER=$(jq -r '.router' $M)
+while read a sym tok mult dec hk; do
+  bal=$(cast call "$tok" 'balanceOf(address)(uint256)' "$RELAY" -r $R 2>/dev/null | awk '{print $1}')
+  need=$(python3 -c "print(-(-100 * 10**18 * 10**$dec // $mult))")
+  check "demo-relay $sym balance ${bal:-0} >= $need (100 shares)" "$(ge "${bal:-0}" "$need" && echo ok || echo low)"
+  for sp in "router $ROUTER" "darkCrossHook $hk"; do
+    read sname saddr <<<"$sp"
+    al=$(cast call "$tok" 'allowance(address,address)(uint256)' "$RELAY" "$saddr" -r $R 2>/dev/null | awk '{print $1}')
+    check "demo-relay $sym approved to $sname" "$(ge "${al:-0}" "$need" && echo ok || echo "allowance ${al:-0}")"
   done
-done
-[[ -f /tmp/.preflight-fail.$$ ]] && { fails=$((fails + 1)); rm -f /tmp/.preflight-fail.$$; }
+done < <(jq -r '.assets[] | .symbol as $a | .darkCrossHook as $h | .wrappers[] | "\($a) \(.symbol) \(.token) \(.multiplier) \(.decimals) \($h)"' $M)
+
+# SUI for gas: the keeper/operator and both demo Send wallets.
+while read name addr min; do
+  mist=$(json "$(suigql "{ address(address: \"$addr\") { balance(coinType: \"0x2::sui::SUI\") { totalBalance } } }")" "print(d['data']['address']['balance']['totalBalance'])")
+  check "$name ${addr:0:10}… SUI $(python3 -c "print(int('${mist}')/1e9)" 2>/dev/null) >= $(python3 -c "print($min/1e9)")" "$(ge "$mist" "$min" 2>/dev/null && echo ok || echo low)"
+done < <(printf '%s\n' "sui-operator $(jq -r '.sui.operator' $S) 100000000" "sui-demo-A $DEMO_RELAY_SUI_A_ADDRESS 100000000" "sui-demo-B $DEMO_RELAY_SUI_B_ADDRESS 100000000")
+
+# Sui solvency, read from both chains directly: total_shares on the Sui pool <= shares held by the ShareVault.
+po=$(suigql "{ object(address: \"$pool\") { asMoveObject { contents { json } } } }")
+ts=$(json "$po" "print(d['data']['object']['asMoveObject']['contents']['json']['total_shares'])")
+check "sui pool not paused" "$(json "$po" "print('ok' if d['data']['object']['asMoveObject']['contents']['json']['paused'] is False else 'paused')")"
+held=$(cast call "$(jq -r '.evm.shareVault' $S)" 'reserves()(uint256,uint256)' -r $R 2>/dev/null | head -1 | awk '{print $1}')
+check "sui solvency: total_shares $ts <= ShareVault held ${held:-?}" "$(ge "${held:-0}" "$ts" 2>/dev/null && echo ok || echo insolvent)"
+
 echo "preflight: $fails failing check(s)"
 exit $((fails > 0))
