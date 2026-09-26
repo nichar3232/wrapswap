@@ -63,3 +63,16 @@
 - 2026-09-26: Market-hours logic everywhere reads the latest block timestamp: anvil is warped to NYSE OPEN (1790692200) for the video while Sepolia runs on the real clock.
 - 2026-09-26: Indexer reorg safety comes from cascading deletes: every event row references its block by hash with ON DELETE CASCADE, and derived state is SQL views.
 - 2026-09-26: @wrapswap/types is generated from the compiled interface ABIs and the fenced schemas in INTERFACES.md, carries no runtime dependencies, and verifies the §10 arithmetic on every `make types`.
+
+## 2026-09-26 — finisher (demo-check, WrapSwapRouter, Base Sepolia)
+- 2026-09-26: Parse `cast call` tuple output by first field, not `sed 's/ .*//p'`: cast adds the ` [1.2e3]` suffix only to large numbers, so small batch ids and phase-end blocks parsed as empty and the seed never found a commit phase.
+- 2026-09-26: Index anvil at `INDEXER_CONFIRMATIONS=0`: with automine and no interval mining the head never moves, so a 2-block depth can never reach head. Anvil does not reorg.
+- 2026-09-26: Pin anvil's base fee to 0 (`--block-base-fee-per-gas 0`) instead of changing the crank: the crank prices `settle()` from `eth_gasPrice`, and a timing-dependent base fee made settle tx hashes differ between otherwise identical runs.
+- 2026-09-26: Tasks 1 and 2 were coupled: `e2e/demo.spec` asserts an on-chain balance change after Convert, which needs a router with a minimum output. WrapSwapRouter landed before demo-check could pass.
+- 2026-09-26: WrapSwapRouter (INTERFACES.md §13) is a trusted router that only forwards hookData naming `msg.sender` (empty hookData becomes v1 for the caller; `SwapperMismatch` otherwise). A trusted router that passed arbitrary hookData would let any caller claim another address's eligibility.
+- 2026-09-26: `Deployment.contracts.wrapSwapRouter` is an optional schema key, and the router is deployed after DarkCrossHook: additive to the frozen interface, and no earlier anvil address or §10 currency ordering changes.
+- 2026-09-26: Web live Convert takes its swap deadline from the latest block timestamp, not host time: anvil runs warped to 2026-09-29, ahead of the host clock.
+- 2026-09-26 (component change, backend): The indexer queries `eth_getLogs` in address chunks of 8: publicnode, the required Base Sepolia RPC, rejects larger address lists, and the manifest has 21 addresses.
+- 2026-09-26 (component change, web): `send()` retries a failed pre-flight simulation up to 3 times, 1.5 s apart: on Sepolia a load-balanced backend without the approval block made the swap simulation revert with ERC20InsufficientAllowance.
+- 2026-09-26: Base Sepolia uses Coinbase Verifications' Base Sepolia attester, indexer and Verified Country schema (0xef54…4028, confirmed registered on-chain). The mainnet UIDs are not registered on 84532. DEMO_MODE=true so the demo wallet can convert without a Coinbase attestation.
+- 2026-09-26: The Sepolia seed tops up demo accounts to 0.002 ETH (`SEED_GAS_TOPUP_WEI`) and funds dark escrow before the commit window (`fundEscrow()`): the deployer held 0.03 ETH at ~0.006 gwei, and the 12-block commit window is ~24 s.
