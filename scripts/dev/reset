@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+source scripts/dev/env
+[[ $NETWORK == anvil ]] || { echo 'reset requires anvil' >&2; exit 1; }
+[[ -f logs/integration/snapshot ]] || { echo 'No seed snapshot: run scripts/dev/up successfully first' >&2; exit 1; }
+docker compose stop -t 2 crank api indexer
+result=$(cast rpc --rpc-url "$RPC_URL" evm_revert "$(cat logs/integration/snapshot)")
+[[ $result == true ]] || { echo 'Snapshot invalid; run down then up' >&2; exit 1; }
+cast rpc --rpc-url "$RPC_URL" evm_snapshot | tr -d '"' > logs/integration/snapshot
+docker compose exec -T postgres psql -U wrapswap -d wrapswap -p "$PG_PORT" -v ON_ERROR_STOP=1 <<'SQL'
+SELECT 'TRUNCATE ' || string_agg(format('%I.%I', schemaname, tablename), ', ') || ' RESTART IDENTITY CASCADE;'
+FROM pg_tables WHERE schemaname = 'public' \gexec
+SQL
+docker compose up -d --wait indexer api crank web
+scripts/dev/wait-head

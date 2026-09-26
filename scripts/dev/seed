@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+source scripts/dev/env
+: "${DEPLOYER_PK:=$(cast wallet private-key --mnemonic "$DEMO_MNEMONIC" --mnemonic-index 0)}"
+export DEPLOYER_PK
+mkdir -p logs/integration
+marker="logs/integration/seed-$NETWORK"
+# A marker is accepted only while its final block hash remains on this chain.
+if [[ -f $marker ]]; then
+  read -r number hash < "$marker"
+  if [[ $(cast block "$number" --field hash --rpc-url "$RPC_URL") == "$hash" ]]; then
+    echo 'Already seeded on this chain; no inventory or commits duplicated.'; exit 0
+  fi
+fi
+run() { forge script contracts/script/SeedDemo.s.sol:SeedDemo --sig "$1" --rpc-url "$RPC_URL" --broadcast --slow; }
+app() {
+  if [[ $NETWORK == anvil ]]; then
+    docker compose run --rm --no-deps -e NETWORK="$NETWORK" -e RPC_URL="$RPC_URL" api "$@"
+  else
+    docker run --rm -e NETWORK -e RPC_URL -e DEMO_MNEMONIC -v "$PWD/deployments:/app/deployments:ro" "${COMPOSE_PROJECT_NAME}-app" "$@"
+  fi
+}
+dark=$(app node --input-type=module -e 'import fs from "node:fs";console.log(JSON.parse(fs.readFileSync(`deployments/${process.env.NETWORK}.json`)).contracts.darkCrossHook)')
+history=$(app pnpm exec tsx scripts/dev/seed-history.ts)
+if [[ $history != none ]]; then
+  echo "Existing seed batch $history detected on chain; leaving inventory and commits unchanged."
+  exit 0
+fi
+if [[ $NETWORK == anvil ]]; then
+  cast rpc --rpc-url "$RPC_URL" anvil_setBlockTimestampInterval 0 >/dev/null
+  cast rpc --rpc-url "$RPC_URL" evm_setNextBlockTimestamp 1790692200 >/dev/null
+  cast rpc --rpc-url "$RPC_URL" evm_mine >/dev/null
+fi
+run 'run()'
+phase() { cast call "$dark" 'currentBatch()(uint256,uint8,uint256)' --rpc-url "$RPC_URL"; }
+# Start at a new COMMIT phase with enough room for all six funding/commit txs.
+for ((i=0;i<180;i++)); do
+  state=$(phase); batch=$(printf '%s\n' "$state" | sed -n '1s/ .*//p'); p=$(printf '%s\n' "$state" | sed -n '2p'); end=$(printf '%s\n' "$state" | sed -n '3s/ .*//p')
+  head=$(cast block-number --rpc-url "$RPC_URL")
+  if [[ $p == 0 ]] && ((end-head >= 8)); then break; fi
+  if [[ $NETWORK == anvil ]]; then cast rpc --rpc-url "$RPC_URL" anvil_mine 1 >/dev/null; else sleep 1; fi
+done
+[[ $p == 0 ]] && ((end-head >= 8)) || { echo 'No usable commit phase in 180 attempts' >&2; exit 1; }
+run 'commit()'
+printf '%s\n' "$batch" > "logs/integration/batch-$NETWORK"
+if [[ $NETWORK == base-sepolia ]]; then
+  # The crank never reveals. Reveal as the two counterparties before leaving settlement to it.
+  for ((i=0;i<180;i++)); do
+    state=$(phase); p=$(printf '%s\n' "$state" | sed -n '2p')
+    [[ $p == 1 ]] && break
+    sleep 1
+  done
+  [[ $p == 1 ]] || { echo 'Missed reveal window' >&2; exit 1; }
+  run 'reveal()'
+else
+  timestamp=1790692200
+  [[ ${SEED_VARIANT:-ANVIL} != NYSE-CLOSED ]] || timestamp=1791037800
+  if [[ $timestamp != 1790692200 ]]; then cast rpc --rpc-url "$RPC_URL" evm_setNextBlockTimestamp "$timestamp" >/dev/null; fi
+  cast rpc --rpc-url "$RPC_URL" evm_mine >/dev/null
+  # Subsequent automined transactions advance a fixed second, independent of host time.
+  cast rpc --rpc-url "$RPC_URL" anvil_setBlockTimestampInterval 1 >/dev/null
+fi
+if [[ ${SEED_VARIANT:-ANVIL} != ANVIL ]]; then export SEED_VARIANT; run 'scenario()'; fi
+number=$(cast block-number --rpc-url "$RPC_URL")
+printf '%s %s\n' "$number" "$(cast block "$number" --field hash --rpc-url "$RPC_URL")" > "$marker"
