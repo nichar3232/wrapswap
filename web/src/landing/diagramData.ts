@@ -76,10 +76,8 @@ export function hasCanonicalVault(u: UnichainFile | undefined) {
   return keyed || !!u.tokens?.some((t) => /^uAAPL$/i.test(t.symbol ?? ""));
 }
 
-export function diagramNodes(
-  u: UnichainFile | undefined = unichainFile,
-  s: SuiFile | undefined = suiFile,
-) {
+/** No default arguments: callers pass the manifests (or fixtures) explicitly. */
+export function diagramNodes(u: UnichainFile | undefined, s: SuiFile | undefined) {
   const c = u?.contracts ?? {};
   const link = (v: unknown) =>
     isAddress(v) ? explorerUrl("unichain-sepolia", "address", v) : null;
@@ -87,6 +85,8 @@ export function diagramNodes(
   const vault = hasCanonicalVault(u);
   const canonical = Object.entries(c).find(([k]) => /canonical|uaapl/i.test(k))?.[1] ??
     u?.tokens?.find((t) => /^uAAPL$/i.test(t.symbol ?? ""))?.address;
+  // ShareVault lives on Unichain but ships with the Sui payments deployment (sui-testnet.json → evm.shareVault).
+  const evm = s?.evm && typeof s.evm === "object" ? (s.evm as Record<string, unknown>) : undefined;
   const suiObject = (id?: string) => (id ? `${SUI_EXPLORER}/object/${id}` : null);
   const suiAccount = (id?: string) => (id ? `${SUI_EXPLORER}/account/${id}` : null);
 
@@ -95,7 +95,7 @@ export function diagramNodes(
     { id: "issuers", title: "Issuer tokens", zone: "unichain", group: true, x: 388, y: 172, w: 192, h: 214, href: null },
     { id: "aaplc", title: "AAPLc", sub: "Coinbase B20", zone: "unichain", x: 400, y: 196, w: 168, h: 56, href: link(token("coinbase")) },
     { id: "aaplx", title: "AAPLx", sub: "Backed xStocks", zone: "unichain", x: 400, y: 312, w: 168, h: 56, href: link(token("xstocks")) },
-    { id: "shareVault", title: "ShareVault", sub: "on Unichain", zone: "unichain", x: 270, y: 60, w: 180, h: 56, href: link(c.shareVault) },
+    { id: "shareVault", title: "ShareVault", sub: "on Unichain", zone: "unichain", x: 270, y: 60, w: 180, h: 56, href: link(evm?.shareVault) },
     { id: "router", title: "WrapSwapRouter", sub: "entry · swapExactIn", zone: "unichain", x: 660, y: 60, w: 200, h: 56, href: link(c.wrapSwapRouter) },
     vault
       ? { id: "center", kick: "CANONICAL VAULT", title: "uAAPL", sub: "minted 1:1 per share", zone: "unichain", x: 660, y: 200, w: 200, h: 74, href: link(canonical) }
@@ -158,7 +158,7 @@ function edgePath(e: Edge, a: Rect, b: Rect): { d: string; mid: [number, number]
 }
 
 /** "wide": zones side by side (Sui left of the divider). "stacked": Sui on top, Unichain below. */
-export function layout(kind: "wide" | "stacked", data = diagramNodes()): Layout {
+export function layout(kind: "wide" | "stacked", data: ReturnType<typeof diagramNodes>): Layout {
   const place = (n: Node): Node => {
     if (kind === "wide") return n;
     if (n.zone === "sui") {

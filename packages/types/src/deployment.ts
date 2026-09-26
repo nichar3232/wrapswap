@@ -1,17 +1,11 @@
 import type { Deployment, Network } from "./generated/schemas.js";
 import { assertDeployment } from "./generated/validators.js";
 
-export const NETWORKS = ["anvil", "base-sepolia", "unichain-sepolia"] as const satisfies readonly Network[];
+export const NETWORKS = ["anvil", "unichain-sepolia"] as const satisfies readonly Network[];
 
-/** Chain facts per network. Public RPCs are confirmed by eth_chainId; Base Sepolia is retired. */
+/** Chain facts per network. The public RPC is confirmed by eth_chainId (0x515). */
 export const CHAINS = {
   anvil: { id: 31337, name: "Anvil", rpcUrl: "http://127.0.0.1:8545", explorer: null },
-  "base-sepolia": {
-    id: 84532,
-    name: "Base Sepolia",
-    rpcUrl: "https://base-sepolia-rpc.publicnode.com",
-    explorer: "https://sepolia.basescan.org",
-  },
   "unichain-sepolia": {
     id: 1301,
     name: "Unichain Sepolia",
@@ -21,7 +15,6 @@ export const CHAINS = {
 } as const satisfies Record<Network, { id: number; name: string; rpcUrl: string; explorer: string | null }>;
 export const CHAIN_IDS = {
   anvil: CHAINS.anvil.id,
-  "base-sepolia": CHAINS["base-sepolia"].id,
   "unichain-sepolia": CHAINS["unichain-sepolia"].id,
 } as const satisfies Record<Network, number>;
 
