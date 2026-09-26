@@ -1,6 +1,7 @@
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { Footer, GITHUB, Nav } from "./chrome";
+import { ConvertFlow } from "./ConvertFlow";
 import { DevDiagram } from "./Flows";
 import { contractGroups, deployment, proofTxs, short } from "./proof";
 import "../theme.css";
@@ -21,6 +22,7 @@ function Developers() {
       </div>
       <section className="black developers" id="architecture">
         <h2>Architecture</h2>
+        <ConvertFlow variant="dev" />
         <DevDiagram />
         <p className="dev-links">
           <a href={GITHUB} target="_blank" rel="noreferrer">

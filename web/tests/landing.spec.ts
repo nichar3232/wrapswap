@@ -229,13 +229,31 @@ test.describe("Landing controls all navigate or scroll", () => {
       await expectPopup(page, () => explorer.nth(i).click(), /uniscan\.xyz\/address\//);
   });
 
-  test("diagrams: simple flow, developer lanes in v4 call order, Unichain node opens its explorer page", async ({ page }) => {
+  test("diagrams: Convert flow (landing + Developers), developer lanes in v4 call order, Unichain node opens its explorer page", async ({ page }) => {
     const file = new URL("../../deployments/unichain-sepolia.resolved.json", import.meta.url);
     const d = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : undefined;
     await page.goto("/");
-    const simple = page.locator(".simple-flow");
-    for (const text of ["AAPL on Coinbase", "Uniswap v4 hook · NAV parity", "AAPL on xStocks", "Dark Cross", "Send on Sui"])
-      await expect(simple.getByText(text, { exact: false })).toBeVisible();
+    const flow = page.locator("#how-it-works .convert-flow");
+    const nodes = [
+      ["Oracle · peg guard", "Stops trade if gap > 50 bps"],
+      ["User sends", "100 mcbAAPL, issuer A"],
+      ["ParityHook, in the v4 pool", "Share for share, minus fee"],
+      ["User receives", "101.08 mAAPLx, issuer B"],
+      ["LP inventory", "Takes the other side, earns fee"],
+    ];
+    await expect(flow.locator(".cf-title")).toHaveText(nodes.map((n) => n[0]));
+    await expect(flow.locator(".cf-sub")).toHaveText(nodes.map((n) => n[1]));
+    await expect(flow.locator(".cf-caption")).toHaveText("Exchange A price · Exchange B price feed only this");
+    await expect(flow.locator("figcaption")).toHaveText("Exchange prices never enter the conversion. Only the multipliers do.");
+    expect(await flow.locator("rect").evaluateAll((r) => r.map((x) => x.getAttribute("height")))).toEqual(["56", "56", "56", "56", "56"]);
+    expect(await flow.evaluate((e) => e.getBoundingClientRect().width)).toBeLessThanOrEqual(720);
+    expect(await flow.locator("svg").innerHTML()).not.toMatch(/Gradient/);
+    await page.goto("/developers");
+    const devFlow = page.locator(".convert-flow.dev");
+    await expect(devFlow.locator(".cf-title")).toHaveText(["Exchange A price", "Exchange B price", ...nodes.map((n) => n[0])]);
+    await expect(devFlow.locator(".cf-sub").first()).toHaveText("mcbAAPL at $200.10");
+    await expect(devFlow.locator(".cf-sub").nth(1)).toHaveText("mAAPLx at $200.00");
+    await expect(devFlow.locator(".cf-arb")).toHaveText("Arb buys the cheap wrapper, converts toward the expensive one at parity, sells it. Profit = price gap − base fee − skew fee.");
     await page.goto("/developers");
     const dev = page.locator(".dev-diagram");
     await expect(dev.locator(".lane-uniswap .dn-contract")).toHaveText(["your wallet", "WrapSwapRouter.swapExactIn", "PoolManager.swap", "ParityHook.beforeSwap", "PoolManager delta settled"]);

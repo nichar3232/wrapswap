@@ -1,37 +1,5 @@
 import { devLanes, suiFile, unichainFile, type FlowNode } from "./flowData";
 
-/** The product in four nodes: your shares go from one platform to another through Unison. */
-export function SimpleFlow() {
-  return (
-    <figure className="simple-flow" aria-label="How a move works">
-      <div className="sf-main">
-        <div className="sf-node">
-          <span className="sf-k">You</span>
-          <span className="sf-v">AAPL on Coinbase</span>
-        </div>
-        <span className="sf-arrow" aria-hidden="true">→</span>
-        <div className="sf-node sf-core">
-          <span className="sf-k">Unison</span>
-          <span className="sf-v">Uniswap v4 hook · NAV parity</span>
-        </div>
-        <span className="sf-arrow" aria-hidden="true">→</span>
-        <div className="sf-node">
-          <span className="sf-k">You</span>
-          <span className="sf-v">AAPL on xStocks</span>
-        </div>
-      </div>
-      <div className="sf-branches">
-        <div className="sf-branch">
-          <span className="sf-k">Large order</span> → Dark Cross
-        </div>
-        <div className="sf-branch">
-          <span className="sf-k">Paying someone</span> → Send on Sui
-        </div>
-      </div>
-    </figure>
-  );
-}
-
 function Node({ n }: { n: FlowNode }) {
   const body = (
     <>

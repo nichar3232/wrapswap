@@ -1,6 +1,6 @@
 import { StrictMode, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { SimpleFlow } from "./Flows";
+import { ConvertFlow } from "./ConvertFlow";
 import { Footer, Grain, Nav } from "./chrome";
 import { Halftone } from "./Halftone";
 import { OnePrice } from "./OnePrice";
@@ -80,7 +80,7 @@ function Landing() {
             </li>
           ))}
         </ol>
-        <SimpleFlow />
+        <ConvertFlow />
       </section>
 
       <Footer />
