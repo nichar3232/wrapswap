@@ -12,6 +12,8 @@ x-app: &app
     USE_MOCKS: 'false'
     DEMO_MNEMONIC: ${DEMO_MNEMONIC:?source scripts/dev/env}
     RPC_URL: http://127.0.0.1:${ANVIL_PORT:?}
+    # The web dev server proxies /rpc to this port.
+    ANVIL_PORT: ${ANVIL_PORT:?}
     LOCAL_RPC: http://127.0.0.1:${ANVIL_PORT:?}
     DATABASE_URL: postgresql://wrapswap:wrapswap@postgres:${PG_PORT:?}/wrapswap
     DEPLOYMENT_FILE: deployments/anvil.json
