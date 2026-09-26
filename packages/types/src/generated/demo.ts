@@ -183,6 +183,32 @@ export const DEMO = {
         hookFeesMAAPLx: 162475875000000000n,
       },
     },
+    "unichain-sepolia": {
+      network: "unichain-sepolia",
+      chainId: 1301,
+      warpTimestamp: null,
+      marketOpen: false,
+      nextOpen: 1790602200,
+      parityFill: {
+        feePips: 1460,
+        feeBps: "14.60",
+        feeAmount: 147825000000000000n,
+        amountOut: 101102175000000000000n,
+      },
+      residual: {
+        feePips: 1447,
+        feeBps: "14.47",
+        feeAmount: 14650875000000000n,
+        amountOut: 10110349125000000000n,
+      },
+      end: {
+        demoMAAPLx: 601102175000000000000n,
+        demoMcbAAPL: 400000000n,
+        counterpartyAEscrowMAAPLx: 60710036625000000000n,
+        counterpartyBEscrowMcbAAPL: 49975000n,
+        hookFeesMAAPLx: 162475875000000000n,
+      },
+    },
   },
 } as const;
 
