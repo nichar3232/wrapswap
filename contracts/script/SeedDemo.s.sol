@@ -97,6 +97,7 @@ contract SeedDemo is Script {
         if (invQuote < 12150e18) parity.depositInventory(Currency.wrap(address(quote)), 12150e18 - invQuote);
         IMockPriceOracle oracle = IMockPriceOracle(a(".contracts.oracle"));
         oracle.setPusher(account(4), true);
+        oracle.setPusher(owner, true);
         oracle.setMid(address(base), address(quote), 1012500000000000000);
         (uint160 sqrt,,,) = manager.getSlot0(key.toId());
         require(sqrt == (forward ? uint160(79721800701433069633245772272326702) : uint160(78737580939686982353822)), "pool must be initialized at parity by Deploy");
