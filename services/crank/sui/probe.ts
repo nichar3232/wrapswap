@@ -2,7 +2,7 @@
 // Usage: PROBE_PACKAGE=0x... tsx services/crank/sui/probe.ts
 import { Transaction } from '@mysten/sui/transactions';
 import { bcs } from '@mysten/sui/bcs';
-import { SEAL_THRESHOLD, loadKeypair, sealClient, sessionKeyFor, suiClient, toHex, walrusGet, walrusPut, walruscan } from './lib.ts';
+import { SEAL_THRESHOLD, loadKeypair, sealClient, sessionKeyFor, suiClient, toHex, walrusGet, walrusPut, walruscan } from './lib.js';
 
 const pkg = process.env.PROBE_PACKAGE;
 if (!pkg) throw new Error('PROBE_PACKAGE unset');
