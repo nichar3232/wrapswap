@@ -50,7 +50,9 @@ section[id] {
 /* ---------- Hero: colour field, grain, hairline grid, halftone ---------- */
 .hero {
   --cell: max(64px, 10%);
-  --nav-h: 64px;
+  --nav-row: 46px;
+  /* Independent of the photo: it is scaled to the bar's width and anchored at the bottom, so the sky crops off the top. */
+  --nav-h: clamp(70px, calc(9vw - 30px), 190px);
   position: relative;
   isolation: isolate;
   min-height: 100svh;
@@ -112,25 +114,52 @@ section[id] {
 
 /* ---------- Nav ---------- */
 .lnav {
+  /* The page's blue, used behind the logo, wordmark and buttons so they stay legible over the photo. */
+  --nav-pill: color-mix(in srgb, var(--field-core) 94%, transparent);
   position: relative;
   z-index: 5;
   display: flex;
-  align-items: stretch;
+  align-items: flex-start;
   height: var(--nav-h);
-  border-bottom: 1px solid var(--hairline);
+  border-bottom: 1px solid #000;
   font-size: 15px;
+}
+/* Karakoram panorama behind everything, ending in a thin black line. */
+.lnav::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: url("/karakoram-panorama.jpg") 50% 100% / 100% auto no-repeat;
 }
 .logo-cell {
   flex: none;
   width: var(--cell);
+  height: var(--nav-row);
   display: grid;
   place-items: center;
-  border-right: 1px solid var(--hairline);
+  isolation: isolate;
+}
+.logo-cell > * {
+  grid-area: 1 / 1;
+}
+.logo-cell::before {
+  content: "";
+  grid-area: 1 / 1;
+  z-index: -1;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--nav-pill);
 }
 .wordmark {
   display: flex;
   align-items: center;
+  height: 34px;
+  margin: 6px 0 0 4px;
   padding: 0 20px;
+  border-radius: 999px;
+  background: var(--nav-pill);
   font-weight: 500;
   font-size: 20px;
   letter-spacing: -0.03em;
@@ -138,13 +167,15 @@ section[id] {
 /* Anchored to the 42% hairline, inset like the wordmark is from the logo cell. */
 .lnav-items {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: 6px;
+  height: 34px;
   left: 42%;
-  padding-left: 20px;
+  padding: 0 24px;
   display: flex;
   align-items: center;
   gap: 40px;
+  border-radius: 999px;
+  background: var(--nav-pill);
 }
 .nav-item {
   position: relative;
@@ -155,7 +186,7 @@ section[id] {
 }
 .nav-item > a {
   line-height: 1;
-  color: var(--ink-soft);
+  color: var(--ink);
   transition: color 150ms ease;
 }
 .nav-item > a:hover,
@@ -218,14 +249,14 @@ section[id] {
 }
 .lnav-end {
   margin-left: auto;
+  height: var(--nav-row);
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 0 20px;
 }
-.theme-toggle,
 .menu-toggle {
-  height: 36px;
+  height: 34px;
   min-width: 36px;
   display: inline-grid;
   place-items: center;
@@ -236,18 +267,19 @@ section[id] {
   cursor: pointer;
   transition: border-color 150ms ease;
 }
-.theme-toggle:hover,
 .menu-toggle:hover {
   border-color: var(--ink-soft);
 }
 .menu-toggle {
   display: none;
   font-size: 14px;
+  border-color: transparent;
+  background: var(--nav-pill);
 }
 .launch {
   display: inline-flex;
   align-items: center;
-  height: 36px;
+  height: 34px;
   padding: 0 18px;
   border-radius: 999px;
   background: var(--ink);
@@ -256,10 +288,6 @@ section[id] {
   font-weight: 500;
   white-space: nowrap;
   transition: opacity 150ms ease;
-}
-[data-theme="dark"] .launch {
-  background: var(--accent);
-  color: #05070d;
 }
 .launch:hover {
   opacity: 0.88;
@@ -399,18 +427,11 @@ section[id] {
   color: var(--black-ink-soft);
 }
 .op-controls {
+  /* Always its own row under the text, left-aligned, whatever the width. */
+  flex: 1 0 100%;
   display: flex;
   align-items: center;
   gap: 12px;
-}
-.op-tag {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  padding: 4px 8px;
-  border: 1px solid var(--black-hairline);
-  color: var(--black-ink-soft);
 }
 .op-toggle {
   display: inline-flex;
@@ -502,19 +523,14 @@ section[id] {
 
 /* ---------- Architecture diagram (always on the black section) ---------- */
 .diagram {
-  --dg-card: #0a0c12;
-  --dg-box: #0f121a;
   --dg-ink: var(--black-ink);
   --dg-soft: var(--black-ink-soft);
   --dg-hair: var(--black-hairline);
-  --dg-edge: rgba(238, 242, 251, 0.3);
-  --dg-accent: #5b8bff;
+  --dg-edge: rgba(238, 242, 251, 0.42);
+  --dg-accent: var(--field-core);
   /* Break out of the section padding so the SVG renders near 1:1. */
-  margin: 72px calc(24px - max(24px, 10vw)) 0;
-  padding: 8px 0;
-  border-top: 1px solid var(--dg-hair);
-  border-bottom: 1px solid var(--dg-hair);
-  background: var(--dg-card);
+  margin: 52px calc(24px - max(24px, 10vw)) 0;
+  padding: 0;
 }
 .diagram-scroll {
   overflow-x: auto;
@@ -528,88 +544,63 @@ section[id] {
   display: none;
 }
 .dg-zone-label {
-  font: 500 10.5px var(--mono);
+  font: 500 10.5px var(--sans);
   letter-spacing: 0.14em;
-  fill: var(--dg-soft);
+  fill: var(--dg-accent);
 }
-.dg-divider {
-  stroke: var(--dg-edge);
-  stroke-width: 1;
-  stroke-dasharray: 4 4;
-}
-.dg-zone-sui {
+/* The Sui side reads as secondary: its boxes and arrows are dimmed (not its caption, so both captions match). */
+.dg-zone-sui .dg-node,
+.dg-zone-sui .dg-edge {
   opacity: 0.7;
   transition: opacity 200ms ease;
 }
-.dg-zone-sui:hover,
-.dg-zone-sui:focus-within {
+.dg-zone-sui:hover .dg-node,
+.dg-zone-sui:hover .dg-edge,
+.dg-zone-sui:focus-within .dg-node,
+.dg-zone-sui:focus-within .dg-edge {
   opacity: 1;
 }
 .dg-hit {
   fill: transparent;
 }
-.dg-group {
-  fill: none;
-  stroke: var(--dg-hair);
-}
-.dg-group-label {
-  font: 500 9px var(--mono);
-  letter-spacing: 0.14em;
-  fill: var(--dg-soft);
-}
 .dg-box {
-  fill: var(--dg-box);
-  stroke: rgba(238, 242, 251, 0.16);
+  fill: transparent;
+  stroke: rgba(238, 242, 251, 0.3);
   stroke-width: 1;
   transition: stroke 150ms ease;
 }
 .dg-accent {
-  fill: rgba(91, 139, 255, 0.1);
+  fill: transparent;
   stroke: var(--dg-accent);
-  stroke-width: 1.4;
-}
-.dg-pulse {
-  fill: var(--dg-accent);
-  opacity: 0.08;
-  animation: dg-pulse 2.8s ease-in-out infinite;
-}
-@keyframes dg-pulse {
-  50% {
-    opacity: 0.2;
-  }
+  stroke-width: 1.5;
 }
 .dg-title {
-  font: 500 15px var(--sans);
+  font: 500 18px var(--sans);
+  letter-spacing: -0.01em;
   fill: var(--dg-ink);
 }
-.dg-sub {
-  font: 400 10.5px var(--mono);
-  fill: var(--dg-soft);
-}
 .dg-kick {
-  font: 500 9.5px var(--mono);
+  font: 500 10px var(--sans);
   letter-spacing: 0.14em;
   fill: var(--dg-accent);
 }
 .dg-edge path {
   fill: none;
   stroke: var(--dg-edge);
-  stroke-width: 1;
-  stroke-dasharray: 3 4;
+  stroke-width: 2;
 }
 .dg-arrowhead {
   fill: var(--dg-edge);
 }
 .dg-dot {
-  fill: var(--dg-accent);
-  filter: drop-shadow(0 0 4px rgba(91, 139, 255, 0.9));
+  fill: var(--field-core);
 }
-/* Chips in the card colour keep dashed edges from running through labels. */
+/* Chips in the section colour keep edges from running through labels. */
 .dg-chip {
-  fill: var(--dg-card);
+  fill: var(--black);
 }
 .dg-label {
-  font: 500 9.5px var(--mono);
+  font: 500 10px var(--sans);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   fill: var(--dg-soft);
@@ -633,21 +624,21 @@ section[id] {
   }
   .dg-stacked {
     display: block;
-    min-width: 1080px;
+    min-width: 934px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .dg-dot {
     display: none;
   }
-  .dg-pulse {
-    animation: none;
-  }
 }
 
 /* ---------- Proof ---------- */
-.proof {
-  padding-top: 48px;
+.black.how {
+  padding-bottom: 0;
+}
+.black.proof {
+  padding-top: 56px;
 }
 .proof h2 {
   display: flex;
@@ -759,6 +750,16 @@ section[id] {
   margin: 0 0 0 auto;
   padding: 0;
 }
+.lfoot .credit {
+  flex: 1 0 100%;
+  font-size: 12px;
+  opacity: 0.8;
+}
+.lfoot .credit a {
+  margin: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 /* ---------- Responsive ---------- */
 /* Items anchored at 42% would meet the right-hand controls below ~1200px: switch to the menu. */
@@ -768,7 +769,9 @@ section[id] {
   }
   .lnav-items {
     display: none;
-    top: var(--nav-h);
+    top: var(--nav-row);
+    height: auto;
+    border-radius: 12px;
     bottom: auto;
     left: 12px;
     right: 12px;
@@ -798,6 +801,10 @@ section[id] {
   }
 }
 @media (max-width: 900px) {
+  .lnav::before {
+    background-size: cover;
+    background-position: 62% 100%;
+  }
   .rules i:nth-child(2),
   .rules i:nth-child(3) {
     display: none;
@@ -818,6 +825,9 @@ section[id] {
   }
   .black {
     padding-top: 88px;
+  }
+  .diagram {
+    margin-top: 29px;
   }
   .steps3 {
     grid-template-columns: 1fr;

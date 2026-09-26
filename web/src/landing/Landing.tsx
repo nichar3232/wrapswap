@@ -1,6 +1,6 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Mark, ThemeToggle } from "../brand";
+import { Mark } from "../brand";
 import { explorerUrl } from "@wrapswap/types";
 import { Diagram } from "./Diagram";
 import { Halftone } from "./Halftone";
@@ -169,7 +169,6 @@ function Nav() {
         >
           Menu
         </button>
-        <ThemeToggle />
         <a className="launch" href="/app">
           Launch app
         </a>
@@ -295,6 +294,17 @@ function Landing() {
         <a href={GITHUB} target="_blank" rel="noreferrer">
           GitHub ↗
         </a>
+        <span className="credit">
+          Nav photo:{" "}
+          <a href="https://commons.wikimedia.org/wiki/File:Concordia_Panorama.jpg" target="_blank" rel="noreferrer">
+            Concordia Panorama
+          </a>{" "}
+          by Shikari7,{" "}
+          <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">
+            CC BY-SA 3.0
+          </a>
+          , cropped
+        </span>
       </footer>
     </>
   );

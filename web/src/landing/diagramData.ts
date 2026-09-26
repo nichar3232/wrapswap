@@ -26,28 +26,32 @@ export type Rect = { x: number; y: number; w: number; h: number };
 export type Node = Rect & {
   id: string;
   title: string;
-  sub?: string;
   kick?: string;
   zone: "unichain" | "sui";
   accent?: boolean;
-  group?: boolean;
   href: string | null;
 };
 export type Edge = {
   from: string;
   to: string;
   label: string;
-  dir: "h" | "v";
+  /** "zone" edges cross between the two zones: horizontal in the wide layout, vertical in the stacked one. */
+  dir: "h" | "v" | "zone";
   /** Vertical offset at the source / target anchor, to fan several edges into one side. */
   fo?: number;
   to_?: number;
+  /** The same fan-out for vertical edges, as horizontal offsets. */
+  fx?: number;
+  tx?: number;
 };
 export type Layout = {
   width: number;
   height: number;
   nodes: Node[];
   edges: (Edge & { d: string; mid: [number, number] })[];
-  divider: { x1: number; y1: number; x2: number; y2: number };
+  /** Hover/hit area of the Sui zone (nothing is drawn for it). */
+  suiZone: { w: number; h: number };
+  /** Baseline of each zone caption. */
   zoneLabels: { unichain: [number, number]; sui: [number, number] };
 };
 
@@ -67,81 +71,60 @@ export function suiLookup(s: SuiFile | undefined, keys: string[]) {
   return undefined;
 }
 
-/** A CanonicalStock / uAAPL contract (or token) in the deployment switches the centre node to the vault. */
-export function hasCanonicalVault(u: UnichainFile | undefined) {
-  if (!u) return false;
-  const keyed = Object.entries(u.contracts ?? {}).some(
-    ([k, v]) => /canonical|uaapl/i.test(k) && isAddress(v),
-  );
-  return keyed || !!u.tokens?.some((t) => /^uAAPL$/i.test(t.symbol ?? ""));
-}
-
-/** No default arguments: callers pass the manifests (or fixtures) explicitly. */
+/**
+ * The high-level product flow only. Issuer tokens go through the router to one of two hooks and settle on the
+ * Uniswap v4 PoolManager; Unison Pay (Sui) deposits from and withdraws to issuer tokens. Adapters, oracle,
+ * inventory claims, the vault and the keeper are implementation detail and deliberately left out.
+ * No default arguments: callers pass the manifests (or fixtures) explicitly.
+ */
 export function diagramNodes(u: UnichainFile | undefined, s: SuiFile | undefined) {
   const c = u?.contracts ?? {};
   const link = (v: unknown) =>
     isAddress(v) ? explorerUrl("unichain-sepolia", "address", v) : null;
-  const token = (issuer: string) => u?.tokens?.find((t) => t.issuer === issuer)?.address;
-  const vault = hasCanonicalVault(u);
-  const canonical = Object.entries(c).find(([k]) => /canonical|uaapl/i.test(k))?.[1] ??
-    u?.tokens?.find((t) => /^uAAPL$/i.test(t.symbol ?? ""))?.address;
-  // ShareVault lives on Unichain but ships with the Sui payments deployment (sui-testnet.json → evm.shareVault).
-  const evm = s?.evm && typeof s.evm === "object" ? (s.evm as Record<string, unknown>) : undefined;
   const suiObject = (id?: string) => (id ? `${SUI_EXPLORER}/object/${id}` : null);
-  const suiAccount = (id?: string) => (id ? `${SUI_EXPLORER}/account/${id}` : null);
 
   // Wide layout coordinates; the stacked layout is derived in layout().
   const n: Node[] = [
-    { id: "issuers", title: "Issuer tokens", zone: "unichain", group: true, x: 388, y: 172, w: 192, h: 214, href: null },
-    { id: "aaplc", title: "AAPLc", sub: "Coinbase B20", zone: "unichain", x: 400, y: 196, w: 168, h: 56, href: link(token("coinbase")) },
-    { id: "aaplx", title: "AAPLx", sub: "Backed xStocks", zone: "unichain", x: 400, y: 312, w: 168, h: 56, href: link(token("xstocks")) },
-    { id: "shareVault", title: "ShareVault", sub: "on Unichain", zone: "unichain", x: 270, y: 60, w: 180, h: 56, href: link(evm?.shareVault) },
-    { id: "router", title: "WrapSwapRouter", sub: "entry · swapExactIn", zone: "unichain", x: 660, y: 60, w: 200, h: 56, href: link(c.wrapSwapRouter) },
-    vault
-      ? { id: "center", kick: "CANONICAL VAULT", title: "uAAPL", sub: "minted 1:1 per share", zone: "unichain", x: 660, y: 200, w: 200, h: 74, href: link(canonical) }
-      : { id: "center", kick: "SHARE MATH", title: "Multiplier adapters", sub: "via IssuerRegistry", zone: "unichain", x: 660, y: 200, w: 200, h: 74, href: link(c.registry) },
-    { id: "oracle", title: "Oracle · 30-min midpoint", sub: "mock on testnet", zone: "unichain", x: 660, y: 360, w: 200, h: 56, href: link(c.oracle) },
-    { id: "parity", title: "ParityHook", sub: "share-parity fill", zone: "unichain", accent: true, x: 960, y: 110, w: 190, h: 60, href: link(c.parityHook) },
-    { id: "dark", title: "DarkCrossHook", sub: "sealed-batch cross", zone: "unichain", x: 960, y: 300, w: 190, h: 60, href: link(c.darkCrossHook) },
-    { id: "pm", kick: "UNISWAP v4", title: "PoolManager", zone: "unichain", x: 1220, y: 180, w: 190, h: 66, href: link(c.poolManager) },
-    { id: "claims", title: "ERC-6909", sub: "inventory claims", zone: "unichain", x: 1220, y: 360, w: 190, h: 56, href: link(c.poolManager) },
-    { id: "seal", title: "Seal + Walrus", sub: "encrypted balances & instructions", zone: "sui", x: 24, y: 150, w: 232, h: 56, href: suiObject(suiLookup(s, ["seal", "sealPolicy", "sealPolicyId", "sealPackage", "sealPackageId"])) },
-    { id: "pool", title: "Unison Pay · Sui pool", sub: "root + total only", zone: "sui", x: 24, y: 280, w: 232, h: 56, href: suiObject(suiLookup(s, ["pool", "poolId", "payPool", "unisonPay"])) },
-    { id: "keeper", title: "Keeper", sub: "batch every 3 min", zone: "sui", x: 24, y: 410, w: 232, h: 56, href: suiAccount(suiLookup(s, ["keeper", "keeperAddress"])) },
+    { id: "pay", title: "Unison Pay", zone: "sui", x: 24, y: 80, w: 148, h: 64, href: suiObject(suiLookup(s, ["pool", "poolId", "payPool", "unisonPay"])) },
+    { id: "issuers", title: "Issuer tokens", zone: "unichain", x: 260, y: 80, w: 156, h: 64, href: null },
+    { id: "router", title: "WrapSwapRouter", zone: "unichain", x: 498, y: 80, w: 168, h: 64, href: link(c.wrapSwapRouter) },
+    { id: "parity", title: "ParityHook", zone: "unichain", accent: true, x: 742, y: 8, w: 168, h: 64, href: link(c.parityHook) },
+    { id: "dark", title: "DarkCrossHook", zone: "unichain", x: 742, y: 152, w: 168, h: 64, href: link(c.darkCrossHook) },
+    { id: "pm", kick: "UNISWAP v4", title: "PoolManager", zone: "unichain", x: 998, y: 80, w: 148, h: 64, href: link(c.poolManager) },
   ];
   const e: Edge[] = [
-    { from: "aaplc", to: "center", label: vault ? "WRAP 1:1" : "NORMALIZE", dir: "h", to_: -8 },
-    { from: "aaplx", to: "center", label: vault ? "WRAP 1:1" : "NORMALIZE", dir: "h", to_: 8 },
-    { from: "issuers", to: "shareVault", label: "DEPOSIT", dir: "v" },
-    { from: "shareVault", to: "router", label: "WITHDRAW · cross-issuer", dir: "h" },
-    { from: "router", to: "parity", label: "EXACT-IN", dir: "h", to_: -8 },
-    { from: "center", to: "parity", label: "PARITY", dir: "h", fo: -10, to_: 8 },
-    { from: "center", to: "dark", label: "BATCH", dir: "h", fo: 10, to_: -8 },
-    { from: "oracle", to: "dark", label: "MID", dir: "h", to_: 8 },
-    { from: "parity", to: "pm", label: "SWAP", dir: "h", to_: -8 },
-    { from: "dark", to: "pm", label: "RESIDUAL", dir: "h", to_: 8 },
-    { from: "pm", to: "claims", label: "CLAIMS", dir: "v" },
-    { from: "seal", to: "pool", label: "ENCRYPT", dir: "v" },
-    { from: "keeper", to: "pool", label: "APPLY", dir: "v" },
+    { from: "issuers", to: "router", label: "CONVERT", dir: "h" },
+    { from: "router", to: "parity", label: "PARITY", dir: "h" },
+    { from: "router", to: "dark", label: "BATCH", dir: "h" },
+    { from: "parity", to: "pm", label: "SWAP", dir: "h" },
+    { from: "dark", to: "pm", label: "RESIDUAL", dir: "h" },
+    { from: "issuers", to: "pay", label: "DEPOSIT", dir: "zone", fo: -12, to_: -12, fx: -40, tx: -40 },
+    { from: "pay", to: "issuers", label: "WITHDRAW", dir: "zone", fo: 12, to_: 12, fx: 40, tx: 40 },
   ];
-  return { nodes: n, edges: e, vault };
+  return { nodes: n, edges: e };
 }
 
-/** Mono edge labels: 9.5px JetBrains Mono (0.6em advance) + 0.08em tracking, plus chip padding. */
+/** Edge labels: 10px uppercase with 0.08em tracking (about 0.68em per character), plus chip padding. */
 export const chipWidth = (label: string) =>
-  Math.round(label.length * 9.5 * 0.68 + 14);
+  Math.round(label.length * 10 * 0.68 + 14);
+
+/** Rounded corner radius of the right-angle connectors. */
+const CORNER = 10;
 
 function edgePath(e: Edge, a: Rect, b: Rect): { d: string; mid: [number, number] } {
   if (e.dir === "v") {
     const lo = Math.max(a.x, b.x), hi = Math.min(a.x + a.w, b.x + b.w);
-    const x = lo < hi ? (lo + hi) / 2 : a.x + a.w / 2;
+    const x = (lo < hi ? (lo + hi) / 2 : a.x + a.w / 2) + (e.fx ?? 0);
+    const x3 = (lo < hi ? (lo + hi) / 2 : b.x + b.w / 2) + (e.tx ?? 0);
     const down = b.y > a.y;
     const y0 = down ? a.y + a.h : a.y,
       y3 = down ? b.y : b.y + b.h;
-    const x3 = lo < hi ? x : b.x + b.w / 2;
     const my = (y0 + y3) / 2;
+    if (x === x3) return { d: `M${x} ${y0} V${y3}`, mid: [x, my] };
+    const s = Math.sign(x3 - x), sy = Math.sign(y3 - y0);
+    const r = Math.min(CORNER, Math.abs(x3 - x) / 2, Math.abs(y3 - y0) / 4);
     return {
-      d: `M${x} ${y0} C${x} ${my} ${x3} ${my} ${x3} ${y3}`,
+      d: `M${x} ${y0} V${my - sy * r} Q${x} ${my} ${x + s * r} ${my} H${x3 - s * r} Q${x3} ${my} ${x3} ${my + sy * r} V${y3}`,
       mid: [(x + x3) / 2, my],
     };
   }
@@ -151,45 +134,43 @@ function edgePath(e: Edge, a: Rect, b: Rect): { d: string; mid: [number, number]
   const y0 = a.y + a.h / 2 + (e.fo ?? 0),
     y3 = b.y + b.h / 2 + (e.to_ ?? 0);
   const mx = (x0 + x3) / 2;
+  if (y0 === y3) return { d: `M${x0} ${y0} H${x3}`, mid: [mx, y0] };
+  const dir = Math.sign(x3 - x0), sy = Math.sign(y3 - y0);
+  const r = Math.min(CORNER, Math.abs(y3 - y0) / 2, Math.abs(x3 - x0) / 4);
   return {
-    d: `M${x0} ${y0} C${mx} ${y0} ${mx} ${y3} ${x3} ${y3}`,
+    d: `M${x0} ${y0} H${mx - dir * r} Q${mx} ${y0} ${mx} ${y0 + sy * r} V${y3 - sy * r} Q${mx} ${y3} ${mx + dir * r} ${y3} H${x3}`,
     mid: [mx, (y0 + y3) / 2],
   };
 }
 
-/** "wide": zones side by side (Sui left of the divider). "stacked": Sui on top, Unichain below. */
+/** "wide": zones side by side (Sui on the left). "stacked": Sui on top, Unichain below. Tight to the content. */
 export function layout(kind: "wide" | "stacked", data: ReturnType<typeof diagramNodes>): Layout {
   const place = (n: Node): Node => {
     if (kind === "wide") return n;
-    if (n.zone === "sui") {
-      const i = ["seal", "pool", "keeper"].indexOf(n.id);
-      return { ...n, x: 24 + i * 316, y: 52 };
-    }
-    if (n.id === "shareVault") return { ...n, x: 240, y: 122 };
-    return { ...n, x: n.x - 158, y: n.y + 150 };
+    if (n.zone === "sui") return { ...n, x: 24, y: 44 };
+    return { ...n, x: n.x - 236, y: n.y + 112 };
   };
   const nodes = data.nodes.map(place);
   const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
   const edges = data.edges.map((e) => {
-    // In the stacked layout the Sui nodes sit in a row, so their edges run horizontally.
-    const dir = kind === "stacked" && byId[e.from].zone === "sui" ? "h" : e.dir;
+    const dir = e.dir === "zone" ? (kind === "wide" ? "h" : "v") : e.dir;
     return { ...e, dir, ...edgePath({ ...e, dir }, byId[e.from], byId[e.to]) } as Layout["edges"][number];
   });
   return kind === "wide"
     ? {
-        width: 1440,
-        height: 500,
+        width: 1170,
+        height: 220,
         nodes,
         edges,
-        divider: { x1: 360, y1: 16, x2: 360, y2: 484 },
-        zoneLabels: { sui: [24, 36], unichain: [384, 36] },
+        suiZone: { w: 216, h: 220 },
+        zoneLabels: { sui: [24, 67], unichain: [260, 67] },
       }
     : {
-        width: 1280,
-        height: 600,
+        width: 934,
+        height: 332,
         nodes,
         edges,
-        divider: { x1: 16, y1: 150, x2: 1264, y2: 150 },
-        zoneLabels: { sui: [24, 32], unichain: [24, 204] },
+        suiZone: { w: 934, h: 170 },
+        zoneLabels: { sui: [24, 27], unichain: [232, 143] },
       };
 }
