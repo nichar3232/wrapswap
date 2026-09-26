@@ -288,6 +288,25 @@ contract ShareVaultUnichainForkTest is Test {
         maaplx.approve(address(vault), type(uint256).max);
     }
 
+    /// @dev The opposite conversion (mcbAAPL custody → mAAPLx delivery), so both skew directions are exercised.
+    function test_fork_withdrawOtherDirection() public {
+        vm.prank(alice);
+        vault.deposit(address(mcb), 2e6, bytes32(uint256(0xA)));
+        address carol = makeAddr("carol2");
+        (uint256 amountIn, uint256 debit,, bool direct) = vault.quoteWithdrawal(address(maaplx), 1.5e18);
+        assertFalse(direct);
+        ShareVault.Withdrawal[] memory ws = new ShareVault.Withdrawal[](1);
+        ws[0] = ShareVault.Withdrawal("fork-rev", carol, address(maaplx), 1.5e18, 25);
+        vm.prank(keeper);
+        vault.settleWithdrawals(ws, "fork-rev");
+        assertTrue(vault.settled("fork-rev"), "conversion must settle, not skip");
+        assertGe(maaplx.balanceOf(carol), 1.5e18, "at least face value");
+        assertEq(2e6 - mcb.balanceOf(address(vault)), amountIn);
+        assertEq(2.025e18 - vault.sharesOutstanding(), debit);
+        (uint256 held, uint256 outstanding) = vault.reserves();
+        assertGe(held, outstanding);
+    }
+
     function test_fork_depositPayWithdrawAcrossIssuers() public {
         vm.prank(alice);
         uint256 aShares = vault.deposit(address(mcb), 2e6, bytes32(uint256(0xA)));
@@ -306,6 +325,7 @@ contract ShareVaultUnichainForkTest is Test {
         vm.prank(keeper);
         vault.settleWithdrawals(ws, "fork");
         assertGe(mcb.balanceOf(carol), CanonicalShares.fromSharesDown(3e18, 1.0125e18, 6));
+        assertTrue(vault.settled("fork-ok"), "conversion must settle, not skip");
         assertFalse(vault.settled("fork-skip"));
         assertEq(before - vault.sharesOutstanding(), debit);
         assertGt(feePips, 0);
