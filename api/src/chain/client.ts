@@ -1,88 +1,65 @@
-import './runtime.js';
+import "./runtime.js";
 import "dotenv/config";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createPublicClient, http, getAddress, type Abi } from "viem";
 import {
-  createPublicClient,
-  http,
-  parseAbi,
-  type Address,
-  type Abi,
-} from "viem";
-export const rpc = process.env.LOCAL_RPC || "http://127.0.0.1:8545";
-export const publicClient = createPublicClient({ transport: http(rpc) });
-export type Token = { address: Address; symbol: string; decimals: number };
-export type Manifest = {
-  chainId: number;
-  blockNumber: string;
-  demoMode: boolean;
-  contracts: Record<string, Address>;
-  tokens: Record<string, Token>;
-  pools: {
-    id: `0x${string}`;
-    kind: string;
-    key: {
-      currency0: Address;
-      currency1: Address;
-      fee: number;
-      tickSpacing: number;
-      hooks: Address;
-    };
-  }[];
-  burners?: { address: Address; privateKey: `0x${string}` }[];
-};
-export function manifest(): Manifest {
+  abis,
+  parseDeployment,
+  parseNetwork,
+  deploymentPath,
+  type Deployment,
+} from "@wrapswap/types";
+export function loadDeployment(
+  network = process.env.NETWORK,
+  root = process.cwd(),
+): Deployment {
+  const n = parseNetwork(network);
+  const d = parseDeployment(
+    JSON.parse(readFileSync(resolve(root, deploymentPath(n)), "utf8")),
+  );
+  if (d.network !== n) throw Error("Deployment network mismatch");
   return JSON.parse(
-    readFileSync(
-      process.env.DEPLOYMENT_FILE || "deployments/local.json",
-      "utf8",
+    JSON.stringify(d, (_, v) =>
+      typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v)
+        ? getAddress(v.toLowerCase())
+        : v,
     ),
   );
 }
-export function abi(name: string): Abi {
-  const raw = JSON.parse(
-    readFileSync(resolve("deployments/abis", name + ".json"), "utf8"),
-  );
-  return raw.abi || raw;
-}
-export const erc20 = parseAbi([
-  "function balanceOf(address) view returns(uint256)",
-  "function approve(address,uint256) returns(bool)",
-  "function decimals() view returns(uint8)",
-]);
-export const adapterAbi = parseAbi([
-  "function sharesPerToken() view returns(uint256)",
-]);
-export async function read(
-  contract: string,
-  name: string,
-  args: unknown[] = [],
-): Promise<any> {
-  const m = manifest();
-  const names: Record<string, string> = {
-    vault: "CanonicalStock",
-    registry: "IssuerRegistry",
-    calendar: "NyseCalendar",
-    parityHook: "ParityHook",
-    darkCrossHook: "DarkCrossHook",
-  };
-  return publicClient.readContract({
-    address: m.contracts[contract],
-    abi: abi(names[contract]),
-    functionName: name,
-    args,
-  });
-}
-export async function ratio(token: Address) {
-  const m = manifest();
-  if (token.toLowerCase() === m.tokens.uAAPL.address.toLowerCase())
-    return 10n ** 18n;
-  const addr = await read("registry", "adapterOf", [token]);
-  return publicClient.readContract({
-    address: addr,
-    abi: adapterAbi,
-    functionName: "sharesPerToken",
-  });
-}
+export const manifest = loadDeployment;
+export const rpc = process.env.RPC_URL;
+export const publicClient = createPublicClient({
+  transport: http(rpc || `http://127.0.0.1:${process.env.ANVIL_PORT ?? 18504}`),
+});
+export const contractAbis: Record<string, Abi> = {
+  parityHook: abis.IParityHook,
+  darkCrossHook: abis.IDarkCrossHook,
+  eligibility: abis.IEASEligibility,
+  oracle: abis.IMockPriceOracle,
+  registry: abis.IIssuerRegistry,
+  calendar: abis.INyseCalendar,
+};
 export const stringify = (value: unknown) =>
   JSON.stringify(value, (_, v) => (typeof v === "bigint" ? v.toString() : v));
+export const json = (value: unknown): any =>
+  JSON.parse(stringify(value), (_, v) =>
+    typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v)
+      ? v.toLowerCase()
+      : v,
+  );
+export function chainReader(d: Deployment, client: any = publicClient) {
+  return async (
+    contract: string,
+    functionName: string,
+    args: unknown[] = [],
+    blockNumber?: bigint,
+  ): Promise<any> =>
+    client.readContract({
+      address: d.contracts[contract as keyof typeof d.contracts],
+      abi: contractAbis[contract],
+      functionName,
+      args,
+      blockNumber,
+    });
+}

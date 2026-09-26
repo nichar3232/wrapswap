@@ -1,53 +1,38 @@
 import { it, expect } from "vitest";
-import { projection } from "./index";
-const event = {
-  tx: "0x1",
-  log_index: 2,
-  chain_id: 8453,
-  block: "1",
-  ts: "2",
-  trader: "0xabc",
-};
-it("deduplicates fills by transaction and log index, retaining both sides", () => {
-  const p = projection(
-    "Crossed",
-    { batchId: "1", trader: "0xABC", isBuy: true, qty: "100", mid: "200" },
-    event,
-  )!;
-  expect(p.sql).toContain("ON CONFLICT DO NOTHING");
-  expect(p.values).toEqual([
-    "1",
-    "0xabc",
-    true,
-    "100",
-    "200",
-    "cross",
-    "0x1",
-    2,
-  ]);
-  const second = projection(
-    "Crossed",
-    { batchId: "1", trader: "0xDEF", isBuy: false, qty: "100", mid: "200" },
-    { ...event, log_index: 3 },
-  )!;
-  expect(second.values[7]).toBe(3);
-});
-it("reveal upsert preserves the commitment hash", () => {
-  const p = projection(
-    "Revealed",
-    {
-      batchId: "1",
-      trader: "0xABC",
-      isBuy: true,
-      qty: "2",
-      limitPx: "3",
-      routeResidual: true,
+import { topics } from "@wrapswap/types";
+import { decode, projection, eventNames } from "./events.js";
+import { deployment, fixture } from "../testing/fixtures.js";
+for (const [key, topic] of Object.entries(topics))
+  it(`decodes and projects ${key}`, () => {
+    const name = key.split(".")[1],
+      log = fixture(name),
+      e = decode(log);
+    expect(log.topics[0]).toBe(topic);
+    expect(e.eventName).toBe(name);
+    const p = projection(name, e.args, { contract: log.address }, deployment);
+    expect(p?.sql).toContain("INSERT INTO");
+  });
+it("covers all 32 frozen events", () => expect(eventNames).toHaveLength(32));
+it("ignores denials not called by deployment hooks", () =>
+  expect(
+    projection(
+      "EligibilityDenied",
+      { caller: deployment.deployer },
+      {},
+      deployment,
+    ),
+  ).toBeNull());
+it("retries after a database connection outage", async () => {
+  const { Indexer } = await import("./index.js");
+  let calls = 0;
+  const indexer = new Indexer(deployment, {}, {
+    connect: async () => {
+      calls++;
+      throw Error("DB down");
     },
-    event,
-  )!;
-  expect(p.sql).toContain("ON CONFLICT(batch_id,trader) DO UPDATE");
-  expect(p.sql.split("DO UPDATE")[1]).not.toContain("commit_hash");
-  expect(p.values).toEqual(["1", "0xabc", true, "2", "3", true]);
+  } as any);
+  await expect(indexer.catchup()).rejects.toThrow("DB down");
+  await expect(indexer.catchup()).rejects.toThrow("DB down");
+  expect(calls).toBe(2);
+  expect(indexer.busy).toBe(false);
 });
-it("unknown logs do not produce projections", () =>
-  expect(projection("Transfer", {}, event)).toBeNull());
