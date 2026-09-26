@@ -1,0 +1,81 @@
+{
+  "at": "2026-09-26T18:04:36.941Z",
+  "fork": {
+    "rpc": "anvil --fork-url https://sepolia.unichain.org --chain-id 1301 --port 8555",
+    "head": "63592929"
+  },
+  "rows": [
+    {
+      "id": "C1",
+      "check": "Convert both directions on AAPL/NVDA/TSLA",
+      "ok": true,
+      "evidence": "mcbAAPL→mAAPLx 0x461ac975, mAAPLx→mcbAAPL 0xe063097d, mcbNVDA→mNVDAx 0xd9a312f5, mNVDAx→mcbNVDA 0x325ee535, mcbTSLA→mTSLAx 0x332291eb, mTSLAx→mcbTSLA 0x7eaebbf0"
+    },
+    {
+      "id": "F1",
+      "check": "base + skew == total charged (Converted.baseFee+skewFee == input shares − output shares; InventoryFill.feePips == base+skew pips)",
+      "ok": true,
+      "evidence": "12/12 converts exact to the wei-share"
+    },
+    {
+      "id": "F2",
+      "check": "skew fee is 0 on rebalancing trades",
+      "ok": true,
+      "evidence": "6 rebalancing converts all skewFee=0 (e.g. 0x461ac975); 6 skew-increasing converts paid skew > 0"
+    },
+    {
+      "id": "H1",
+      "check": "no off-hours code path (identical fee closed vs open; deployment has no calendar)",
+      "ok": true,
+      "evidence": "Sat, 10 Oct 2026 16:00:00 GMT: 200 pips, out 79983999312637500000; Mon, 12 Oct 2026 15:00:00 GMT: 200 pips, out 79983999312637500000; contracts.calendar=null"
+    },
+    {
+      "id": "D1",
+      "check": "Dark Cross: crossed + residual + unfilled in one batch",
+      "ok": true,
+      "evidence": "AAPL batch 326, settle 0x1a7cc7a4ef46970a45719d40ddef383e819db3622cbba638692fc6a3e7e7c9be: Crossed 60.00 sh; ResidualFilled 40.00 sh (seller); Unfilled 30.00 sh (picky); plus 1 rounding-dust Unfilled (262500000000 share-wei) refunded to escrow"
+    },
+    {
+      "id": "D2",
+      "check": "DarkCross venue fee == 1 bp to protocolFeeRecipient",
+      "ok": true,
+      "evidence": "CROSS_FEE_PIPS=100; fees 5999999973750000/59999999737500000000 gross, 5926/59259259 gross; recipient 0xFD42fC43855C9332051e9e2F05a75C8914073F9e escrow +5926 mcbAAPL raw, +5999999973750000 mAAPLx raw (== CrossFilled fees)"
+    },
+    {
+      "id": "D3",
+      "check": "residual fee goes to LP (ParityHook inventory)",
+      "ok": true,
+      "evidence": "ResidualFilled base 8000000032500000 + skew 0 = 8000000032500000 share-wei; hook inventory Δ = 8000000032500000 share-wei (±2 wei adapter rounding)"
+    },
+    {
+      "id": "D4",
+      "check": "unfilled refunded in full",
+      "ok": true,
+      "evidence": "picky escrow before commit 88888887, after settle available 88888887 locked 0 (mcbAAPL raw); Unfilled.sharesRefunded 29999999362500000000"
+    },
+    {
+      "id": "V1",
+      "check": "ShareVault deposit + withdraw into the other issuer via router with recipient; solvency held ≥ outstanding throughout",
+      "ok": true,
+      "evidence": "reserves held/outstanding start 154.9844/154.9844; deposit 123 mAAPLx 0x71924210 → 277.9844/277.9844; withdraw 92.02 sh as mcbAAPL (custody had 62.02) → converted mAAPLx→mcbAAPL via router, Converted.recipient=0x1F1606…, got 90888888 ≥ net 90888888, fee 328 pips 0x30db4756 → 185.9292/185.9292; deposit 184 mcbAAPL 0xd904e97a → 369.9292/369.9292; withdraw 153.90 sh as mAAPLx (custody had 123.90) → converted mcbAAPL→mAAPLx via router, Converted.recipient=0x38b43a…, got 153904158435915000000 ≥ net 153904158137500000000, fee 200 pips 0xc06ad5a6 → 215.9942/215.9942; vault tokens at start 61259259/92959352012500000000"
+    },
+    {
+      "id": "T1",
+      "check": "faucet claim + cooldown",
+      "ok": true,
+      "evidence": "claim 0x9f1f2a38 paid 6 tokens exactly amountOf; immediate re-claim → CooldownActive(86400); after evm_increaseTime(86400) claim 0x38c11c3a ok"
+    },
+    {
+      "id": "S1",
+      "check": "full stack on the fork: API+indexer at head, crank healthy, relay converts on the fork",
+      "ok": true,
+      "evidence": "API ok=true head 63592927 indexed 63592927; relay 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc POST /demo/convert → 200 0xc1a32d1d974d873a367a215dc181991a45bd4b1d3b218e60c2441467b4f8ef99"
+    },
+    {
+      "id": "M1",
+      "check": "MCP tools (mcp READY FOR MERGE) against the fork stack",
+      "ok": true,
+      "evidence": "tools: list_assets, get_pool, quote_convert, get_batch, convert, commit_dark_order; list_assets/get_pool/quote_convert/get_batch ok; convert 20 mcbTSLA→mTSLAx to 0x48453b… tx 0xeadcb1810de1e00c92aaa03a775809d61ad64a963705f6c0639391da947dea5b (Converted base 3999999960000000 + skew 0, recipient +19798019604000000000)"
+    }
+  ]
+}
