@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Pre-demo checks for the live Unichain Sepolia stack. Prints one PASS/FAIL line per check; exits 1 on any FAIL.
+# Addresses come from the resolved manifest and from keys in ~/wrapswap-run/env/ (keys are never printed).
+set -uo pipefail
+cd "$(dirname "$0")/../.."
+R=${RPC_URL:-https://sepolia.unichain.org}
+M=deployments/unichain-sepolia.resolved.json
+PUBLIC=${PUBLIC_URL:-https://nichars-mac-mini.tail43cacc.ts.net}
+fails=0
+check() { if [[ $2 == ok ]]; then printf 'PASS  %s\n' "$1"; else printf 'FAIL  %s: %s\n' "$1" "$2"; fails=$((fails + 1)); fi; }
+ge() { python3 -c "import sys; sys.exit(0 if int('$1') >= int('$2') else 1)"; }
+eth() { cast balance "$1" -r $R 2>/dev/null || echo 0; }
+keyaddr() { cast wallet address --private-key "$1" 2>/dev/null; }
+set -a; source "$HOME/wrapswap-run/env/onchain.env"; source "$HOME/wrapswap-run/env/demo-relay.env"; set +a
+
+# Stack
+h=$(curl -s 127.0.0.1:18010/health)
+check "api health (chain 1301, lag <= 5)" "$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '{}'); print('ok' if d.get('ok') and d.get('chainId')==1301 and (d.get('lagBlocks') or 99)<=5 else 'ok=%s lag=%s' % (d.get('ok'), d.get('lagBlocks')))" "$h")"
+c=$(curl -s 127.0.0.1:18110/status)
+check "crank" "$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '{}'); print('ok' if d.get('ok') else 'lastError=%s' % d.get('lastError'))" "$c")"
+check "web (local /app)" "$([[ $(curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:13010/app) == 200 ]] && echo ok || echo down)"
+check "demo relay" "$(curl -sf 127.0.0.1:18210/demo/status >/dev/null && echo ok || echo down)"
+host=${PUBLIC#https://}; ip=$(dig +short @1.1.1.1 "$host" | head -1)
+for p in / /app /api/health /api/assets; do
+  check "public $p" "$([[ $(curl -s -o /dev/null -w '%{http_code}' --resolve "$host:443:$ip" "$PUBLIC$p") == 200 ]] && echo ok || echo 'not 200')"
+done
+
+# Contracts: Dark Cross protocol fee is 1 bp on every asset.
+for a in $(jq -r '.assets[].symbol' $M); do
+  hk=$(jq -r ".assets[] | select(.symbol==\"$a\") | .darkCrossHook" $M)
+  v=$(cast call "$hk" 'CROSS_FEE_PIPS()(uint24)' -r $R 2>/dev/null)
+  check "$a DarkCrossHook CROSS_FEE_PIPS = 100" "$([[ $v == 100 ]] && echo ok || echo "is $v")"
+done
+
+# Keys: ETH for gas.
+CRANK=$(keyaddr "$CRANK_PRIVATE_KEY"); DEPLOYER=$(keyaddr "$DEPLOYER_PRIVATE_KEY"); RELAY=$DEMO_RELAY_ADDRESS
+[[ $(keyaddr "$DEMO_RELAY_PRIVATE_KEY") == "$RELAY" ]] || check "relay key file" "address does not match its key"
+for row in "crank $CRANK 3000000000000000" "deployer $DEPLOYER 5000000000000000" "demo-relay $RELAY 3000000000000000"; do
+  read name addr min <<<"$row"; bal=$(eth "$addr")
+  check "$name $addr ETH $(cast from-wei "$bal") >= $(cast from-wei $min)" "$(ge "$bal" "$min" && echo ok || echo low)"
+done
+
+# Demo relay: every wrapper must cover one max action (100 shares).
+for a in $(jq -r '.assets[].symbol' $M); do
+  jq -r ".assets[] | select(.symbol==\"$a\") | .wrappers[] | \"\(.symbol) \(.token) \(.multiplier) \(.decimals)\"" $M | while read sym tok mult dec; do
+    bal=$(cast call "$tok" 'balanceOf(address)(uint256)' "$RELAY" -r $R 2>/dev/null | awk '{print $1}')
+    need=$(python3 -c "print(-(-100 * 10**18 * 10**$dec // $mult))")
+    printf '%s  demo-relay %s %s (needs %s for 100 shares)\n' "$(ge "${bal:-0}" "$need" && echo PASS || echo FAIL)" "$sym" "${bal:-0}" "$need"
+    ge "${bal:-0}" "$need" || touch /tmp/.preflight-fail.$$
+  done
+done
+[[ -f /tmp/.preflight-fail.$$ ]] && { fails=$((fails + 1)); rm -f /tmp/.preflight-fail.$$; }
+echo "preflight: $fails failing check(s)"
+exit $((fails > 0))

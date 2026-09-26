@@ -44,7 +44,13 @@ sleep 5
 start api 'pnpm dev:api'
 start crank 'pnpm dev:crank'
 start web 'node scripts/dev/serve-web.mjs'
+# Demo relay: the key stays in its file under ~/wrapswap-run/env/; only the path is in the shared environment.
+if [[ -f $HOME/wrapswap-run/env/demo-relay.env ]]; then
+  start relay "RELAY_KEY_FILE=$HOME/wrapswap-run/env/demo-relay.env pnpm exec tsx services/relay/index.ts"
+fi
 sleep 3; rm -f "$envfile"
+for i in $(seq 60); do curl -sf 127.0.0.1:18210/demo/status >/dev/null && break; sleep 2; done
+curl -sf 127.0.0.1:18210/demo/status >/dev/null && echo "relay healthy" || echo "relay not running"
 for kind in api crank web; do
   for i in $(seq 90); do node scripts/dev/health.mjs $kind 2>/dev/null && break; sleep 2; done
   node scripts/dev/health.mjs $kind && echo "$kind healthy"

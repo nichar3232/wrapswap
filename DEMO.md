@@ -39,6 +39,20 @@ npx playwright test e2e/live/router-assets.spec.ts     # Convert on every asset 
 scripts/dev/dark-batch-live NVDA                       # one Dark Cross batch (AAPL | NVDA | TSLA), settled by the crank
 ```
 
+Before going on stage: `scripts/dev/preflight`. It prints one PASS/FAIL line per check and exits 1 on any failure:
+- stack health (API, crank, web, relay) and the public URL
+- `CROSS_FEE_PIPS = 100` on every DarkCrossHook
+- ETH for the crank, deployer and demo relay
+- relay token balances covering a 100-share action per wrapper
+
+**Demo relay** (`services/relay`, started by `live-up` in tmux window `relay`, port 18210, served as `/api/demo/*`):
+- It lets a visitor with no wallet trigger real transactions, signed by a dedicated demo key `0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C`. The key is freshly generated, not mnemonic-derived, and is neither the deployer nor the crank key. It is read only from `~/wrapswap-run/env/demo-relay.env` and never logged or bundled.
+- Limits: 3 actions per 10 minutes per client IP, 100 shares per action.
+- `POST /api/demo/convert` `{asset, from, to, amount}`: WrapSwapRouter swap to the relay.
+- `POST /api/demo/send` `{asset, from, to, amount, recipient}`: the same swap delivered to `recipient`.
+- `POST /api/demo/dark-commit` `{asset, from, amount}`: escrow and commit; the relay reveals in the reveal phase and the crank settles.
+- Each returns the real tx hash. `GET /api/demo/status` shows balances, pending reveals and recent hashes.
+
 - `NETWORK` defaults to `unichain-sepolia`, with `USE_MOCKS=false`, `deployments/unichain-sepolia.json` and the public externals in `scripts/dev/unichain-sepolia.env`.
 - Secrets come from `~/wrapswap-run/env/onchain.env` (`DEMO_MNEMONIC`, `CRANK_PRIVATE_KEY`, `UNICHAIN_SEPOLIA_RPC_URL`). Override the path with `LIVE_ENV=...`.
 - Web is the **production build** (`dist/web`, rebuilt by `live-up`) served by `scripts/dev/serve-web.mjs`, never the Vite dev server. On the single port 13010 it serves `/` (landing) and `/app`, and proxies `/api` → 18010, `/crank` → 18110 and `/rpc` → `RPC_URL`, so RPC keys stay server-side.
