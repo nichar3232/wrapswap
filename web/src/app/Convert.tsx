@@ -116,6 +116,13 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
     w.adjust(a.address, -raw);
     w.adjust(b.address, out);
     pool.refresh();
+    if (hash)
+      w.record({
+        hash,
+        kind: "PARITY",
+        text: `${fmtShares(qb!.sharesIn)} → ${fmtShares(c?.sharesOut ?? qb!.sharesOut)} ${asset.symbol} sh · ${a.symbol} → ${b.symbol}`,
+        simulated,
+      });
     setReceipt({
       hash,
       simulated,

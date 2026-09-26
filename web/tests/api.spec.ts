@@ -154,6 +154,7 @@ test("slow and malformed responses never produce blank screens or raw errors", a
   // While /deployment is slow (then malformed) the committed Unichain manifest still names the platforms.
   await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toBeVisible();
   await page.getByRole("tab", { name: "Dark Cross" }).click();
+  await page.locator("#pane-dark details.dark-history summary").click(); // collapsed by default
   await expect(page.getByText("No settled batches for AAPL yet.")).toBeVisible();
   await tab(page, "Liquidity").click();
   await expect(page.getByText("LP economics", { exact: true })).toBeVisible();

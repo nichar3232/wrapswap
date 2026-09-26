@@ -155,6 +155,12 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
       // The relay funds escrow, waits for a commit window, commits, and reveals in the reveal phase.
       const r = await relayDarkCommit({ asset: asset.symbol, from: a.symbol, amount: relayAmount(input) });
       onHash(r.txHash);
+      w.record({
+        hash: r.txHash,
+        kind: "DARK-COMMIT",
+        text: `Dark Cross commit · ${fmtShares(toShares(BigInt(r.amountIn), a))} ${asset.symbol} sh ${a.symbol} · batch #${r.batchId}`,
+        simulated: false,
+      });
       setOrder({
         hook,
         asset: asset.symbol,
@@ -186,6 +192,12 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
       const sent = await darkSend(d, hook, w.address!, "commit", [h, a.address, raw, w.uid || zero32], { onHash });
       await verifyOrder(hook, w.address!, o.batchId, h);
       w.adjust(a.address, -raw);
+      w.record({
+        hash: sent.hash,
+        kind: "DARK-COMMIT",
+        text: `Dark Cross commit · ${fmtShares(toShares(raw, a))} ${asset.symbol} sh ${a.symbol} · batch #${o.batchId}`,
+        simulated: sent.simulated,
+      });
       setOrder({
         ...o,
         hook,
@@ -269,7 +281,7 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
 
   return (
     <div className="dark">
-      <BatchStrip batch={batch} left={left} order={order} />
+      {order && <BatchStrip batch={batch} left={left} order={order} />}
 
       {order ? (
         <OrderCard
@@ -303,22 +315,29 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
         />
       ) : (
         <>
-          <div className="choices" role="radiogroup" aria-label="Side">
-            {[base, quote].map((p) => {
-              const other = p === base ? quote : base;
-              return (
+          {/* Same body as Convert: the two wrappers + flip, the direction line, size, quote card, one line, the button. */}
+          <div className="pair">
+            <div className="choices" role="radiogroup" aria-label="Side">
+              {[base, quote].map((p) => (
                 <button key={p.token.address} type="button" role="radio" aria-checked={p === from} className="choice" onClick={() => setFromAddr(p.token.address)}>
-                  <span className="choice-name">
-                    {p.name} → {other.name}
-                  </span>
+                  <span className="choice-name">{p.name}</span>
                   <span className="choice-sub">
-                    {p === base ? "Sell" : "Buy"} {base.token.symbol}
+                    {p.token.symbol}
                     {w.balances.status === "ok" && w.balances.values[p.token.address] !== undefined &&
                       ` · ${fmtShares(toShares(w.balances.values[p.token.address]!, p.token))} sh`}
                   </span>
                 </button>
-              );
-            })}
+              ))}
+            </div>
+            <button type="button" className="flip" aria-label={`Flip: cross ${to.name} to ${from.name}`} onClick={() => setFromAddr(to.token.address)}>
+              ⇄
+            </button>
+            <div className="pair-line dark-line">
+              <span>
+                {from.name} → <strong>{to.name}</strong> · {sellBase ? "sell" : "buy"} {base.token.symbol}
+              </span>
+              <BatchStrip batch={batch} left={left} slim />
+            </div>
           </div>
           <div className="input-row big">
             <input className="amount" inputMode="decimal" aria-label="Size" value={input} onChange={(e) => setInput(e.target.value)} />
@@ -401,9 +420,34 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
   );
 }
 
-function BatchStrip({ batch, left, order }: { batch: Feed<"currentBatch">; left?: number; order?: Order }) {
+function BatchStrip({ batch, left, order, slim }: { batch: Feed<"currentBatch">; left?: number; order?: Order; slim?: boolean }) {
   const b = batch.data;
   const ix = b ? PHASES.findIndex((p) => p.key === b.phase) : -1;
+  const sub = b
+    ? `${b.participants} sealed order${b.participants === 1 ? "" : "s"} in this batch · midpoint ${b.oracle.midX18 ? amount(b.oracle.midX18, 18, 6) : "—"}${b.oracle.stale ? " (stale)" : ""}`
+    : "";
+  if (slim)
+    return (
+      <span className="batch-strip slim" aria-label="Current batch" data-phase={b?.phase ?? "loading"} title={sub}>
+        <Val status={batch.status} w="5em">
+          Batch #{b?.batchId}
+        </Val>
+        <span className="bs-bars" aria-hidden="true">
+          {PHASES.map((p, i) => (
+            <i key={p.key} className={i === ix ? "on" : i < ix ? "done" : ""} />
+          ))}
+        </span>
+        <span className="bs-left" data-testid="batch-countdown">
+          {b && left !== undefined ? (
+            <>
+              {PHASES[ix]?.label} · <strong>{duration(left)}</strong> left
+            </>
+          ) : (
+            " "
+          )}
+        </span>
+      </span>
+    );
   return (
     <div className="batch-strip" aria-label="Current batch" data-phase={b?.phase ?? "loading"}>
       <div className="bs-head">
@@ -593,8 +637,8 @@ function OrderCard({
 function History({ asset, base, history }: { asset: Asset; base: Platform; history: Feed<"batches"> }) {
   const items = history.data?.items.filter((x) => x.settled) ?? [];
   return (
-    <section className="dark-history" aria-label="Settled batches">
-      <h3 className="card-title">Settled batches · {asset.symbol}</h3>
+    <details className="dark-history" aria-label="Settled batches">
+      <summary className="card-title">Settled batches · {asset.symbol}</summary>
       {history.data ? (
         items.length ? (
           <div className="table-scroll">
@@ -631,6 +675,6 @@ function History({ asset, base, history }: { asset: Asset; base: Platform; histo
           {null}
         </Val>
       )}
-    </section>
+    </details>
   );
 }

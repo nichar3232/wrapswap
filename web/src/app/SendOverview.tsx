@@ -17,8 +17,11 @@ const SEES: [string, string, string, string][] = [
  */
 export function SendOverview({ children }: { children?: ReactNode }) {
   return (
+    // Two columns on desktop so the page fits one screen: the send itself on the left, what it is and who sees what on the right.
     <div className="page send">
-      <section className="card">
+      <div className="send-main">{children}</div>
+      <div className="send-side">
+      <section className="card send-overview">
         <h2 className="card-title">Send</h2>
         <ol className="send-steps">
           {STEPS.map((s) => (
@@ -33,7 +36,6 @@ export function SendOverview({ children }: { children?: ReactNode }) {
         </ol>
         <p className="parity-line">Confidential, not anonymous. Operator-blind enclave on roadmap.</p>
       </section>
-      {children}
       <div className="send-grid">
         <section className="card" aria-label="Who sees what">
           <h3 className="card-title">Who sees what (payment on Sui)</h3>
@@ -73,6 +75,7 @@ export function SendOverview({ children }: { children?: ReactNode }) {
         </p>
         <p className="ladder">Dark Cross protects the order before the trade. Send protects the amount after it.</p>
       </section>
+      </div>
     </div>
   );
 }

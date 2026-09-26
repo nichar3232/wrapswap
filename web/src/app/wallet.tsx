@@ -37,6 +37,30 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   ]).finally(() => clearTimeout(timer));
 }
 
+/**
+ * This browser's own transactions, shown at the top of Recent fills from the moment they are sent: the indexer takes a
+ * few seconds to list a Convert, a Dark Cross commit only becomes a fill when its batch settles, and a Send's legs are
+ * made by the ShareVault. Per address in localStorage (a per-viewer convenience), 20 entries, 24 hours.
+ */
+export type Activity = { hash: string; kind: "PARITY" | "DARK-COMMIT" | "SEND"; text: string; at: number; simulated: boolean };
+const ACTIVITY_TTL = 86_400_000;
+const activityKey = (a: string) => `unison:activity:${a.toLowerCase()}`;
+function loadActivity(a: string): Activity[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(activityKey(a)) ?? "[]") as Activity[];
+    return Array.isArray(list) ? list.filter((x) => x && typeof x.hash === "string" && Date.now() - x.at < ACTIVITY_TTL) : [];
+  } catch {
+    return [];
+  }
+}
+function saveActivity(a: string, list: Activity[]) {
+  try {
+    localStorage.setItem(activityKey(a), JSON.stringify(list));
+  } catch {
+    /* private window or blocked storage: the list still lives for this page */
+  }
+}
+
 type Balances = { status: "loading" | "ok" | "unavailable"; values: Record<string, bigint> };
 
 function useWalletState(d: Deployment | undefined, tokens: Token[] | undefined) {
@@ -46,6 +70,19 @@ function useWalletState(d: Deployment | undefined, tokens: Token[] | undefined) 
   const [notice, setNotice] = useState("");
   const [balances, setBalances] = useState<Balances>({ status: "loading", values: {} });
   const [tick, setTick] = useState(0);
+  const [activity, setActivity] = useState<Activity[]>([]);
+  useEffect(() => setActivity(address ? loadActivity(address) : []), [address]);
+  const record = useCallback(
+    (a: Omit<Activity, "at">) => {
+      if (!address) return;
+      setActivity((list) => {
+        const next = [{ ...a, at: Date.now() }, ...list.filter((x) => x.hash.toLowerCase() !== a.hash.toLowerCase())].slice(0, 20);
+        saveActivity(address, next);
+        return next;
+      });
+    },
+    [address],
+  );
   const eligibility = useApi("eligibility", address || null);
   const expected = expectedChain();
   const wrongChain = !!address && chainId !== null && chainId !== expected.id;
@@ -182,6 +219,8 @@ function useWalletState(d: Deployment | undefined, tokens: Token[] | undefined) 
     balances,
     adjust,
     refreshBalances: () => setTick((t) => t + 1),
+    activity,
+    record,
     connect,
     switchChain,
     disconnect,

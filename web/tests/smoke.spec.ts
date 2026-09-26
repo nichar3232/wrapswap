@@ -153,7 +153,9 @@ test("Dark Cross: side + size → sealed commit; commit → reveal → settle; 3
   await expect(x.getByTestId("batch-countdown")).toContainText("Commit · 9s left");
   await expect(x).toContainText("Hidden until matched. Public on-chain after settlement.");
   await expect(x).toContainText("1.00 bp · protocol");
-  await x.getByRole("radio", { name: /Coinbase → xStocks/ }).click();
+  // Same body as Convert: wrapper cards, flip, a direction line that carries the batch status.
+  await x.getByRole("radio", { name: /Coinbase/ }).click();
+  await expect(x.locator(".pair-line")).toContainText("Coinbase → xStocks · sell mcbAAPL");
   await x.getByLabel("Size").fill("60");
   await x.getByRole("button", { name: `Commit sealed order · batch #${k}` }).click();
   const order = x.getByRole("region", { name: "Your sealed order" });
@@ -170,7 +172,8 @@ test("Dark Cross: side + size → sealed commit; commit → reveal → settle; 3
   await expect(result).toContainText("Residual via Convert base + skew · LP");
   await expect(result).toContainText("10.12 → 10.12 sh");
   await expect(result).toContainText("Unfilled, refunded0.00 sh");
-  const history = x.getByRole("region", { name: "Settled batches" });
+  const history = x.locator("details.dark-history");
+  await history.locator("summary").click(); // collapsed by default so the body fits one screen
   await expect(history.getByRole("row")).toHaveCount(4); // header + 3 settled batches
   await expect(history).toContainText("50.62 sh");
 });
@@ -339,3 +342,57 @@ test("e2e/demo.spec selector contract: its Convert steps resolve to exactly one 
   await expect(page.locator("#pane-dark").getByText(/cross/i).first()).toBeVisible();
   await expect(page.locator("#pane-dark").getByText(/residual/i).first()).toBeVisible();
 });
+
+test("Recent fills: a Convert and a Dark Cross commit from this page are listed at once, above the indexed fills", async ({ page }) => {
+  test.setTimeout(60000);
+  const k = 5000;
+  await page.clock.setFixedTime(batchTime(k, 1));
+  await demo(page, "/app?tab=move&asset=AAPL");
+  const c = convert(page);
+  await c.getByRole("radio", { name: /Coinbase/ }).click();
+  await c.getByLabel("Amount", { exact: true }).fill("100");
+  await c.getByRole("button", { name: "Convert", exact: true }).click();
+  await expect(c.getByText("Converted (mock)")).toBeVisible();
+  await page.getByRole("tab", { name: "Dark Cross" }).click();
+  const x = dark(page);
+  await x.getByLabel("Size").fill("10");
+  await x.getByRole("button", { name: `Commit sealed order · batch #${k}` }).click();
+  await expect(x.getByRole("region", { name: "Your sealed order" })).toBeVisible();
+  await tab(page, "Portfolio").click();
+  const rows = panel(page, "portfolio").getByRole("region", { name: "Recent fills" }).locator("li");
+  await expect(rows.nth(0)).toHaveAttribute("data-activity", "DARK-COMMIT");
+  await expect(rows.nth(0)).toContainText(`Dark Cross commit · 10.12 AAPL sh mcbAAPL · batch #${k}`);
+  await expect(rows.nth(1)).toHaveAttribute("data-activity", "PARITY");
+  await expect(rows.nth(1)).toContainText("101.25 → 101.22 AAPL sh · mcbAAPL → mAAPLx");
+  await expect(rows.nth(1)).toContainText("Convert (mock)");
+  // Indexed fills still follow, up to eight rows in all.
+  expect(await rows.count()).toBeGreaterThan(2);
+  expect(await rows.count()).toBeLessThanOrEqual(8);
+  // Kept for this address across a reload.
+  await page.reload();
+  await expect(panel(page, "portfolio").getByRole("region", { name: "Recent fills" }).locator("li[data-activity]")).toHaveCount(2);
+});
+
+for (const [width, height] of [
+  [1440, 900],
+  [1366, 768],
+]) {
+  test(`each tab fits one screen at ${width}×${height}: Move (Convert, Dark Cross), Send, Liquidity, Portfolio`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    for (const [t, q] of [
+      ["move", ""],
+      ["move", "&mode=dark"],
+      ["send", ""],
+      ["liquidity", ""],
+      ["portfolio", ""],
+    ]) {
+      await demo(page, `/app?asset=AAPL&tab=${t}${q}`);
+      const p = panel(page, t);
+      await expect(p.locator(".card").first()).toBeVisible();
+      await page.waitForTimeout(500);
+      const m = await p.evaluate((e) => ({ client: e.clientHeight, scroll: e.scrollHeight, main: document.querySelector("main")!.getBoundingClientRect().bottom }));
+      expect(m.scroll, `${t}${q} content fits its panel`).toBeLessThanOrEqual(m.client + 1);
+      expect(m.main, `${t}${q} panel ends at the bottom of the window`).toBeLessThanOrEqual(height + 1);
+    }
+  });
+}

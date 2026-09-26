@@ -82,8 +82,20 @@ export function Portfolio({
   onTry: () => void;
 }) {
   const w = useWallet();
-  const stats = useApi("stats", w.address ? `address=${w.address}` : null, 15000);
+  // While a Convert sent from this page is still waiting for the indexer, poll fast so it moves into the list quickly.
+  const fresh = w.activity.some((a) => a.kind === "PARITY" && !a.simulated && Date.now() - a.at < 120_000);
+  const stats = useApi("stats", w.address ? `address=${w.address}` : null, fresh ? 3000 : 15000);
   const recent = stats.data?.wallet?.recent ?? [];
+  const refreshStats = stats.refresh;
+  useEffect(() => {
+    if (w.activity.length) refreshStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [w.activity.length]);
+  // This browser's transactions the indexer hasn't listed (yet): a Convert until indexed, a Dark Cross commit and a Send
+  // as they are (their fills come from the settling batch and the ShareVault).
+  const indexed = new Set(recent.map((f) => f.txHash.toLowerCase()));
+  const mine = w.activity.filter((a) => !indexed.has(a.hash.toLowerCase())).slice(0, 5);
+  const MINE_STATUS: Record<string, string> = { PARITY: "Convert · confirming", "DARK-COMMIT": "Dark Cross · settles with the batch", SEND: "Send · confidential via Sui" };
   const mocks = import.meta.env.VITE_USE_MOCKS === "true";
 
   // Disconnected: one card, not three asset cards of dashes.
@@ -154,9 +166,16 @@ export function Portfolio({
       </div>
       <section className="card recent" aria-label="Recent fills">
         <h2 className="card-title">Recent fills</h2>
-        {recent.length ? (
+        {recent.length || mine.length ? (
           <ul>
-            {recent.slice(0, 8).map((f) => {
+            {mine.map((a) => (
+              <li key={a.hash} className="mine" data-activity={a.kind}>
+                <span>{a.text}</span>
+                <span className="muted">{a.simulated ? `${MINE_STATUS[a.kind].split(" · ")[0]} (mock)` : MINE_STATUS[a.kind]}</span>
+                <Hex value={a.hash} kind="tx" simulated={a.simulated || mocks} />
+              </li>
+            ))}
+            {recent.slice(0, Math.max(0, 8 - mine.length)).map((f) => {
               const ti = findToken(assets, f.tokenIn)?.token,
                 to = findToken(assets, f.tokenOut)?.token;
               return (

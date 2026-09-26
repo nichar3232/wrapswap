@@ -76,3 +76,20 @@ Tests: web unit 40/40 · Playwright mock 23/23 · Playwright live transport 10/1
   dropdowns and the mobile menu.
 
 Tests: web unit 36/36 · Playwright mock 21/21 · live transport 12/12.
+
+## 2026-09-26 · Recent fills show your transactions at once; every tab fits one screen
+
+- Recent fills (Portfolio) lists every transaction sent from this page straight away: a Convert shows as
+  "Convert · confirming" until the indexer lists it (Portfolio polls every 3 s meanwhile), a Dark Cross commit as
+  "Dark Cross · settles with the batch", and a Send deposit as "Send · confidential via Sui". Before, a Convert took
+  about 25 s to appear, and commits and sends never showed under your address. Stored per address in localStorage
+  (20 entries, 24 h).
+- Panels are one screen tall again: `#root` is a flex column, so `main` grew to its content and the whole page
+  scrolled. Header + panels now fill `100dvh` exactly, with the Verify footer below.
+- Move: Dark Cross has the same body as Convert (wrapper cards + flip, a direction line carrying the batch status,
+  size, quote card, one line, the button). Settled batches is collapsed by default.
+- Send: two columns (the send and its tracker on the left; steps, who sees what, use cases on the right).
+- Liquidity: tighter spacing. Shorter windows (≤ 820 px) get a compact mode.
+- Measured to fit at 1440×900, 1366×768 and 1280×800 (Dark Cross in commit, reveal and settle phases).
+
+Tests: web unit 36/36 · Playwright mock 24/24 · live transport 12/12.

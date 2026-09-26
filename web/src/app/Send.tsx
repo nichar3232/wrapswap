@@ -18,7 +18,7 @@ import { canonical, type Deployment } from "@wrapswap/types";
 import suiDeployment from "../../../deployments/sui-testnet.json";
 import { config } from "../config";
 import { useApi } from "../hooks/useApi";
-import { amount } from "../lib/format";
+import { amount, fmtShares } from "../lib/format";
 import { approve, injected, send } from "../wallet";
 import { readBatch, readPool, sealApproveLeafTx, type BatchState, type PoolState } from "../../../services/crank/sui/chain";
 import { prepareInstruction } from "../../../services/crank/sui/payer";
@@ -398,6 +398,12 @@ function SendPanel({ d, given, demo }: { d: Deployment | undefined; given: Panel
         sent = await send(d!, evmAccount!, sd.evm.shareVault, vaultAbi, "deposit", [dt!.address, depRaw!, suiAddress], { onHash });
       }
       w.adjust(dt!.address, -depRaw!);
+      w.record({
+        hash: sent.hash,
+        kind: "SEND",
+        text: `Send · deposit ${fmtShares(depShares!)} shares ${dt!.symbol} into the ShareVault`,
+        simulated: sent.simulated,
+      });
       setDepInput("");
       setFlow({ deposit: { hash: sent.hash, token: dt!.symbol, raw: depRaw!, shares: depShares!, simulated: sent.simulated || demo, receiptsBefore } });
       if (sent.simulated || demo) {

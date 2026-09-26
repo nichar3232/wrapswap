@@ -116,6 +116,12 @@ export function RelaySend({ assets }: { assets: Asset[] }) {
       try {
         const j = await relaySend({ asset: asset.symbol, from: from.token.symbol, to: to.token.symbol, amount: relayAmount(input), recipient });
         onHash(j.depositTx);
+        w.record({
+          hash: j.depositTx,
+          kind: "SEND",
+          text: `Send · ${fmtShares(shares)} ${asset.symbol} sh ${from.token.symbol} → ${to.token.symbol} to ${recipient.slice(0, 6)}…${recipient.slice(-4)}`,
+          simulated: false,
+        });
         setJob(j);
         return { hash: j.depositTx, simulated: false, result: "sent" };
       } catch (e) {

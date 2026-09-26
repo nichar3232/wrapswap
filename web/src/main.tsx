@@ -305,6 +305,8 @@ function App() {
       <a className="skip" href="#main">
         Skip to content
       </a>
+      {/* Header + panels fill exactly one screen; the Verify footer sits below it. */}
+      <div className="app-screen">
       <header className="nav">
         <a className="wordmark" href="/">
           <Mark />
@@ -358,6 +360,7 @@ function App() {
           ))}
         </div>
       </main>
+      </div>
       <VerifyFooter />
     </WalletProvider>
   );
