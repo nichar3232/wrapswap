@@ -31,7 +31,7 @@ services:
       NETWORK: anvil
       USE_MOCKS: 'false'
     entrypoint: [anvil]
-    command: ['--host', '0.0.0.0', '--port', '${ANVIL_PORT:?}', '--chain-id', '31337', '--mnemonic', '${DEMO_MNEMONIC:?}', '--block-time', '2', '--timestamp', '1790691600']
+    command: ['--host', '0.0.0.0', '--port', '${ANVIL_PORT:?}', '--chain-id', '31337', '--mnemonic', '${DEMO_MNEMONIC:?}', '--block-time', '2', '--timestamp', '1790691600', '--block-base-fee-per-gas', '0']
     ports:
       - '127.0.0.1:${ANVIL_PORT}:${ANVIL_PORT}'
       - '127.0.0.1:${API_PORT}:${API_PORT}'
