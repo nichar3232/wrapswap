@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { CHAINS, parseDeployment, type Deployment } from "@wrapswap/types";
-import { Mark, ThemeToggle } from "./brand";
-import { Tip } from "./components";
+import { Mark } from "./brand";
 import { config } from "./config";
 import { useApi, type FeedStatus } from "./hooks/useApi";
 import { amount } from "./lib/format";
@@ -12,6 +11,7 @@ import { Pool } from "./app/Pool";
 import { Send } from "./app/Send";
 import { Hex, Skeleton, shortHex } from "./app/ui";
 import { WalletProvider, useWallet } from "./app/wallet";
+import { isDemo } from "./wallet";
 import "./theme.css";
 import "./style.css";
 
@@ -39,17 +39,12 @@ const fallbackDeployment = (() => {
 
 type FeedRow = { name: string; status: FeedStatus; healthy?: boolean };
 
-function StatusPill({ feeds }: { feeds: FeedRow[] }) {
+/** The one network badge: Unichain Sepolia, with its health as a dot; details on click. */
+function NetworkBadge({ feeds }: { feeds: FeedRow[] }) {
   const [open, setOpen] = useState(false);
   const down = feeds.filter((f) => f.status !== "ok" || f.healthy === false);
   const nothing = feeds.every((f) => f.status === "loading" || f.status === "unavailable");
   const state = nothing ? "connecting" : down.length ? "degraded" : "live";
-  const label =
-    state === "connecting"
-      ? `Connecting to ${CHAIN.name}…`
-      : state === "degraded"
-        ? `Degraded · ${down.map((f) => f.name).join(", ")}`
-        : `${config.useMocks ? "Mock data" : "Live"} · ${CHAIN.name}`;
   const word: Record<FeedStatus, string> = {
     ok: "live",
     stale: "stale · retrying",
@@ -65,9 +60,11 @@ function StatusPill({ feeds }: { feeds: FeedRow[] }) {
         aria-controls="feed-status"
         onClick={() => setOpen(!open)}
         data-testid="status-pill"
+        title={state === "connecting" ? "Connecting…" : state === "degraded" ? `Degraded: ${down.map((f) => f.name).join(", ")}` : "All feeds live"}
       >
         <span className="status-dot" aria-hidden="true" />
-        {label}
+        {CHAIN.name}
+        {state === "connecting" ? <span className="muted"> · connecting…</span> : state === "degraded" ? <span> · degraded</span> : null}
       </button>
       {open && (
         <ul className="feed-list" id="feed-status">
@@ -184,14 +181,15 @@ function App() {
     history.replaceState(null, "", u);
   };
   const feeds: FeedRow[] = [
-    { name: "Deployment", status: deployment.data ? deployment.status : fallbackDeployment ? "stale" : deployment.status },
+    // The bundled manifest keeps the UI rendering but is not a live feed, so it never counts as loaded.
+    { name: "Deployment", status: deployment.status },
     { name: "Network", status: health.status, healthy: health.data?.ok },
     { name: "NYSE calendar", status: nyse.status },
     { name: "Fees", status: fees.status },
     { name: "Peg guard", status: pool.status },
     { name: "Crank", status: crank.status, healthy: crank.data?.ok },
   ];
-  const demoMode = health.data?.demoMode ?? d?.demoMode;
+  const demo = isDemo();
   return (
     <WalletProvider d={d}>
       <a className="skip" href="#main">
@@ -203,84 +201,29 @@ function App() {
           unison
         </a>
         <nav aria-label="Main navigation">
-          {TABS.map((t, i) => (
-            <span key={t} className="tab-wrap">
-              {i > 0 && (
-                <span className="sep" aria-hidden="true">
-                  ·
-                </span>
-              )}
-              <button className={tab === t ? "active" : ""} aria-current={tab === t ? "page" : undefined} onClick={() => setTab(t)}>
-                {t}
-              </button>
-            </span>
+          {TABS.map((t) => (
+            <button key={t} className={tab === t ? "active" : ""} aria-current={tab === t ? "page" : undefined} onClick={() => setTab(t)}>
+              {t}
+            </button>
           ))}
         </nav>
         <div className="wallet">
-          {demoMode && (
-            <span className="badge">
-              Demo mode
-              <Tip
-                text={
-                  config.useMocks
-                    ? "Simulated data and transactions: nothing is sent onchain."
-                    : "Testnet deployment with mock issuer tokens and a mock oracle."
-                }
-              />
+          <NetworkBadge feeds={feeds} />
+          {demo && (
+            <span
+              className="badge demo"
+              title={config.useMocks ? "Demo data and a simulated wallet: nothing is sent onchain." : "No wallet detected: a simulated wallet runs every flow. Connect a real wallet to transact."}
+            >
+              Demo
             </span>
           )}
-          <ThemeToggle />
           <Account d={d} />
         </div>
       </header>
-      <main id="main">
-        {tab === "Convert" ? (
-          <div className="hero">
-            <h1>Swap the wrapper. Keep the share.</h1>
-            <h2 className="sub">share-for-share conversion, no USDC leg.</h2>
-            <StatusPill feeds={feeds} />
-          </div>
-        ) : (
-          <div className="hero compact">
-            <h1>{tab}</h1>
-            <h2 className="sub">
-              {tab === "Dark Cross"
-                ? "Commit privately. Cross at the 30-minute oracle midpoint."
-                : tab === "Send"
-                  ? "Deposit on Unichain, send sealed on Sui, withdraw to any platform."
-                  : "Hook-owned inventory, priced by skew and market hours."}
-            </h2>
-            <StatusPill feeds={feeds} />
-          </div>
-        )}
-        {tab === "Convert" ? (
-          <Convert d={d} pool={pool} onDark={() => setTab("Dark Cross")} />
-        ) : tab === "Dark Cross" ? (
-          <DarkCross d={d} />
-        ) : tab === "Send" ? (
-          <Send d={d} />
-        ) : (
-          <Pool d={d} fees={fees} nyse={nyse} />
-        )}
+      <main id="main" className="app-main">
+        <h1 className="sr-only">{tab}</h1>
+        {tab === "Convert" ? <Convert d={d} pool={pool} /> : tab === "Dark Cross" ? <DarkCross d={d} /> : <Pool d={d} fees={fees} nyse={nyse} />}
       </main>
-      <footer aria-label="Network status">
-        <span className={`dot ${nyse.data ? (nyse.data.open ? "open" : "closed") : ""}`} aria-hidden="true" />
-        <span>NYSE {nyse.data ? (nyse.data.open ? "open" : "closed") : "—"}</span>
-        <span aria-hidden="true">·</span>
-        <span className="network">
-          {CHAIN.name} · chain {CHAIN.id}
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>{fees.data ? `${fees.data.fee.totalBps} bps` : "— bps"}</span>
-        {d?.contracts.parityHook && (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className="footer-hook">
-              ParityHook <Hex value={d.contracts.parityHook} simulated={config.useMocks} />
-            </span>
-          </>
-        )}
-      </footer>
     </WalletProvider>
   );
 }

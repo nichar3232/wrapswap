@@ -43,7 +43,7 @@ describe("diagram data", () => {
       `https://sepolia.uniscan.xyz/address/${addr(1)}`,
     );
     expect(node(d, "aaplx").href).toContain(addr(8));
-    expect(node(d, "shareVault").href).toBeNull(); // not in the Unichain manifest
+    expect(node(d, "shareVault").href).toBeNull(); // ShareVault comes from sui-testnet.json
     expect(node(d, "pool").href).toBeNull();
   });
   it("switches the centre node to the canonical vault when uAAPL exists", () => {
@@ -56,6 +56,13 @@ describe("diagram data", () => {
     expect(node(d, "center").title).toBe("uAAPL");
     expect(node(d, "center").href).toContain(addr(9));
     expect(d.edges.filter((e) => e.label === "WRAP 1:1")).toHaveLength(2);
+  });
+  it("keeper batches every 90 s; Unichain zone comes first", () => {
+    const d = diagramNodes(noUnichain, noSui);
+    expect(node(d, "keeper").sub).toBe("batch every 90 s");
+    const l = layout(d);
+    const suiTop = Math.min(...l.nodes.filter((n) => n.zone === "sui").map((n) => n.y));
+    expect(l.nodes.filter((n) => n.zone === "unichain" && n.id !== "shareVault").every((n) => n.y + n.h < suiTop)).toBe(true);
   });
   it("finds Sui ids at the top level or under objects", () => {
     expect(suiLookup({ objects: { pool: "0xabc" } }, ["pool"])).toBe("0xabc");
@@ -74,9 +81,10 @@ describe("diagram data", () => {
     expect(node(diagramNodes(noUnichain, { evm: {} }), "shareVault").href).toBeNull();
     expect(node(diagramNodes(noUnichain, noSui), "shareVault").href).toBeNull();
   });
-  for (const kind of ["wide", "stacked"] as const)
+  for (const kind of ["share math", "canonical vault"] as const)
     it(`${kind} layout: no overlapping nodes, no chip on a node`, () => {
-      const l = layout(kind, diagramNodes(noUnichain, noSui));
+      const u = kind === "share math" ? noUnichain : { contracts: { canonicalStock: addr(9) }, tokens: [] };
+      const l = layout(diagramNodes(u, noSui));
       const boxes = l.nodes.filter((n) => !n.group);
       const hit = (a: Rect, b: Rect) =>
         a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;

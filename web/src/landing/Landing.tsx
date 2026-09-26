@@ -8,7 +8,7 @@ import { OnePrice } from "./OnePrice";
 import {
   EXPLORER,
   NETWORK_NAME,
-  PROOF_SWAP_TX,
+  PROOF_SWAPS,
   deployment,
   proofRows,
   short,
@@ -43,7 +43,7 @@ const NAV: (Link & { menu: Link[] })[] = [
     href: "#proof",
     menu: [
       { label: "Deployed contracts", href: "#proof-contracts" },
-      ...(PROOF_SWAP_TX ? [{ label: "Router swap", href: "#proof-swap" }] : []),
+      { label: "Router swaps", href: "#proof-swap" },
       { label: "Uniscan ↗", href: EXPLORER, external: true },
     ],
   },
@@ -236,9 +236,6 @@ function Landing() {
           )}
         </h2>
         <div id="proof-contracts">
-        {rows.length === 0 && (
-          <p className="pending">Deployment addresses are being published.</p>
-        )}
         <div className="table-wrap" hidden={rows.length === 0}>
           <table>
             <thead>
@@ -268,22 +265,22 @@ function Landing() {
           </table>
         </div>
         </div>
-        {PROOF_SWAP_TX && (
-          <a
-            id="proof-swap"
-            className="tx-card"
-            href={explorerUrl("unichain-sepolia", "tx", PROOF_SWAP_TX)!}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <span className="tx-label">Real router swap from a user wallet</span>
-            <span className="mono tx-hash">{PROOF_SWAP_TX}</span>
-            <span className="tx-caption">
-              100 mcbAAPL → mAAPLx via WrapSwapRouter.swapExactIn
-            </span>
-            <span className="tx-go">View on Uniscan ↗</span>
-          </a>
-        )}
+        <div className="tx-cards" id="proof-swap">
+          {PROOF_SWAPS.map((p, i) => (
+            <a
+              key={p.hash}
+              className={`tx-card${i ? " secondary" : ""}`}
+              href={explorerUrl("unichain-sepolia", "tx", p.hash)!}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span className="tx-label">{p.label}</span>
+              <span className="mono tx-hash">{p.hash}</span>
+              <span className="tx-caption">{p.caption} via WrapSwapRouter.swapExactIn</span>
+              <span className="tx-go">Block {p.block.toLocaleString("en-US")} · View on Uniscan ↗</span>
+            </a>
+          ))}
+        </div>
       </section>
 
       <footer className="lfoot" id="developers">

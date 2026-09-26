@@ -90,39 +90,39 @@ export function diagramNodes(u: UnichainFile | undefined, s: SuiFile | undefined
   const suiObject = (id?: string) => (id ? `${SUI_EXPLORER}/object/${id}` : null);
   const suiAccount = (id?: string) => (id ? `${SUI_EXPLORER}/account/${id}` : null);
 
-  // Wide layout coordinates; the stacked layout is derived in layout().
+  // One layout: Unichain zone on top (primary), Sui zone below the divider; ShareVault straddles the divider.
   const n: Node[] = [
-    { id: "issuers", title: "Issuer tokens", zone: "unichain", group: true, x: 388, y: 172, w: 192, h: 214, href: null },
-    { id: "aaplc", title: "AAPLc", sub: "Coinbase B20", zone: "unichain", x: 400, y: 196, w: 168, h: 56, href: link(token("coinbase")) },
-    { id: "aaplx", title: "AAPLx", sub: "Backed xStocks", zone: "unichain", x: 400, y: 312, w: 168, h: 56, href: link(token("xstocks")) },
-    { id: "shareVault", title: "ShareVault", sub: "on Unichain", zone: "unichain", x: 270, y: 60, w: 180, h: 56, href: link(evm?.shareVault) },
-    { id: "router", title: "WrapSwapRouter", sub: "entry · swapExactIn", zone: "unichain", x: 660, y: 60, w: 200, h: 56, href: link(c.wrapSwapRouter) },
+    { id: "issuers", title: "Issuer tokens", zone: "unichain", group: true, x: 24, y: 150, w: 196, h: 226, href: null },
+    { id: "aaplc", title: "AAPLc", sub: "Coinbase B20", zone: "unichain", x: 38, y: 178, w: 168, h: 56, href: link(token("coinbase")) },
+    { id: "aaplx", title: "AAPLx", sub: "Backed xStocks", zone: "unichain", x: 38, y: 294, w: 168, h: 56, href: link(token("xstocks")) },
+    { id: "oracle", title: "Oracle · 30-min midpoint", sub: "mock on testnet", zone: "unichain", x: 300, y: 70, w: 210, h: 56, href: link(c.oracle) },
     vault
-      ? { id: "center", kick: "CANONICAL VAULT", title: "uAAPL", sub: "minted 1:1 per share", zone: "unichain", x: 660, y: 200, w: 200, h: 74, href: link(canonical) }
-      : { id: "center", kick: "SHARE MATH", title: "Multiplier adapters", sub: "via IssuerRegistry", zone: "unichain", x: 660, y: 200, w: 200, h: 74, href: link(c.registry) },
-    { id: "oracle", title: "Oracle · 30-min midpoint", sub: "mock on testnet", zone: "unichain", x: 660, y: 360, w: 200, h: 56, href: link(c.oracle) },
-    { id: "parity", title: "ParityHook", sub: "share-parity fill", zone: "unichain", accent: true, x: 960, y: 110, w: 190, h: 60, href: link(c.parityHook) },
-    { id: "dark", title: "DarkCrossHook", sub: "sealed-batch cross", zone: "unichain", x: 960, y: 300, w: 190, h: 60, href: link(c.darkCrossHook) },
-    { id: "pm", kick: "UNISWAP v4", title: "PoolManager", zone: "unichain", x: 1220, y: 180, w: 190, h: 66, href: link(c.poolManager) },
-    { id: "claims", title: "ERC-6909", sub: "inventory claims", zone: "unichain", x: 1220, y: 360, w: 190, h: 56, href: link(c.poolManager) },
-    { id: "seal", title: "Seal + Walrus", sub: "encrypted balances & instructions", zone: "sui", x: 24, y: 150, w: 232, h: 56, href: suiObject(suiLookup(s, ["seal", "sealPolicy", "sealPolicyId", "sealPackage", "sealPackageId"])) },
-    { id: "pool", title: "Unison Pay · Sui pool", sub: "root + total only", zone: "sui", x: 24, y: 280, w: 232, h: 56, href: suiObject(suiLookup(s, ["pool", "poolId", "payPool", "unisonPay"])) },
-    { id: "keeper", title: "Keeper", sub: "batch every 3 min", zone: "sui", x: 24, y: 410, w: 232, h: 56, href: suiAccount(suiLookup(s, ["keeper", "keeperAddress"])) },
+      ? { id: "center", kick: "CANONICAL VAULT", title: "uAAPL", sub: "minted 1:1 per share", zone: "unichain", x: 300, y: 205, w: 210, h: 74, href: link(canonical) }
+      : { id: "center", kick: "SHARE MATH", title: "Multiplier adapters", sub: "via IssuerRegistry", zone: "unichain", x: 300, y: 205, w: 210, h: 74, href: link(c.registry) },
+    { id: "router", title: "WrapSwapRouter", sub: "entry · swapExactIn", zone: "unichain", x: 300, y: 340, w: 210, h: 56, href: link(c.wrapSwapRouter) },
+    { id: "dark", title: "DarkCrossHook", sub: "sealed-batch cross", zone: "unichain", x: 600, y: 68, w: 200, h: 60, href: link(c.darkCrossHook) },
+    { id: "parity", title: "ParityHook", sub: "share-parity fill", zone: "unichain", accent: true, x: 600, y: 338, w: 200, h: 60, href: link(c.parityHook) },
+    { id: "pm", kick: "UNISWAP v4", title: "PoolManager", zone: "unichain", x: 890, y: 209, w: 206, h: 66, href: link(c.poolManager) },
+    { id: "claims", title: "ERC-6909", sub: "inventory claims", zone: "unichain", x: 890, y: 338, w: 206, h: 56, href: link(c.poolManager) },
+    { id: "shareVault", title: "ShareVault", sub: "on Unichain", zone: "unichain", x: 24, y: 442, w: 180, h: 56, href: link(evm?.shareVault) },
+    { id: "seal", title: "Seal + Walrus", sub: "encrypted balances & instructions", zone: "sui", x: 240, y: 520, w: 232, h: 56, href: suiObject(suiLookup(s, ["seal", "sealPolicy", "sealPolicyId", "sealPackage", "sealPackageId"])) },
+    { id: "pool", title: "Unison Pay · Sui pool", sub: "root + total only", zone: "sui", x: 540, y: 520, w: 232, h: 56, href: suiObject(suiLookup(s, ["pool", "poolId", "payPool", "unisonPay"])) },
+    { id: "keeper", title: "Keeper", sub: "batch every 90 s", zone: "sui", x: 840, y: 520, w: 232, h: 56, href: suiAccount(suiLookup(s, ["keeper", "keeperAddress"])) },
   ];
   const e: Edge[] = [
     { from: "aaplc", to: "center", label: vault ? "WRAP 1:1" : "NORMALIZE", dir: "h", to_: -8 },
     { from: "aaplx", to: "center", label: vault ? "WRAP 1:1" : "NORMALIZE", dir: "h", to_: 8 },
     { from: "issuers", to: "shareVault", label: "DEPOSIT", dir: "v" },
-    { from: "shareVault", to: "router", label: "WITHDRAW · cross-issuer", dir: "h" },
-    { from: "router", to: "parity", label: "EXACT-IN", dir: "h", to_: -8 },
-    { from: "center", to: "parity", label: "PARITY", dir: "h", fo: -10, to_: 8 },
-    { from: "center", to: "dark", label: "BATCH", dir: "h", fo: 10, to_: -8 },
-    { from: "oracle", to: "dark", label: "MID", dir: "h", to_: 8 },
+    { from: "shareVault", to: "router", label: "WITHDRAW · cross-issuer", dir: "h", fo: -12 },
+    { from: "router", to: "parity", label: "EXACT-IN", dir: "h", to_: 8 },
+    { from: "center", to: "parity", label: "PARITY", dir: "h", fo: 10, to_: -8 },
+    { from: "center", to: "dark", label: "BATCH", dir: "h", fo: -10, to_: 8 },
+    { from: "oracle", to: "dark", label: "MID", dir: "h", to_: -8 },
     { from: "parity", to: "pm", label: "SWAP", dir: "h", to_: -8 },
     { from: "dark", to: "pm", label: "RESIDUAL", dir: "h", to_: 8 },
     { from: "pm", to: "claims", label: "CLAIMS", dir: "v" },
-    { from: "seal", to: "pool", label: "ENCRYPT", dir: "v" },
-    { from: "keeper", to: "pool", label: "APPLY", dir: "v" },
+    { from: "seal", to: "pool", label: "ENCRYPT", dir: "h" },
+    { from: "keeper", to: "pool", label: "APPLY", dir: "h" },
   ];
   return { nodes: n, edges: e, vault };
 }
@@ -157,39 +157,16 @@ function edgePath(e: Edge, a: Rect, b: Rect): { d: string; mid: [number, number]
   };
 }
 
-/** "wide": zones side by side (Sui left of the divider). "stacked": Sui on top, Unichain below. */
-export function layout(kind: "wide" | "stacked", data: ReturnType<typeof diagramNodes>): Layout {
-  const place = (n: Node): Node => {
-    if (kind === "wide") return n;
-    if (n.zone === "sui") {
-      const i = ["seal", "pool", "keeper"].indexOf(n.id);
-      return { ...n, x: 24 + i * 316, y: 52 };
-    }
-    if (n.id === "shareVault") return { ...n, x: 240, y: 122 };
-    return { ...n, x: n.x - 158, y: n.y + 150 };
+/** The diagram's single layout: Unichain on top, Sui below a horizontal divider that ShareVault straddles. */
+export function layout(data: ReturnType<typeof diagramNodes>): Layout {
+  const byId = Object.fromEntries(data.nodes.map((n) => [n.id, n]));
+  const edges = data.edges.map((e) => ({ ...e, ...edgePath(e, byId[e.from], byId[e.to]) }));
+  return {
+    width: 1120,
+    height: 600,
+    nodes: data.nodes,
+    edges,
+    divider: { x1: 16, y1: 470, x2: 1104, y2: 470 },
+    zoneLabels: { unichain: [24, 36], sui: [240, 504] },
   };
-  const nodes = data.nodes.map(place);
-  const byId = Object.fromEntries(nodes.map((n) => [n.id, n]));
-  const edges = data.edges.map((e) => {
-    // In the stacked layout the Sui nodes sit in a row, so their edges run horizontally.
-    const dir = kind === "stacked" && byId[e.from].zone === "sui" ? "h" : e.dir;
-    return { ...e, dir, ...edgePath({ ...e, dir }, byId[e.from], byId[e.to]) } as Layout["edges"][number];
-  });
-  return kind === "wide"
-    ? {
-        width: 1440,
-        height: 500,
-        nodes,
-        edges,
-        divider: { x1: 360, y1: 16, x2: 360, y2: 484 },
-        zoneLabels: { sui: [24, 36], unichain: [384, 36] },
-      }
-    : {
-        width: 1280,
-        height: 600,
-        nodes,
-        edges,
-        divider: { x1: 16, y1: 150, x2: 1264, y2: 150 },
-        zoneLabels: { sui: [24, 32], unichain: [24, 204] },
-      };
 }

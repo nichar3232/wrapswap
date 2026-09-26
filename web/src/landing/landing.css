@@ -524,8 +524,9 @@ section[id] {
   width: 100%;
   height: auto;
 }
-.dg-stacked {
-  display: none;
+.dg-main {
+  max-width: 1400px;
+  margin: 0 auto;
 }
 .dg-zone-label {
   font: 500 10.5px var(--mono);
@@ -628,12 +629,8 @@ section[id] {
   stroke-width: 2;
 }
 @media (max-width: 899px) {
-  .dg-wide {
-    display: none;
-  }
-  .dg-stacked {
-    display: block;
-    min-width: 1080px;
+  .dg-main {
+    min-width: 860px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -699,8 +696,23 @@ section[id] {
 .proof td.link a:hover {
   color: var(--black-ink);
 }
-.tx-card {
+.tx-cards {
   margin-top: 48px;
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 16px;
+}
+.tx-card.secondary {
+  border-color: var(--black-hairline);
+  background: #05070d;
+}
+@media (max-width: 900px) {
+  .tx-cards {
+    grid-template-columns: 1fr;
+  }
+}
+.tx-card {
+  margin-top: 0;
   display: grid;
   gap: 10px;
   padding: 28px;

@@ -49,8 +49,15 @@ export class WalletError extends Error {
 export const hexChainId = (id: number) => "0x" + id.toString(16);
 export const expectedChain = () => CHAINS[config.network];
 
-/** Mock mode without an injected wallet uses the demo account on the expected chain. */
-export const simulatedWallet = () => config.useMocks && !injected();
+/**
+ * Demo mode: with no injected wallet a simulated wallet (the deployment's demo account) runs every flow:
+ * sign → pending → receipt, all marked simulated. Any real injected wallet turns it off.
+ */
+export const simulatedWallet = () => !injected();
+/** No chain writes: simulated wallet, or mock data (where an injected wallet still signs, for tests). */
+const offChain = () => config.useMocks || simulatedWallet();
+/** Anything shown or sent is demo (mock data or the simulated wallet); the UI marks it. */
+export const isDemo = offChain;
 
 export async function requestAccount(d?: Deployment): Promise<Address> {
   if (simulatedWallet())
@@ -175,8 +182,9 @@ export async function send(
   args: unknown[],
   opts: SendOptions = {},
 ): Promise<Sent> {
-  if (config.useMocks) {
-    // Mock mode: an injected wallet still signs (so reject/revert paths are real); the chain is simulated.
+  if (offChain()) {
+    // Demo: the simulated wallet signs instantly; with mock data an injected wallet still signs (so reject/revert
+    // paths are real) while the chain is simulated.
     let hash = fakeHash();
     const p = injected();
     if (p) {
@@ -250,10 +258,10 @@ export async function convertExactIn(
   opts?: SendOptions,
 ) {
   // Mock deployments predate the router: sign the same calldata against the mock swap router address.
-  const router = d.contracts.wrapSwapRouter ?? (config.useMocks ? d.contracts.swapRouter : undefined);
+  const router = d.contracts.wrapSwapRouter ?? (offChain() ? d.contracts.swapRouter : undefined);
   if (!router) throw new Error("NoRouter");
   // Deadline from chain time: anvil runs on a warped clock, not host time.
-  const timestamp = config.useMocks
+  const timestamp = offChain()
     ? BigInt(Math.floor(Date.now() / 1000))
     : (await rpc().getBlock()).timestamp;
   return send(
@@ -315,7 +323,7 @@ export async function verifyOrder(
   batchId: string,
   expectedHash?: Address,
 ) {
-  if (config.useMocks) return;
+  if (offChain()) return;
   const order = await rpc().readContract({
     address: d.contracts.darkCrossHook,
     abi: IDarkCrossHookAbi,
