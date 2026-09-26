@@ -1,27 +1,27 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { migrate } from "./db/index.js";
+import { db, migrate } from "./db/index.js";
 import { routes } from "./routes/index.js";
 import { startIndexer } from "./indexer/index.js";
-const app = Fastify({ logger: true });
+import { loadDeployment } from "./chain/client.js";
+for (const key of ["DATABASE_URL", "RPC_URL", "API_PORT", "NETWORK"])
+  if (!process.env[key]) throw Error(`${key} is required`);
+const d = loadDeployment(),
+  app = Fastify({ logger: true });
 await app.register(cors, {
-  origin: /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
+  origin:
+    process.env.CORS_ORIGIN ?? /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
 });
-app.setReplySerializer((v) =>
-  JSON.stringify(v, (_, x) => (typeof x === "bigint" ? x.toString() : x)),
-);
-app.setErrorHandler((err, req, reply) =>
-  reply
-    .status((err as any).statusCode || 503)
-    .send({ error: (err as Error).message }),
-);
-await migrate();
-await routes(app);
+await migrate(d);
+await routes(app, d);
 await app.listen({
-  port: Number(process.env.API_PORT || 4000),
-  host: "127.0.0.1",
+  port: Number(process.env.API_PORT),
+  host: process.env.API_HOST ?? "127.0.0.1",
 });
-startIndexer().catch((error) => {
-  app.log.error(error);
-  setTimeout(() => startIndexer().catch(console.error), 5000);
-});
+const stop = startIndexer(d);
+for (const signal of ["SIGINT", "SIGTERM"] as const)
+  process.on(signal, async () => {
+    stop();
+    await app.close();
+    await db.end();
+  });

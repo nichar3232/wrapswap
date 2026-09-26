@@ -1,0 +1,103 @@
+name: ${COMPOSE_PROJECT_NAME:-wrapswap-integration}
+x-app: &app
+  image: ${COMPOSE_PROJECT_NAME:-wrapswap-integration}-app
+  build:
+    context: .
+    dockerfile: scripts/dev/Dockerfile
+  volumes:
+    - ./deployments:/app/deployments:ro
+  network_mode: service:anvil
+  environment: &env
+    NETWORK: anvil
+    USE_MOCKS: 'false'
+    DEMO_MNEMONIC: ${DEMO_MNEMONIC:?source scripts/dev/env}
+    RPC_URL: http://127.0.0.1:${ANVIL_PORT:?}
+    # The web dev server proxies /rpc to this port.
+    ANVIL_PORT: ${ANVIL_PORT:?}
+    LOCAL_RPC: http://127.0.0.1:${ANVIL_PORT:?}
+    DATABASE_URL: postgresql://wrapswap:wrapswap@postgres:${PG_PORT:?}/wrapswap
+    DEPLOYMENT_FILE: deployments/anvil.json
+    API_PORT: ${API_PORT:?}
+    WEB_PORT: ${WEB_PORT:?}
+    CRANK_HEALTH_PORT: ${CRANK_HEALTH_PORT:?}
+    CRANK_PORT: ${CRANK_HEALTH_PORT:?}
+    CRANK_PK: ${CRANK_PK:-}
+    # Anvil never reorgs; with automine and no interval mining a nonzero depth never reaches head.
+    INDEXER_CONFIRMATIONS: ${INDEXER_CONFIRMATIONS:-0}
+services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:stable
+    environment:
+      NETWORK: anvil
+      USE_MOCKS: 'false'
+    entrypoint: [anvil]
+    command: ['--host', '0.0.0.0', '--port', '${ANVIL_PORT:?}', '--chain-id', '31337', '--mnemonic', '${DEMO_MNEMONIC:?}', '--block-time', '2', '--timestamp', '1790691600', '--block-base-fee-per-gas', '0']
+    ports:
+      - '127.0.0.1:${ANVIL_PORT}:${ANVIL_PORT}'
+      - '127.0.0.1:${API_PORT}:${API_PORT}'
+      - '127.0.0.1:${WEB_PORT}:${WEB_PORT}'
+      - '127.0.0.1:${CRANK_HEALTH_PORT}:${CRANK_HEALTH_PORT}'
+    healthcheck:
+      test: ['CMD-SHELL', 'cast block-number --rpc-url http://127.0.0.1:${ANVIL_PORT} >/dev/null']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  postgres:
+    image: postgres:16
+    command: ['postgres', '-p', '${PG_PORT:?}']
+    environment:
+      NETWORK: anvil
+      USE_MOCKS: 'false'
+      POSTGRES_USER: wrapswap
+      POSTGRES_PASSWORD: wrapswap
+      POSTGRES_DB: wrapswap
+    ports: ['127.0.0.1:${PG_PORT}:${PG_PORT}']
+    volumes: ['pg:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U wrapswap -d wrapswap -p ${PG_PORT}']
+      interval: 2s
+      retries: 30
+  migrate:
+    <<: *app
+    command: ['pnpm', 'db:migrate']
+    depends_on:
+      postgres: {condition: service_healthy}
+      anvil: {condition: service_healthy}
+  indexer:
+    <<: *app
+    command: ['pnpm', 'exec', 'tsx', 'scripts/dev/indexer.mjs']
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ['CMD', 'pnpm', 'exec', 'tsx', 'scripts/dev/indexer-health.ts']
+      interval: 3s
+      retries: 30
+  api:
+    <<: *app
+    command: ['node', 'scripts/dev/bridge.mjs', 'api', 'pnpm', 'dev:api']
+    depends_on:
+      indexer: {condition: service_healthy}
+    healthcheck:
+      test: ['CMD', 'node', 'scripts/dev/health.mjs', 'api']
+      interval: 3s
+      retries: 30
+  crank:
+    <<: *app
+    command: ['node', 'scripts/dev/bridge.mjs', 'crank', 'pnpm', 'dev:crank']
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ['CMD', 'node', 'scripts/dev/health.mjs', 'crank']
+      interval: 3s
+      retries: 30
+  web:
+    <<: *app
+    command: ['pnpm', 'dev:web', '--host', '0.0.0.0']
+    depends_on:
+      crank: {condition: service_healthy}
+    healthcheck:
+      test: ['CMD', 'node', 'scripts/dev/health.mjs', 'web']
+      interval: 3s
+      retries: 30
+volumes:
+  pg:

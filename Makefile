@@ -1,11 +1,17 @@
 SHELL := /bin/bash
-.PHONY: install build test fork deploy-local seed demo testnet fresh-clone-check clean
+.PHONY: install types build test fork deploy-local seed demo testnet fresh-clone-check clean
 install:
 	./scripts/install-contracts.sh
 	pnpm install --frozen-lockfile
 	pnpm exec playwright install chromium
+types:
+	forge build
+	pnpm --filter @wrapswap/types generate
+	pnpm --filter @wrapswap/types build
+	pnpm --filter @wrapswap/types verify
 build:
 	forge build
+	pnpm --filter @wrapswap/types build
 	./scripts/export-abis.sh
 	pnpm build
 test:

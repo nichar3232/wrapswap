@@ -1,17 +1,125 @@
-# Three-minute video script
+# WrapSwap demo video script — 3:00 hard cap
 
-Record only after `make test`, `DEMO_CHECK=1 make demo` and `make fresh-clone-check` have succeeded. Use a fresh local `make demo` session and its seeded accounts; keep RPC URLs and the deployer private key off screen. This script follows the existing tab/control labels and may need a final reference refresh after integration. The bridge is not part of the recorded working demo.
+Placeholders used in this file: `{{URL:web-live}}`, `{{URL:basescan-parityhook}}`, `{{URL:repo-readme-integrations}}`
 
-| Time | Exact action | Narration / evidence |
-| --- | --- | --- |
-| 0:00–0:18 | Show the terminal's successful scripted demo receipts and summary; show `http://localhost:5173`. | “WrapSwap is a conversion layer between issuers of the same stock. Our demo uses explicit issuer mocks because generic Anvil cannot execute native Base B20, with real Base Uniswap contracts.” |
-| 0:18–0:35 | Open the URL; choose the first account in the Demo burner selector. Stay on Convert. | Show the chain, NYSE status, oracle freshness and hook inventory. “uAAPL counts shares, while adapters handle each wrapper's decimals and multiplier.” |
-| 0:35–1:00 | On Convert, choose mAAPLc as From and uAAPL as To; enter `10`; click Approve & convert once. Wait for approval and conversion receipt. | Point to expected output, fee and route, then the transaction hash. “This converts shares without a USDC leg.” |
-| 1:00–1:20 | Choose uAAPL as From and mAAPLx as To; enter `1`; click Approve & convert. | Show ParityHook route and the resulting conversion history. “The hook fills from ERC-6909 inventory; the scripted run also drained inventory and proved curve fall-through.” |
-| 1:20–1:45 | Click Dark pool. Show funded escrow, current batch and existing fills from the scripted three-wallet flow. | Highlight a shared batch with cross and lit fills. “Commitments reveal in a later phase. One settlement transaction crosses matched shares and routes the selected remainder to the lit pool.” |
-| 1:45–2:05 | Point to the `Crossed` and `RoutedToLit` receipt assertions in the terminal, then return to Dark pool. | “This is atomic residual routing through unlock, swap and settlement. The public lock currency and amount remain visible; commit-reveal is not full cryptographic privacy.” |
-| 2:05–2:25 | Click Backing. Show the two issuer rows, total shares, supply and invariant indicator. | “Issuers remain distinct risks. The vault tracks backing in shares, applies the current multiplier and charges five basis points on redemption.” |
-| 2:25–2:42 | Click Metrics. Show conversion volume, crossed/routed totals and settled batches. | “The indexer backfills chain events into local Postgres; these numbers come from transactions, not canned UI data.” |
-| 2:42–3:00 | Show README's integration table and FEEDBACK.md in the public repository. | “Next: hardened oracle normalization, FHE matching, and an authenticated intent bridge. The repository includes tests, a clean-clone demo and concrete Uniswap developer feedback.” |
+- **Length.** 3:00 total: Part A 0:00–2:20, Part B 2:20–3:00. ETHGlobal rejects videos under 2:00 or over 4:00. Don't speed up footage to fit.
+- **Voiceover.** Read it in your own voice; AI voiceovers are not allowed. The whole voiceover is 365 words, which is 2:26 at 150 wpm. Every block also fits its own slot at 150 wpm (tightest: B2, 44 words in 20 s = 17.6 s).
+- **Numbers.** Every on-screen number comes from INTERFACES.md §10:
+  - Part A uses **Variant ANVIL**: NYSE OPEN, block warped to `1790692200` (Tue 2026-09-29 10:30 EDT).
+  - Part B uses **Variant BASE-SEPOLIA**: real clock, NYSE CLOSED Sat 2026-09-26 to Mon 2026-09-28 13:30 UTC.
+  - If the app shows a different number, stop and re-seed. Don't narrate over a mismatch.
+- **Tokens.** Demo tokens are mocks with issuer-faithful decimals and multipliers:
+  - `mcbAAPL` mocks Coinbase tokenized AAPL: 6 decimals, 1.0125 shares per token.
+  - `mAAPLx` mocks Backed xStocks AAPLx: 18 decimals, 1.0 share per token.
+  - Parity: 1 mcbAAPL = 1.0125 mAAPLx.
+- **Wording.** Call the unit "shares", never by a token name. Users only ever hold issuer tokens.
 
-If the UI labels change, synchronize this script before recording. Do not present an unsuccessful or pending verification as green. A new live order can be committed in the UI, but waiting through the 20-block cycle is unnecessary for this three-minute cut because the scripted three-wallet batch already supplies auditable receipts.
+---
+
+## Part A — local anvil stack, Variant ANVIL (0:00–2:20)
+
+Start state: a fresh `scripts/dev/record-ready` stack, before any swap.
+- Hook inventory: 8,000 mcbAAPL (8,100 shares) + 12,150 mAAPLx (12,150 shares); skew −0.20.
+- Demo wallet (account 1): 500 mcbAAPL + 500 mAAPLx.
+
+### A1 · 0:00–0:18 — The problem
+
+- **Screen:** Title card, then the app's Convert tab showing the two issuer tokens side by side.
+- **Voiceover (41 words):** "Apple stock now lives on-chain through several issuers: Coinbase's tokenized AAPL on Base, Backed's xStocks AAPLx, and more. Same share, separate wrappers, separate liquidity. Switching issuers today means selling into USDC and buying back. WrapSwap does share-for-share conversion, no USDC leg."
+- **Caption:** `Same share · different wrappers · fragmented liquidity` → `WrapSwap: share-for-share conversion, no USDC leg`
+
+### A2 · 0:18–0:58 — Convert, PARITY fill
+
+- **Screen:**
+  1. Convert tab. The header shows NYSE **OPEN**.
+  2. From `mcbAAPL`, To `mAAPLx`, amount `100`.
+  3. The quote panel shows the **PARITY** badge and a fee breakdown: base 2.00 bps + skew 2.60 bps + market closed 0.00 bps = **4.60 bps**; fee 0.046575 mAAPLx.
+  4. Output **101.203425 mAAPLx**.
+  5. Click Convert and wait for the receipt.
+  6. The wallet now shows 400 mcbAAPL and 601.203425 mAAPLx.
+- **Voiceover (76 words):** "This is our local stack with the market open. I convert 100 mcbAAPL, our mock of Coinbase's token, into mAAPLx. The adapter says each mcbAAPL is 1.0125 shares, so that's 101.25 shares. The badge says PARITY: the hook fills the whole swap from its own inventory, inside beforeSwap, at exactly the share ratio. The fee is two basis points base plus 2.6 for inventory skew, 4.6 total. I receive 101.203425 mAAPLx. No USDC, no curve slippage."
+- **Caption:** `PARITY · 100 mcbAAPL = 101.25 shares → 101.203425 mAAPLx · fee 4.60 bps = 2.00 base + 2.60 skew + 0.00 closed`
+
+### A3 · 0:58–1:25 — Pool tab: inventory and skew
+
+- **Screen:**
+  1. Pool tab. Inventory: **8,100 mcbAAPL** (8,201.25 shares) and **12,048.75 mAAPLx** (12,048.75 shares).
+  2. The skew gauge moved from −0.20 to **−0.19**; the next skew fee is **2.47 bps**.
+  3. Peg status: pool price vs parity 1.0125, guard 50 bps.
+  4. The LP range around parity.
+- **Voiceover (59 words):** "The Pool tab shows that inventory: ERC-6909 claims the hook holds inside the PoolManager. Skew moved from minus 0.20 to minus 0.19, so the next skew fee drops to 2.47 basis points. The fee prices inventory imbalance. If inventory can't cover a swap, it falls through to this same pool's concentrated liquidity, guarded to within 50 bps of parity."
+- **Caption:** `Hook inventory (ERC-6909): 8,100 mcbAAPL · 12,048.75 mAAPLx · skew −0.20 → −0.19 · next skew fee 2.47 bps · peg guard 50 bps`
+
+### A4 · 1:25–2:20 — Dark Cross: commit-reveal, residual settles into ParityHook
+
+- **Screen:**
+  1. Dark Cross tab. The current batch shows COMMIT, then REVEAL, then SETTLE.
+  2. Counterparty A: sell **60 mcbAAPL**, limit **1.0100**, route residual ON.
+  3. Counterparty B: sell **50.625 mAAPLx**, limit **1.0150**.
+  4. Commit hashes appear, then the reveals.
+  5. The crank settles at mid **1.0125**.
+  6. The batch detail shows:
+     - Crossed **50 mcbAAPL ↔ 50.625 mAAPLx**.
+     - A receives **50.5996875 mAAPLx**; B receives **49.975 mcbAAPL** (5 bps per side).
+     - Residual: **10 mcbAAPL → 10.120474125 mAAPLx** via ParityHook at **4.47 bps** (≥ min 10.1).
+  7. The fills list shows `DARK-CROSS` and `DARK-RESIDUAL` rows under one settlement tx hash.
+- **Voiceover (101 words):** "Bigger holders can cross off-book. Counterparty A commits to sell 60 mcbAAPL, limit 1.0100. B commits to sell 50.625 mAAPLx, limit 1.0150. Until reveal, the orders are only hashes. The crank settles at the 1.0125 mid: 50 mcbAAPL cross against 50.625 mAAPLx, five basis points per side. A's leftover 10 mcbAAPL doesn't wait for another batch. In the same unlock, it's swapped into the ParityHook pool: 10.12 mAAPLx out, at a 4.47 bps fee, above A's limit. So every flow, whether parity fill, fall-through or dark residual, settles through one hook. Commit-reveal hides orders until reveal; it isn't full cryptographic privacy."
+- **Caption:** `Mid 1.0125 · crossed 50 mcbAAPL ↔ 50.625 mAAPLx · 5 bps/side · residual 10 mcbAAPL → 10.120474125 mAAPLx via ParityHook (4.47 bps) · one unlock`
+
+---
+
+## Part B — live Base Sepolia, Variant BASE-SEPOLIA (2:20–3:00)
+
+Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote only**. Don't execute a swap on Sepolia before recording, or the skew moves and the numbers stop matching §10.
+
+### B1 · 2:20–2:30 — Verified hook on Basescan
+
+- **Screen:** `{{URL:basescan-parityhook}}` → Contract tab, green "verified" check, `beforeSwap` in the source.
+- **Voiceover (23 words):** "Same hook, live on Base Sepolia, verified. It gates swaps to non-US wallets via Coinbase's Verified Country attestation; testnet runs a demoMode bypass."
+- **Caption:** `ParityHook · Base Sepolia (84532) · verified · non-US gate: Coinbase Verified Country EAS (demoMode on for testnet)`
+
+### B2 · 2:30–2:50 — Live quote, NYSE closed
+
+- **Screen:**
+  1. `{{URL:web-live}}` Convert tab. The header shows NYSE **CLOSED** · next open Mon 13:30 UTC.
+  2. From `mcbAAPL`, To `mAAPLx`, amount `100`.
+  3. The fee breakdown shows base 2.00 + skew 2.60 + **NYSE closed +10.00** = **14.60 bps**; fee 0.147825 mAAPLx; output **101.102175 mAAPLx**.
+  4. Hover the closed line.
+- **Voiceover (44 words):** "It's the weekend, so NYSE is closed. The same 100 mcbAAPL quote now adds a 10 basis point line: 14.6 total, 101.102175 mAAPLx out. The hook doesn't refuse to trade off-hours. It prices the risk that the underlying can't be hedged until Monday's open."
+- **Caption:** `NYSE CLOSED · fee 14.60 bps = 2.00 base + 2.60 skew + 10.00 off-hours risk · 101.102175 mAAPLx`
+
+### B3 · 2:50–3:00 — Integration table, close
+
+- **Screen:** `{{URL:repo-readme-integrations}}`, the README "Uniswap stack integration" table, slow scroll. End card with the tagline.
+- **Voiceover (21 words):** "Every Uniswap integration point is linked by line in the README, alongside our v4 feedback. WrapSwap: share-for-share conversion, no USDC leg."
+- **Caption:** `github.com · README → Uniswap stack integration` → `WrapSwap — share-for-share conversion, no USDC leg`
+
+---
+
+## Number check (§10)
+
+| On screen | Variant | §10 source |
+|---|---|---|
+| 1.0125 shares per mcbAAPL; 100 mcbAAPL = 101.25 shares | shared | `sharesPerTokenX18`, `parityFill.shares` |
+| 8,000 mcbAAPL / 12,150 mAAPLx start inventory, skew −0.20, skew fee 2.60 bps | shared | `inventory`, `skewX18.initial`, `parityFill.skewPips = 260` |
+| 4.60 bps, fee 0.046575, out 101.203425 mAAPLx | ANVIL | `variants.anvil.parityFill` |
+| 400 mcbAAPL + 601.203425 mAAPLx after the fill | ANVIL | `variants.anvil.end.demoMAAPLx/demoMcbAAPL` |
+| 8,100 mcbAAPL / 12,048.75 mAAPLx, skew −0.19, next 2.47 bps | shared | Step 1 "Inventory after", `skewX18.afterParityFill`, `residual.skewPips = 247` |
+| A 60 mcbAAPL @1.0100, B 50.625 mAAPLx @1.0150, mid 1.0125 | shared | `dark.orders`, `dark.oracleMidX18` |
+| crossed 50 ↔ 50.625; A gets 50.5996875; B gets 49.975 | shared | `dark.crossedBase/crossedQuote`, `dark.crossOut` |
+| residual 10 mcbAAPL → 10.120474125 mAAPLx, 4.47 bps, min 10.1 | ANVIL | `variants.anvil.residual`, `dark.residual.minOut` |
+| 14.60 bps = 2.00 + 2.60 + 10.00, fee 0.147825, out 101.102175 | BASE-SEPOLIA | `variants.base-sepolia.parityFill` |
+| next open Mon 2026-09-28 13:30 UTC | BASE-SEPOLIA | `variants.base-sepolia.nextOpen = 1790602200` |
+
+## Technical claims in the voiceover → source
+
+| Claim | Source |
+|---|---|
+| Hook fills from inventory inside beforeSwap at the share ratio | [`ParityHook.beforeSwap` (ParityHook.sol#L226)](../contracts/src/ParityHook.sol#L226); DECISIONS.md "Fills are all-or-nothing from inventory via beforeSwapReturnDelta" |
+| Fee = 2 bps base + skew + 10 bps closed, cap 25 bps | [`ParityHook.feeBreakdown` (ParityHook.sol#L171)](../contracts/src/ParityHook.sol#L171); DECISIONS.md "Fee is expressed in pips: min(200 + ceil(1300·\|skew\|) + (NYSE closed ? 1000 : 0), 2500)" |
+| Inventory is ERC-6909 claims in the PoolManager | [`ParityHook.depositInventory` (ParityHook.sol#L119)](../contracts/src/ParityHook.sol#L119); DECISIONS.md "Inventory is ERC-6909 claims owned by ParityHook in the PoolManager" |
+| Fall-through to the same pool, 50 bps peg guard | [`ParityHook.afterSwap` (ParityHook.sol#L279)](../contracts/src/ParityHook.sol#L279); DECISIONS.md "afterSwap reverts when the post-swap price is more than 50 bps from adapter parity" |
+| Commit-reveal; settle at oracle mid; 5 bps per side | [`DarkCrossHook.commit` (DarkCrossHook.sol#L185)](../contracts/src/DarkCrossHook.sol#L185), [`DarkCrossHook.reveal` (DarkCrossHook.sol#L212)](../contracts/src/DarkCrossHook.sol#L212); DECISIONS.md "crossing charges 5 bps per side to treasury" |
+| Residual swapped into the ParityHook pool in the same unlock | [`DarkCrossHook.settle` (DarkCrossHook.sol#L246)](../contracts/src/DarkCrossHook.sol#L246); DECISIONS.md "routes residuals into the ParityHook pool inside the same unlock" |
+| Non-US gate via Coinbase Verified Country EAS; demoMode on testnet | [`IEligibility.check` (IEligibility.sol#L21)](../contracts/src/interfaces/IEligibility.sol#L21), [`IEligibility.setDemoMode` (IEligibility.sol#L18)](../contracts/src/interfaces/IEligibility.sol#L18); DECISIONS.md "IEligibility has an EAS implementation (Coinbase Verified Country, restricted country \"US\")… demoMode is owner-set and emits DemoModeSet" |
+| NYSE closed read from the chain clock | [`NyseCalendar.isOpen` (NyseCalendar.sol#L54)](../contracts/src/NyseCalendar.sol#L54); DECISIONS.md "Market-hours logic everywhere reads the latest block timestamp" |

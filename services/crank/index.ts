@@ -1,92 +1,63 @@
 import "dotenv/config";
 import Fastify from "fastify";
 import { createWalletClient, http } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
+import { mnemonicToAccount, privateKeyToAccount } from "viem/accounts";
+import { validators } from "@wrapswap/types";
 import {
-  abi,
-  manifest,
+  loadDeployment,
   publicClient,
-  read,
   rpc,
 } from "../../api/src/chain/client.js";
-const m = manifest();
-const local = /^http:\/\/(127\.0\.0\.1|localhost):/.test(rpc) && m.demoMode;
-const key =
-  process.env.CRANK_PK || (local ? (process.env.DEPLOYER_PK || m.burners?.[0]?.privateKey) : undefined);
-if (!key) throw Error("CRANK_PK is required");
-const account = privateKeyToAccount(key as `0x${string}`);
-const wallet = createWalletClient({ account, transport: http(rpc) });
-const status = {
-  ok: true,
-  lastBatch: null as string | null,
-  lastTx: null as string | null,
-  lastError: null as string | null,
-};
+import { Crank, retryDelay } from "./worker.js";
+for (const key of ["NETWORK", "RPC_URL", "CRANK_HEALTH_PORT"])
+  if (!process.env[key]) throw Error(`${key} is required`);
+const d = loadDeployment();
+const mnemonic =
+  process.env.DEMO_MNEMONIC ??
+  (d.network === "anvil"
+    ? "test test test test test test test test test test test junk"
+    : undefined);
+const account = process.env.CRANK_PK
+  ? privateKeyToAccount(process.env.CRANK_PK as `0x${string}`)
+  : mnemonic
+    ? mnemonicToAccount(mnemonic, { addressIndex: 4 })
+    : null;
+if (!account) throw Error("CRANK_PK or DEMO_MNEMONIC is required");
+const mode = process.env.ORACLE_MODE ?? (d.mockOracle ? "mock" : "external");
+if (!["mock", "external"].includes(mode))
+  throw Error("ORACLE_MODE must be mock or external");
+const crank = new Crank(
+  d,
+  publicClient,
+  createWalletClient({ account, transport: http(rpc) }),
+  account,
+  mode,
+);
 const app = Fastify();
-app.get("/status", async () => status);
+for (const path of ["/status", "/health"])
+  app.get(path, async () =>
+    validators.CrankStatusResponse.assert(crank.status),
+  );
 await app.listen({
-  port: Number(process.env.CRANK_PORT || 4001),
-  host: "127.0.0.1",
+  port: Number(process.env.CRANK_HEALTH_PORT),
+  host: process.env.CRANK_HEALTH_HOST ?? "127.0.0.1",
 });
-let busy = false,
-  attempt = 0;
-publicClient.watchBlockNumber({
-  emitOnBegin: true,
-  pollingInterval: 1000,
-  onBlockNumber: async () => {
-    if (busy) return;
-    busy = true;
-    try {
-      const [current, phase] = await read("darkCrossHook", "currentBatch");
-      // Revisit the previous batch after a missed settle window or transient RPC failure.
-      const candidates: bigint[] = [];
-      if (current > 0n) candidates.push(current - 1n);
-      if (Number(phase) === 2) candidates.push(current);
-      for (const id of candidates) {
-        const [settled, participants] = await Promise.all([
-          read("darkCrossHook", "settled", [id]),
-          read("darkCrossHook", "participants", [id]),
-        ]);
-        if (settled || participants.length === 0) continue;
-        const gasPrice = await publicClient.getGasPrice();
-        const simulation = await publicClient.simulateContract({
-          account,
-          address: m.contracts.darkCrossHook,
-          abi: abi("DarkCrossHook"),
-          functionName: "settle",
-          args: [id],
-        });
-        const hash = await wallet.writeContract({
-          chain: null,
-          address: m.contracts.darkCrossHook,
-          abi: abi("DarkCrossHook"),
-          functionName: "settle",
-          args: [id],
-          gasPrice: (gasPrice * BigInt(100 + Math.min(attempt, 5) * 20)) / 100n,
-        });
-        const receipt = await publicClient.waitForTransactionReceipt({ hash });
-        if (receipt.status !== "success")
-          throw Error("Settlement reverted " + hash);
-        status.lastBatch = id.toString();
-        status.lastTx = hash;
-        status.lastError = null;
-        status.ok = true;
-        attempt = 0;
-        console.log(
-          JSON.stringify({
-            event: "settled",
-            batch: status.lastBatch,
-            tx: hash,
-          }),
-        );
-      }
-    } catch (error) {
-      attempt++;
-      status.ok = false;
-      status.lastError = String(error);
-      console.error(status.lastError);
-    } finally {
-      busy = false;
-    }
-  },
-});
+let stopped = false,
+  timer: ReturnType<typeof setTimeout>;
+async function loop() {
+  await crank.tick();
+  if (!stopped)
+    timer = setTimeout(
+      loop,
+      crank.attempt
+        ? retryDelay(crank.attempt)
+        : Number(process.env.CRANK_POLL_MS ?? 1000),
+    );
+}
+void loop();
+for (const signal of ["SIGINT", "SIGTERM"] as const)
+  process.on(signal, async () => {
+    stopped = true;
+    clearTimeout(timer);
+    await app.close();
+  });

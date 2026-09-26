@@ -44,3 +44,35 @@
 - Use the existing Uniswap deployment JSON feed as evidence and suggest enriched records: feedback must recognize already-shipped developer tooling.
 - Use a blue action accent in both themes: reserve red and green for state indicators as requested.
 - Publish Sepolia README addresses only after receipt and explorer verification succeeds: predicted deployment addresses must not look verified.
+
+## 2026-09-26 — interfaces freeze for the reframe (INTERFACES.md, tag `interfaces-frozen`)
+- 2026-09-26: PoolKey is the two issuer tokens sorted as currency0/currency1, fee = DYNAMIC_FEE_FLAG, hooks = ParityHook, tickSpacing = 10: ParityHook settles issuer-to-issuer directly; 10-tick spacing keeps LP ranges fine-grained around a 50 bps peg guard.
+- 2026-09-26: Inventory is ERC-6909 claims owned by ParityHook in the PoolManager, deposited and withdrawn by keepers through hook functions; fee claims are tracked separately and excluded from inventory and skew.
+- 2026-09-26: Fills are all-or-nothing from inventory via beforeSwapReturnDelta; otherwise a zero delta falls through to the same pool's concentrated liquidity and afterSwap reverts when the post-swap price is more than 50 bps from adapter parity.
+- 2026-09-26: Fee is expressed in pips: min(200 + ceil(1300·|skew|) + (NYSE closed ? 1000 : 0), 2500), skew measured in canonical shares on pre-swap inventory: pips are the v4 LP-fee unit, allow the 13·|skew| term without truncation, and pre-swap skew makes quotes exact.
+- 2026-09-26: Rounding favours the hook (shares and output floored, fees and exact-out input ceiled); exact-in and exact-out both follow the pinned v4-core sign convention (amountSpecified < 0 is exact input).
+- 2026-09-26: Adapters (IWrapperAdapter) expose sharesPerToken per whole token (1e18) plus a paused/stale health flag; an unhealthy adapter blocks swaps with AdapterUnhealthy.
+- 2026-09-26: DarkCrossHook crosses the same issuer pair at an IPriceOracle midpoint (whole quote per whole base) and routes residuals into the ParityHook pool inside the same unlock; it is not attached to any pool and carries no hook flags. Commits lock the token being sold; crossing charges 5 bps per side to treasury; mids older than 900 s block settlement.
+- 2026-09-26: IEligibility has an EAS implementation (Coinbase Verified Country, restricted country "US"); the swapper comes from hookData only when the sender is an allowlisted router, else the sender; demoMode is owner-set and emits DemoModeSet.
+- 2026-09-26: Eligibility denials that must be indexed come from IEligibility.enforce on the non-reverting dark-commit path; reverted parity swaps cannot emit events, so the API surfaces them by simulation as BLOCKED-ELIGIBILITY.
+- 2026-09-26: Peg-guard trips are made indexable through a permissionless checkPeg that emits PegGuardStatus on state changes and is driven by the crank: the afterSwap revert itself cannot emit.
+- 2026-09-26: Local and testnet tokens are mock issuer ERC-20s with issuer-faithful decimals and multiplier behaviour: mcbAAPL (6 decimals, multiplier 1.0125) and mAAPLx (18 decimals, multiplier 1.0), giving a non-trivial 1 : 1.0125 parity.
+- 2026-09-26: Deployment files are deployments/anvil.json (chainId 31337, generated, gitignored) and deployments/base-sepolia.json (chainId 84532, committed); every consumer selects with NETWORK. deployments/local.json is legacy.
+- 2026-09-26: Demo accounts derive from DEMO_MNEMONIC by fixed index (0 deployer/keeper/treasury/LP, 1 demo wallet, 2 and 3 dark counterparties, 4 crank): the anvil default mnemonic locally, an env-supplied mnemonic on Sepolia. Deployment JSON never carries private keys.
+- 2026-09-26: The mock oracle mid is pushed by the crank at adapter parity: the demo's dark cross then clears at the same ratio as the parity fill, and pushes are reproducible from chain state.
+- 2026-09-26: Market-hours logic everywhere reads the latest block timestamp: anvil is warped to NYSE OPEN (1790692200) for the video while Sepolia runs on the real clock.
+- 2026-09-26: Indexer reorg safety comes from cascading deletes: every event row references its block by hash with ON DELETE CASCADE, and derived state is SQL views.
+- 2026-09-26: @wrapswap/types is generated from the compiled interface ABIs and the fenced schemas in INTERFACES.md, carries no runtime dependencies, and verifies the §10 arithmetic on every `make types`.
+
+## 2026-09-26 — finisher (demo-check, WrapSwapRouter, Base Sepolia)
+- 2026-09-26: Parse `cast call` tuple output by first field, not `sed 's/ .*//p'`: cast adds the ` [1.2e3]` suffix only to large numbers, so small batch ids and phase-end blocks parsed as empty and the seed never found a commit phase.
+- 2026-09-26: Index anvil at `INDEXER_CONFIRMATIONS=0`: with automine and no interval mining the head never moves, so a 2-block depth can never reach head. Anvil does not reorg.
+- 2026-09-26: Pin anvil's base fee to 0 (`--block-base-fee-per-gas 0`) instead of changing the crank: the crank prices `settle()` from `eth_gasPrice`, and a timing-dependent base fee made settle tx hashes differ between otherwise identical runs.
+- 2026-09-26: Tasks 1 and 2 were coupled: `e2e/demo.spec` asserts an on-chain balance change after Convert, which needs a router with a minimum output. WrapSwapRouter landed before demo-check could pass.
+- 2026-09-26: WrapSwapRouter (INTERFACES.md §13) is a trusted router that only forwards hookData naming `msg.sender` (empty hookData becomes v1 for the caller; `SwapperMismatch` otherwise). A trusted router that passed arbitrary hookData would let any caller claim another address's eligibility.
+- 2026-09-26: `Deployment.contracts.wrapSwapRouter` is an optional schema key, and the router is deployed after DarkCrossHook: additive to the frozen interface, and no earlier anvil address or §10 currency ordering changes.
+- 2026-09-26: Web live Convert takes its swap deadline from the latest block timestamp, not host time: anvil runs warped to 2026-09-29, ahead of the host clock.
+- 2026-09-26 (component change, backend): The indexer queries `eth_getLogs` in address chunks of 8: publicnode, the required Base Sepolia RPC, rejects larger address lists, and the manifest has 21 addresses.
+- 2026-09-26 (component change, web): `send()` retries a failed pre-flight simulation up to 3 times, 1.5 s apart: on Sepolia a load-balanced backend without the approval block made the swap simulation revert with ERC20InsufficientAllowance.
+- 2026-09-26: Base Sepolia uses Coinbase Verifications' Base Sepolia attester, indexer and Verified Country schema (0xef54…4028, confirmed registered on-chain). The mainnet UIDs are not registered on 84532. DEMO_MODE=true so the demo wallet can convert without a Coinbase attestation.
+- 2026-09-26: The Sepolia seed tops up demo accounts to 0.002 ETH (`SEED_GAS_TOPUP_WEI`) and funds dark escrow before the commit window (`fundEscrow()`): the deployer held 0.03 ETH at ~0.006 gwei, and the 12-block commit window is ~24 s.

@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "network": "anvil",
+  "chainId": 31337,
+  "deployCommit": "0123456789abcdef0123456789abcdef01234567",
+  "deployedAt": "2026-09-29T14:29:00Z",
+  "deployer": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "startBlock": "1",
+  "demoMode": true,
+  "mockOracle": true,
+  "contracts": {
+    "poolManager": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "positionManager": null,
+    "stateView": null,
+    "quoter": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "permit2": null,
+    "universalRouter": null,
+    "swapRouter": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+    "modifyLiquidityRouter": "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9",
+    "registry": "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
+    "calendar": "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707",
+    "eligibility": "0x0165878A594ca255338adfa4d48449f69242Eb8F",
+    "oracle": "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853",
+    "parityHook": "0x1f5a0e3B5D6c1D1d7a4D2d0a3C1b9E8F7a6B20C8",
+    "darkCrossHook": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+    "eas": null,
+    "easIndexer": null
+  },
+  "tokens": [
+    {
+      "symbol": "mcbAAPL",
+      "name": "Mock Coinbase Apple",
+      "address": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+      "decimals": 6,
+      "issuer": "coinbase",
+      "underlying": "AAPL",
+      "mock": true,
+      "adapter": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "adapterKind": "B20Multiplier",
+      "sharesPerTokenX18": "1012500000000000000",
+      "darkRole": "base"
+    },
+    {
+      "symbol": "mAAPLx",
+      "name": "Mock Apple xStock",
+      "address": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+      "decimals": 18,
+      "issuer": "xstocks",
+      "underlying": "AAPL",
+      "mock": true,
+      "adapter": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+      "adapterKind": "XStocksMultiplier",
+      "sharesPerTokenX18": "1000000000000000000",
+      "darkRole": "quote"
+    }
+  ],
+  "pool": {
+    "id": "0x6a1b5c3a0f4e2d9c8b7a6f5e4d3c2b1a09f8e7d6c5b4a39281706f5e4d3c2b1a",
+    "key": {
+      "currency0": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+      "currency1": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+      "fee": 8388608,
+      "tickSpacing": 10,
+      "hooks": "0x1f5a0e3B5D6c1D1d7a4D2d0a3C1b9E8F7a6B20C8"
+    },
+    "initSqrtPriceX96": "79721800701433069633245772272326702"
+  },
+  "hooks": {
+    "parityHook": {
+      "address": "0x1f5a0e3B5D6c1D1d7a4D2d0a3C1b9E8F7a6B20C8",
+      "flags": "0x20c8",
+      "permissions": [
+        "beforeInitialize",
+        "beforeSwap",
+        "afterSwap",
+        "beforeSwapReturnDelta"
+      ]
+    },
+    "darkCrossHook": {
+      "address": "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+      "flags": "0x0000",
+      "permissions": []
+    }
+  },
+  "dark": {
+    "baseToken": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+    "quoteToken": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+    "batchOrigin": "14",
+    "batchBlocks": 20,
+    "commitBlocks": 12,
+    "revealBlocks": 6
+  },
+  "blocks": {
+    "poolManager": "1",
+    "quoter": "2",
+    "swapRouter": "3",
+    "modifyLiquidityRouter": "4",
+    "registry": "5",
+    "calendar": "6",
+    "eligibility": "7",
+    "oracle": "8",
+    "parityHook": "13",
+    "darkCrossHook": "14",
+    "poolInitialized": "15"
+  },
+  "demoAccounts": {
+    "mnemonicSource": "anvil-default",
+    "accounts": [
+      {
+        "role": "deployer",
+        "index": 0,
+        "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+      },
+      {
+        "role": "demo",
+        "index": 1,
+        "address": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+      },
+      {
+        "role": "counterpartyA",
+        "index": 2,
+        "address": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+      },
+      {
+        "role": "counterpartyB",
+        "index": 3,
+        "address": "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+      },
+      {
+        "role": "crank",
+        "index": 4,
+        "address": "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
+      }
+    ]
+  }
+}

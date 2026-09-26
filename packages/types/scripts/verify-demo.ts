@@ -1,0 +1,134 @@
+// Recomputes every derived §10 value from the fixed inputs with the reference arithmetic and fails on any mismatch.
+import * as c from "../src/canonical.js";
+import { DEMO } from "../src/generated/demo.js";
+
+const failures: string[] = [];
+function eq(label: string, actual: bigint | number | string | boolean | null, expected: unknown) {
+  if (actual !== expected) failures.push(`${label}: computed ${String(actual)}, INTERFACES.md says ${String(expected)}`);
+}
+
+const mcb = { spt: DEMO.tokens.mcbAAPL.sharesPerTokenX18, decimals: DEMO.tokens.mcbAAPL.decimals };
+const x = { spt: DEMO.tokens.mAAPLx.sharesPerTokenX18, decimals: DEMO.tokens.mAAPLx.decimals };
+const shares = (inv: { mcb: bigint; x: bigint }) => ({
+  mcb: c.toSharesDown(inv.mcb, mcb.spt, mcb.decimals),
+  x: c.toSharesDown(inv.x, x.spt, x.decimals),
+});
+
+eq("parityMidX18", c.parityPriceX18(mcb.spt, x.spt), DEMO.parityMidX18);
+eq("dark.oracleMidX18 == parity (crank push rule)", DEMO.dark.oracleMidX18, DEMO.parityMidX18);
+
+// Pool initialisation at parity for both sort orders.
+const rawPrice0 = { num: mcb.spt * 10n ** BigInt(x.decimals), den: x.spt * 10n ** BigInt(mcb.decimals) };
+eq("sqrtPriceX96 (mcbAAPL currency0)", c.sqrtPriceX96(rawPrice0.num, rawPrice0.den), DEMO.pool.mcbAAPLIsCurrency0.sqrtPriceX96);
+eq("sqrtPriceX96 (mAAPLx currency0)", c.sqrtPriceX96(rawPrice0.den, rawPrice0.num), DEMO.pool.mAAPLxIsCurrency0.sqrtPriceX96);
+const tickOf = (num: bigint, den: bigint) => Math.floor(Math.log(Number(num) / Number(den)) / Math.log(1.0001));
+const t0 = tickOf(rawPrice0.num, rawPrice0.den);
+const t1 = tickOf(rawPrice0.den, rawPrice0.num);
+eq("tick (mcbAAPL currency0)", t0, DEMO.pool.mcbAAPLIsCurrency0.tick);
+eq("tick (mAAPLx currency0)", t1, DEMO.pool.mAAPLxIsCurrency0.tick);
+const sp = DEMO.pool.tickSpacing;
+for (const [label, tick, p] of [
+  ["mcbAAPL currency0", t0, DEMO.pool.mcbAAPLIsCurrency0],
+  ["mAAPLx currency0", t1, DEMO.pool.mAAPLxIsCurrency0],
+] as const) {
+  eq(`lpTickLower (${label})`, Math.floor(tick / sp) * sp - 120, p.lpTickLower);
+  eq(`lpTickUpper (${label})`, Math.ceil(tick / sp) * sp + 120, p.lpTickUpper);
+}
+// Parity pool price check: the initial sqrt price sits within the peg guard.
+const pp = c.poolPriceX18(DEMO.pool.mcbAAPLIsCurrency0.sqrtPriceX96, mcb.decimals, x.decimals);
+// Flooring sqrtPriceX96 leaves the price a hair below parity; ceil rounding reports that as 1 bp.
+if (c.deviationBps(pp, DEMO.parityMidX18) > 1n) failures.push("initial pool price deviates from parity by more than 1 bp");
+
+// Step 0: inventory skew.
+let inv = { mcb: DEMO.inventory.mcbAAPL, x: DEMO.inventory.mAAPLx };
+let s = shares(inv);
+eq("skewX18.initial", c.skewX18(s.mcb, s.x), DEMO.skewX18.initial);
+eq("parityFill.skewPips", c.skewPips(s.mcb, s.x), BigInt(DEMO.parityFill.skewPips));
+
+// Step 1: parity fill, both variants.
+const pf = DEMO.parityFill;
+const variants = [DEMO.variants.anvil, DEMO.variants["base-sepolia"]];
+let grossOut1 = 0n;
+for (const v of variants) {
+  const fee = c.feeBreakdown(s.mcb, s.x, v.marketOpen);
+  const q = c.parityQuote(mcb, x, pf.amountSpecified, fee.totalPips);
+  eq(`${v.network} parityFill.feePips`, fee.totalPips, BigInt(v.parityFill.feePips));
+  eq(`${v.network} parityFill.feeBps`, c.pipsToBps(fee.totalPips), v.parityFill.feeBps);
+  eq(`${v.network} parityFill.feeAmount`, q.feeAmount, v.parityFill.feeAmount);
+  eq(`${v.network} parityFill.amountOut`, q.amountOut, v.parityFill.amountOut);
+  eq(`${v.network} parityFill.shares`, q.shares, pf.shares);
+  eq(`${v.network} parityFill.grossOut`, q.grossOut, pf.grossOut);
+  eq(`${v.network} parityFill.amountIn`, q.amountIn, pf.amountIn);
+  if (inv.x < q.grossOut) failures.push(`${v.network} parity fill not fillable from inventory`);
+  grossOut1 = q.grossOut;
+}
+inv = { mcb: inv.mcb + pf.amountIn, x: inv.x - grossOut1 };
+s = shares(inv);
+eq("skewX18.afterParityFill", c.skewX18(s.mcb, s.x), DEMO.skewX18.afterParityFill);
+eq("dark.residual.skewPips", c.skewPips(s.mcb, s.x), BigInt(DEMO.dark.residual.skewPips));
+
+// Step 2: dark batch.
+const d = DEMO.dark;
+const A = d.orders.counterpartyA;
+const B = d.orders.counterpartyB;
+eq("A sells base", A.sellBase, true);
+eq("B sells quote", B.sellBase, false);
+if (!(d.oracleMidX18 >= A.limitPriceX18)) failures.push("A limit not satisfied by mid");
+if (!(d.oracleMidX18 <= B.limitPriceX18)) failures.push("B limit not satisfied by mid");
+const qAsBase = c.quoteAsBase(B.amountIn, d.oracleMidX18, mcb.decimals, x.decimals);
+const crossedBase = A.amountIn < qAsBase ? A.amountIn : qAsBase;
+const crossedQuote = c.baseAsQuote(crossedBase, d.oracleMidX18, mcb.decimals, x.decimals);
+eq("dark.crossedBase", crossedBase, d.crossedBase);
+eq("dark.crossedQuote", crossedQuote, d.crossedQuote);
+eq("dark.crossFeePips", BigInt(d.crossFeePips), c.CROSS_FEE_PIPS);
+// Single participant per side: A receives all crossedQuote, B receives all crossedBase.
+eq("dark.crossFees.counterpartyA", c.crossFee(crossedQuote), d.crossFees.counterpartyA);
+eq("dark.crossFees.counterpartyB", c.crossFee(crossedBase), d.crossFees.counterpartyB);
+eq("dark.crossOut.counterpartyA", crossedQuote - c.crossFee(crossedQuote), d.crossOut.counterpartyA);
+eq("dark.crossOut.counterpartyB", crossedBase - c.crossFee(crossedBase), d.crossOut.counterpartyB);
+eq("B residual is zero", B.amountIn - crossedQuote, 0n);
+const r = d.residual;
+eq("dark.residual.amountIn", A.amountIn - crossedBase, r.amountIn);
+eq("dark.residual.minOut", c.residualMinOut(r.amountIn, A.limitPriceX18, true, mcb.decimals, x.decimals), r.minOut);
+let grossOut2 = 0n;
+for (const v of variants) {
+  const fee = c.feeBreakdown(s.mcb, s.x, v.marketOpen);
+  const q = c.parityQuote(mcb, x, -r.amountIn, fee.totalPips);
+  eq(`${v.network} residual.feePips`, fee.totalPips, BigInt(v.residual.feePips));
+  eq(`${v.network} residual.feeBps`, c.pipsToBps(fee.totalPips), v.residual.feeBps);
+  eq(`${v.network} residual.feeAmount`, q.feeAmount, v.residual.feeAmount);
+  eq(`${v.network} residual.amountOut`, q.amountOut, v.residual.amountOut);
+  eq(`${v.network} residual.shares`, q.shares, r.shares);
+  eq(`${v.network} residual.grossOut`, q.grossOut, r.grossOut);
+  if (q.amountOut < r.minOut) failures.push(`${v.network} residual below minOut`);
+  grossOut2 = q.grossOut;
+
+  // End state.
+  const pfq = c.parityQuote(mcb, x, pf.amountSpecified, BigInt(v.parityFill.feePips));
+  eq(`${v.network} end.demoMcbAAPL`, DEMO.balances.demo.mcbAAPL - pfq.amountIn, v.end.demoMcbAAPL);
+  eq(`${v.network} end.demoMAAPLx`, DEMO.balances.demo.mAAPLx + pfq.amountOut, v.end.demoMAAPLx);
+  eq(`${v.network} end.counterpartyAEscrowMAAPLx`, d.crossOut.counterpartyA + q.amountOut, v.end.counterpartyAEscrowMAAPLx);
+  eq(`${v.network} end.counterpartyBEscrowMcbAAPL`, d.crossOut.counterpartyB, v.end.counterpartyBEscrowMcbAAPL);
+  eq(`${v.network} end.hookFeesMAAPLx`, pfq.feeAmount + q.feeAmount, v.end.hookFeesMAAPLx);
+}
+if (DEMO.balances.counterpartyA.mcbAAPL < A.amountIn) failures.push("A cannot fund its order");
+if (DEMO.balances.counterpartyB.mAAPLx < B.amountIn) failures.push("B cannot fund its order");
+if (DEMO.balances.demo.mcbAAPL < pf.amountIn) failures.push("demo wallet cannot fund the parity fill");
+inv = { mcb: inv.mcb + r.amountIn, x: inv.x - grossOut2 };
+s = shares(inv);
+eq("skewX18.afterDarkResidual", c.skewX18(s.mcb, s.x), DEMO.skewX18.afterDarkResidual);
+eq("total inventory shares conserved", s.mcb + s.x, 20_250n * c.ONE);
+
+// Clock facts.
+const anvilTs = DEMO.variants.anvil.warpTimestamp;
+const nyLocal = new Date((anvilTs - 4 * 3600) * 1000); // September: EDT (UTC-4)
+eq("anvil warp weekday is Tuesday", nyLocal.getUTCDay(), 2);
+eq("anvil warp local minutes (10:30)", nyLocal.getUTCHours() * 60 + nyLocal.getUTCMinutes(), 630);
+const nextOpen = new Date((DEMO.variants["base-sepolia"].nextOpen - 4 * 3600) * 1000);
+eq("sepolia next open is Monday 09:30 EDT", `${nextOpen.getUTCDay()} ${nextOpen.getUTCHours()}:${nextOpen.getUTCMinutes()}`, "1 9:30");
+
+if (failures.length) {
+  console.error(`verify-demo: ${failures.length} mismatch(es)\n  ${failures.join("\n  ")}`);
+  process.exit(1);
+}
+console.log("verify-demo: §10 ANVIL and BASE-SEPOLIA variants are arithmetically consistent");

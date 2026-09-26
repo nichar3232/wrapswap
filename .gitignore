@@ -19,3 +19,6 @@ dist/
 
 cache/
 foundry-pp/
+
+# Runtime-generated local deployment (INTERFACES.md §4)
+deployments/anvil.json

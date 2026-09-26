@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+bash scripts/install-contracts.sh
+# Host Playwright is needed for the literal npx acceptance command.
+corepack pnpm install --frozen-lockfile
+corepack pnpm exec playwright install chromium
