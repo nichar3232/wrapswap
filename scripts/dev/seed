@@ -33,6 +33,8 @@ if [[ $NETWORK == anvil ]]; then
   cast rpc --rpc-url "$RPC_URL" evm_mine >/dev/null
 fi
 run 'run()'
+# On Base Sepolia fund escrow first so only the two commit txs must land inside the commit window.
+if [[ $NETWORK == base-sepolia ]]; then run 'fundEscrow()'; fi
 phase() { cast call "$dark" 'currentBatch()(uint256,uint8,uint256)' --rpc-url "$RPC_URL"; }
 # Start at a new COMMIT phase with enough room for all six funding/commit txs.
 for ((i=0;i<180;i++)); do

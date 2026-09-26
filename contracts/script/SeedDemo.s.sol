@@ -78,10 +78,12 @@ contract SeedDemo is Script {
         parity.setKeeper(owner, true);
         eligibility.setTrustedRouter(a(".contracts.swapRouter"), true);
         eligibility.setTrustedRouter(address(dark), true);
+        // Base Sepolia gas is ~0.006 gwei; a smaller top-up keeps a lightly funded deployer able to seed.
+        uint256 topUpWei = vm.envOr("SEED_GAS_TOPUP_WEI", uint256(0.01 ether));
         for (uint32 i = 1; i <= 4; ++i) {
             address who = account(i);
-            if (who.balance < 0.01 ether) {
-                (bool ok,) = payable(who).call{value: 0.01 ether - who.balance}("");
+            if (who.balance < topUpWei) {
+                (bool ok,) = payable(who).call{value: topUpWei - who.balance}("");
                 require(ok, "gas funding failed");
             }
         }
@@ -105,6 +107,22 @@ contract SeedDemo is Script {
         base.approve(router, type(uint256).max); quote.approve(router, type(uint256).max);
         ISeedLiquidityRouter(router).modifyLiquidity(key, ModifyLiquidityParams(lower, upper, int256(uint256(liquidity)), LP_SALT), "");
         vm.stopBroadcast();
+    }
+    /// @dev Phase-independent escrow funding, so commit() needs only the two commit txs (Base Sepolia's
+    ///      12-block commit window is ~24 s).
+    function fundEscrow() external {
+        load();
+        for (uint32 i = 2; i <= 3; ++i) {
+            bool sell = i == 2;
+            uint256 amount = sell ? 60e6 : 50625e15;
+            IMockIssuerToken token = sell ? base : quote;
+            (uint256 available,) = dark.balances(account(i), address(token));
+            if (available >= amount) continue;
+            vm.startBroadcast(vm.deriveKey(mnemonic, i));
+            token.approve(address(dark), amount - available);
+            dark.fund(address(token), amount - available);
+            vm.stopBroadcast();
+        }
     }
     function commit() external {
         load();
