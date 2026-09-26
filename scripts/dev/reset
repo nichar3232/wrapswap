@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+# The compose stack is the offline anvil backup; the public network (unichain-sepolia) is the env default.
+export NETWORK=${NETWORK:-anvil}
 source scripts/dev/env
 [[ $NETWORK == anvil ]] || { echo 'reset requires anvil' >&2; exit 1; }
 [[ -f logs/integration/snapshot ]] || { echo 'No seed snapshot: run scripts/dev/up successfully first' >&2; exit 1; }

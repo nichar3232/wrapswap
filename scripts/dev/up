@@ -2,6 +2,8 @@
 export DEPLOY_COMMIT="${DEPLOY_COMMIT:-$(git rev-parse HEAD)}"
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+# The compose stack is the offline anvil backup; the public network (unichain-sepolia) is the env default.
+export NETWORK=${NETWORK:-anvil}
 source scripts/dev/env
 [[ $NETWORK == anvil ]] || { echo 'up is local only; use scripts/dev/seed for unichain-sepolia' >&2; exit 1; }
 export DEPLOYER_PK=${DEPLOYER_PK:-$(cast wallet private-key --mnemonic "$DEMO_MNEMONIC" --mnemonic-index 0)}

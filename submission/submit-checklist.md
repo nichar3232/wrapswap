@@ -1,6 +1,6 @@
 # Submit checklist (owner, in order)
 
-Placeholders referenced: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{{URL:feedback-md}}`, `{{URL:repo-readme-integrations}}`, `{{URL:uniscan-parityhook}}`, `{{URL:uniscan-darkcrosshook}}`, `{{URL:uniscan-eligibility}}`, `{{URL:addr-parityhook}}`, `{{URL:addr-darkcrosshook}}`, `{{URL:addr-eligibility}}`, `{{URL:addr-registry}}`, `{{URL:addr-calendar}}`, `{{URL:addr-oracle}}`, `{{URL:addr-mcbaapl}}`, `{{URL:addr-maaplx}}`
+Placeholders referenced: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{{URL:feedback-md}}`, `{{URL:repo-readme-integrations}}`
 
 **Hard deadline: Sun 2026-09-27 09:00 JST = Sat 2026-09-26 24:00 UTC.** Part B must be recorded while NYSE is closed. That window runs from now until Mon 2026-09-28 13:30 UTC, so the deadline is the binding constraint.
 
@@ -19,7 +19,7 @@ Placeholders referenced: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{
 
 ## 2. Record Part B on the live site (≈10 min)
 
-- [ ] Open `{{URL:uniscan-parityhook}}` and confirm the "verified" check shows (block B1).
+- [ ] Open `https://sepolia.uniscan.xyz/address/0x1D2C9335813B8d3fFDCCC9d43aAf73d7871b20c8#code` and confirm the "verified" check shows (block B1).
 - [ ] Open `{{URL:web-live}}`, Convert tab. Check the header says NYSE **CLOSED**, and the quote for 100 mcbAAPL → mAAPLx shows **14.60 bps** and **101.102175 mAAPLx** (block B2). **Only quote; don't execute a swap before recording.**
 - [ ] Open `{{URL:repo-readme-integrations}}` (block B3).
 - [ ] Record blocks B1–B3 (2:20–3:00).
@@ -41,8 +41,8 @@ Placeholders referenced: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{
   | `{{URL:repo-readme-integrations}}` | `{{URL:repo}}#uniswap-stack-integration` |
   | `{{URL:web-live}}` | the hosted web app URL from the deployment lane |
   | `{{URL:video}}` | from step 3 |
-  | `{{URL:addr-*}}` | `deployments/unichain-sepolia.json` → `contracts` / `tokens` |
-  | `{{URL:uniscan-*}}` | `https://sepolia.uniscan.xyz/address/<addr>#code` |
+  | `{{URL:addr-*}}` | `deployments/unichain-sepolia.json` → `contracts` / `tokens` (resolved in place for Unichain Sepolia) |
+  | `{{URL:uniscan-*}}` | `https://sepolia.uniscan.xyz/address/<addr>#code` (resolved in place for Unichain Sepolia) |
 
 - [ ] Check nothing is left: `grep -rn '{{URL:' submission/` should print nothing, apart from the "Placeholders used" header lines, which you can delete.
 

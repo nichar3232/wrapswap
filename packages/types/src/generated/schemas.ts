@@ -348,7 +348,7 @@ export const schemas = {
       "chainId": {
         "enum": [
           31337,
-          1301
+          84532
         ]
       },
       "deployCommit": {
@@ -1241,7 +1241,7 @@ export const schemas = {
   "Network": {
     "enum": [
       "anvil",
-      "unichain-sepolia"
+      "base-sepolia"
     ]
   },
   "NyseResponse": {
@@ -1894,7 +1894,7 @@ export type CurrentBatchResponse = {
 export type Deployment = {
   "schemaVersion": 1;
   "network": Network;
-  "chainId": 31337 | 1301;
+  "chainId": 31337 | 84532;
   "deployCommit": string;
   "deployedAt": string;
   "deployer": Address;
@@ -2104,7 +2104,7 @@ export type InventoryResponse = {
   "fee": FeeBreakdown;
 };
 
-export type Network = "anvil" | "unichain-sepolia";
+export type Network = "anvil" | "base-sepolia";
 
 export type NyseResponse = {
   "open": boolean;

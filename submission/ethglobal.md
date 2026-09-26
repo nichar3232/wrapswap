@@ -1,6 +1,6 @@
 # ETHGlobal Tokyo 2026 — project submission draft
 
-Placeholders used in this file: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{{URL:uniscan-parityhook}}`, `{{URL:uniscan-darkcrosshook}}`, `{{URL:uniscan-eligibility}}`, `{{URL:addr-parityhook}}`, `{{URL:addr-darkcrosshook}}`, `{{URL:addr-eligibility}}`, `{{URL:addr-registry}}`, `{{URL:addr-calendar}}`, `{{URL:addr-oracle}}`, `{{URL:addr-mcbaapl}}`, `{{URL:addr-maaplx}}`, `{{URL:feedback-md}}`
+Placeholders used in this file: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{{URL:feedback-md}}`
 
 **About these fields.** The Hacker Dashboard form sits behind a login and the public event page returned HTTP 500 on 2026-09-26, so the exact form fields couldn't be fetched. The public [event details page](https://ethglobal.com/events/tokyo2026/info/details) confirms the dashboard asks for a title, a description and a repository link, lets you pick up to three partner prizes (each with an integration explanation and feedback), and requires disclosure of AI use. The fields below follow that plus the lane's fallback list. **Confirm the field names in the dashboard before pasting.**
 
@@ -69,18 +69,8 @@ The project was built with AI coding agents (Claude) working in parallel lanes a
 
 ## Contract addresses (Unichain Sepolia, chain 1301)
 
-| Contract | Address | Explorer |
-|---|---|---|
-| ParityHook | {{URL:addr-parityhook}} | {{URL:uniscan-parityhook}} |
-| DarkCrossHook | {{URL:addr-darkcrosshook}} | {{URL:uniscan-darkcrosshook}} |
-| Eligibility (EAS) | {{URL:addr-eligibility}} | {{URL:uniscan-eligibility}} |
-| IssuerRegistry | {{URL:addr-registry}} | — |
-| NyseCalendar | {{URL:addr-calendar}} | — |
-| Mock price oracle | {{URL:addr-oracle}} | — |
-| mcbAAPL (mock Coinbase AAPL, 6 dec) | {{URL:addr-mcbaapl}} | — |
-| mAAPLx (mock xStocks AAPLx, 18 dec) | {{URL:addr-maaplx}} | — |
-
-Uniswap v4 PoolManager and periphery: the official Unichain Sepolia deployments listed in `deployments/unichain-sepolia.json`.
+<!-- testnet:start -->
+<!-- testnet:end -->
 
 ## Prize tracks
 

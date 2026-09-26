@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+# The compose stack is the offline anvil backup; the public network (unichain-sepolia) is the env default.
+export NETWORK=${NETWORK:-anvil}
 source scripts/dev/env
 scripts/dev/reset
 docker compose exec -T api pnpm exec tsx scripts/dev/assert-seed.ts

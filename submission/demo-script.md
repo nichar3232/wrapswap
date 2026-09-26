@@ -1,6 +1,6 @@
 # WrapSwap demo video script — 3:00 hard cap
 
-Placeholders used in this file: `{{URL:web-live}}`, `{{URL:uniscan-parityhook}}`, `{{URL:repo-readme-integrations}}`
+Placeholders used in this file: `{{URL:web-live}}`, `{{URL:repo-readme-integrations}}`
 
 - **Length.** 3:00 total: Part A 0:00–2:20, Part B 2:20–3:00. ETHGlobal rejects videos under 2:00 or over 4:00. Don't speed up footage to fit.
 - **Voiceover.** Read it in your own voice; AI voiceovers are not allowed. The whole voiceover is 365 words, which is 2:26 at 150 wpm. Every block also fits its own slot at 150 wpm (tightest: B2, 44 words in 20 s = 17.6 s).
@@ -74,7 +74,7 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 
 ### B1 · 2:20–2:30 — Verified hook on Uniscan
 
-- **Screen:** `{{URL:uniscan-parityhook}}` → Contract tab, green "verified" check, `beforeSwap` in the source.
+- **Screen:** `https://sepolia.uniscan.xyz/address/0x1D2C9335813B8d3fFDCCC9d43aAf73d7871b20c8#code` → Contract tab, green "verified" check, `beforeSwap` in the source.
 - **Voiceover (23 words):** "Same hook, live on Unichain Sepolia, verified. It gates swaps to non-US wallets via Coinbase's Verified Country attestation; testnet runs a demoMode bypass."
 - **Caption:** `ParityHook · Unichain Sepolia (1301) · verified · non-US gate: Coinbase Verified Country EAS (demoMode on for testnet)`
 

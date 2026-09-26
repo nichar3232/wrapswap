@@ -9,7 +9,7 @@ import {
   rpc,
 } from "../../api/src/chain/client.js";
 import { Crank, retryDelay } from "./worker.js";
-for (const key of ["NETWORK", "RPC_URL", "CRANK_HEALTH_PORT"])
+for (const key of ["RPC_URL", "CRANK_HEALTH_PORT"])
   if (!process.env[key]) throw Error(`${key} is required`);
 const d = loadDeployment();
 const mnemonic =

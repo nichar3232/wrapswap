@@ -157,9 +157,9 @@ export const DEMO = {
         hookFeesMAAPLx: 51100875000000000n,
       },
     },
-    "unichain-sepolia": {
-      network: "unichain-sepolia",
-      chainId: 1301,
+    "base-sepolia": {
+      network: "base-sepolia",
+      chainId: 84532,
       warpTimestamp: null,
       marketOpen: false,
       nextOpen: 1790602200,
