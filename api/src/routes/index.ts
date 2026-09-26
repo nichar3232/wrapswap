@@ -1,331 +1,710 @@
 import type { FastifyInstance } from "fastify";
-import { isAddress, parseAbi, type Address } from "viem";
 import {
-  read,
-  manifest,
-  publicClient,
-  ratio,
-  erc20,
-  type Token,
-} from "../chain/client.js";
-import { rows } from "../db/index.js";
+  abis,
+  validators,
+  canonical,
+  encodeParityHookData,
+  type Deployment,
+} from "@wrapswap/types";
 import {
-  WAD,
-  shares,
-  tokens,
-  lessFee,
-  hookOutput,
-  deviation,
-  poolPrice,
-} from "../chain/math.js";
-const stateAbi = parseAbi([
-  "function getSlot0(bytes32) view returns(uint160 sqrtPriceX96,int24 tick,uint24 protocolFee,uint24 lpFee)",
-]);
-const oracleAbi = parseAbi([
-  "function decimals() view returns(uint8)",
-  "function latestRoundData() view returns(uint80,int256,uint256,uint256,uint80)",
-]);
-const quoterAbi = parseAbi([
-  "function quoteExactInputSingle(((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,bool zeroForOne,uint128 exactAmount,bytes hookData) params) returns(uint256 amountOut,uint256 gasEstimate)",
-]);
-export async function parity() {
-  const m = manifest();
-  return Promise.all(
-    m.pools
-      .filter((p) => p.kind === "parity")
-      .map(async (p) => {
-        const issuer =
-          p.key.currency0.toLowerCase() === m.tokens.uAAPL.address.toLowerCase()
-            ? p.key.currency1
-            : p.key.currency0;
-        const t = Object.values(m.tokens).find(
-          (t) => t.address.toLowerCase() === issuer.toLowerCase(),
-        )!;
-        const [r, slot, i, o, fee] = await Promise.all([
-          ratio(issuer),
-          publicClient.readContract({
-            address: m.contracts.stateView,
-            abi: stateAbi,
-            functionName: "getSlot0",
-            args: [p.id],
-          }),
-          read("parityHook", "inventory", [issuer]),
-          read("parityHook", "inventory", [m.tokens.uAAPL.address]),
-          read("parityHook", "feeBpsNow", [issuer]),
-        ]);
-        const issuer0 = issuer.toLowerCase() === p.key.currency0.toLowerCase();
-        const direct = poolPrice(
-          slot[0],
-          issuer0 ? t.decimals : 18,
-          issuer0 ? 18 : t.decimals,
-        );
-        const price = issuer0 ? direct : direct ? (WAD * WAD) / direct : 0n;
-        return {
-          poolId: p.id,
-          issuer,
-          ratio: r,
-          poolPrice: price,
-          deviationBps: deviation(price, r),
-          hookInventory: { in: i, out: o },
-          feeBpsNow: Number(fee),
-          route: i > 0n && o > 0n ? "hook" : "curve",
-        };
-      }),
-  );
-}
-export async function quote(from: Address, to: Address, amount: bigint) {
-  const m = manifest();
-  const find = (a: Address) =>
-    Object.values(m.tokens).find(
-      (t) => t.address.toLowerCase() === a.toLowerCase(),
-    );
-  const a = find(from),
-    b = find(to);
-  if (
-    !a ||
-    !b ||
-    a.symbol === "USDC" ||
-    b.symbol === "USDC" ||
-    from.toLowerCase() === to.toLowerCase() ||
-    amount <= 0n
-  )
-    throw Object.assign(
-      Error("Select distinct supported stock tokens and a positive amount"),
-      { statusCode: 400 },
-    );
-  const [ra, rb] = await Promise.all([ratio(from), ratio(to)]);
-  const gross = tokens(shares(amount, ra, a.decimals), rb, b.decimals);
-  const isU = (t: Token) =>
-    t.address.toLowerCase() === m.tokens.uAAPL.address.toLowerCase();
-  if (!isU(a) && !isU(b)) {
-    const held = await publicClient.readContract({
-      address: b.address,
-      abi: erc20,
-      functionName: "balanceOf",
-      args: [m.contracts.vault],
-    });
-    if (held < gross)
-      throw Error("Insufficient selected issuer inventory in vault");
-    return {
-      from,
-      to,
-      amountIn: amount,
-      expectedOut: lessFee(gross, 5),
-      ratio: (ra * WAD) / rb,
-      route: "vault",
-      feeBps: 5,
-      priceImpactBps: 0,
-    };
+  getAddress,
+  parseAbi,
+  keccak256,
+  encodeAbiParameters,
+  toHex,
+} from "viem";
+import { chainReader, publicClient } from "../chain/client.js";
+import { permitsDarkFallback, routeErrors } from "../chain/reverts.js";
+import { db, camel } from "../db/index.js";
+const reasons = [
+  "OK",
+  "NO_ATTESTATION",
+  "WRONG_SCHEMA",
+  "WRONG_ATTESTER",
+  "WRONG_RECIPIENT",
+  "REVOKED",
+  "EXPIRED",
+  "RESTRICTED_COUNTRY",
+];
+const phases = ["COMMIT", "REVEAL", "SETTLE"];
+const zero = "0x" + "0".repeat(64);
+const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+export const fault = (code: string, message: string) =>
+  Object.assign(Error(message), {
+    code,
+    statusCode:
+      code === "BAD_REQUEST"
+        ? 400
+        : code === "NOT_FOUND"
+          ? 404
+          : code === "INTERNAL"
+            ? 500
+            : 503,
+  });
+function checked(name: string, v: unknown) {
+  try {
+    return (validators as any)[name].assert(v);
+  } catch {
+    throw fault("BAD_REQUEST", `Invalid ${name}`);
   }
-  const pool = m.pools.find(
-    (p) =>
-      p.kind === "parity" &&
-      [p.key.currency0.toLowerCase(), p.key.currency1.toLowerCase()].includes(
-        from.toLowerCase(),
-      ) &&
-      [p.key.currency0.toLowerCase(), p.key.currency1.toLowerCase()].includes(
-        to.toLowerCase(),
-      ),
-  );
-  if (!pool)
-    return {
-      from,
-      to,
-      amountIn: amount,
-      expectedOut: lessFee(gross, isU(a) ? 5 : 0),
-      ratio: (ra * WAD) / rb,
-      route: "vault",
-      feeBps: isU(a) ? 5 : 0,
-      priceImpactBps: 0,
-    };
-  const [inventory, fee] = await Promise.all([
-    read("parityHook", "inventory", [to]),
-    read("parityHook", "feeBpsNow", [isU(a) ? to : from]),
-  ]);
-  if (inventory >= gross)
-    return {
-      from,
-      to,
-      amountIn: amount,
-      expectedOut: hookOutput(gross, Number(fee)),
-      ratio: (ra * WAD) / rb,
-      route: "hook",
-      feeBps: Number(fee),
-      priceImpactBps: 0,
-      poolId: pool.id,
-    };
-  const q = await publicClient.simulateContract({
-    address: m.contracts.quoter,
-    abi: quoterAbi,
-    functionName: "quoteExactInputSingle",
-    args: [
-      {
-        poolKey: pool.key,
-        zeroForOne: pool.key.currency0.toLowerCase() === from.toLowerCase(),
-        exactAmount: amount,
-        hookData: "0x",
-      },
-    ],
-  });
-  return {
-    from,
-    to,
-    amountIn: amount,
-    expectedOut: q.result[0],
-    ratio: (ra * WAD) / rb,
-    route: "curve",
-    feeBps: Number(fee),
-    priceImpactBps: deviation(q.result[0], gross),
-    poolId: pool.id,
-  };
 }
-export async function routes(app: FastifyInstance) {
-  app.get("/health", async () => {
-    const chainId = await publicClient.getChainId();
-    const c = await rows("SELECT last_block FROM cursor WHERE chain_id=$1", [
-      chainId,
-    ]);
-    return { ok: true, chainId, indexedBlock: c[0]?.lastBlock ?? "0" };
+export function output(name: string, v: any) {
+  const normalize = (x: any): any =>
+    typeof x === "bigint"
+      ? x.toString()
+      : typeof x === "string" && /^0x[0-9a-fA-F]{40}$/.test(x)
+        ? getAddress(x.toLowerCase())
+        : Array.isArray(x)
+          ? x.map(normalize)
+          : x && typeof x === "object"
+            ? Object.fromEntries(
+                Object.entries(x).map(([k, v]) => [k, normalize(v)]),
+              )
+            : x;
+  return (validators as any)[name].assert(normalize(v));
+}
+const fee = (f: any) => ({
+  ...f,
+  basePips: Number(f.basePips),
+  skewPips: Number(f.skewPips),
+  closedPips: Number(f.closedPips),
+  totalPips: Number(f.totalPips),
+  totalBps: canonical.pipsToBps(f.totalPips),
+});
+const selectFields = (r: any, fields: string) =>
+  Object.fromEntries(fields.split(" ").map((k) => [k, r[k]]));
+const batchFields =
+  "batchId settled midX18 crossedBase crossedQuote residualBaseIn residualQuoteIn participants settledTx settledBlock settledAt";
+const orderFields =
+  "batchId trader commitHash lockToken locked committedTx revealed valid rejectReason sellBase amountIn limitPriceX18 routeResidual forfeited";
+const fillFields =
+  "kind account tokenIn tokenOut amountIn amountOut feeAmount feePips shares batchId poolId blockNumber timestamp txHash logIndex";
+export async function routes(
+  app: FastifyInstance,
+  d: Deployment,
+  chainClient: any = publicClient,
+  pool: any = db,
+) {
+  const client = new Proxy(chainClient, {
+    get(target, key) {
+      const value = target[key];
+      return typeof value === "function"
+        ? async (...args: any[]) => {
+            try {
+              return await value.apply(target, args);
+            } catch (e) {
+              throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), {
+                cause: e,
+              });
+            }
+          }
+        : value;
+    },
   });
-  app.get("/deployments", async () => {
-    const m = manifest();
+  const rawRead = chainReader(d, client);
+  const read = async (...args: Parameters<typeof rawRead>) => {
+    try {
+      return await rawRead(...args);
+    } catch (e) {
+      throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), { cause: e });
+    }
+  };
+  const sql = async (q: string, a: any[] = []): Promise<any[]> => {
+    try {
+      return (await pool.query(q, a)).rows.map(camel);
+    } catch (e) {
+      throw fault("DB_UNAVAILABLE", String(e));
+    }
+  };
+  const block = async () => {
+    try {
+      return await client.getBlock();
+    } catch (e) {
+      throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), { cause: e });
+    }
+  };
+  const token = async (address: string, b: any) => {
+    const t = d.tokens.find((t) => eq(t.address, address))!;
+    const [ratio, active] = await Promise.all([
+      client.readContract({
+        address: t.adapter,
+        abi: abis.IWrapperAdapter,
+        functionName: "ratio",
+        blockNumber: b.number,
+      }),
+      read("registry", "active", [t.address], b.number),
+    ]);
+    return {
+      symbol: t.symbol,
+      address: t.address,
+      decimals: t.decimals,
+      adapter: t.adapter,
+      sharesPerTokenX18: ratio[0],
+      healthy: ratio[1] && active,
+    };
+  };
+  const eligibility = async (
+    address: string,
+    uid: string | undefined,
+    source: string,
+    b: any,
+  ) => {
+    const [[eligible, reasonCode], demoMode] = await Promise.all([
+      read("eligibility", "check", [address, uid ?? zero], b.number),
+      read("eligibility", "demoMode", [], b.number),
+    ]);
+    await sql(
+      "INSERT INTO eligibility_checks(chain_id,account,attestation_uid,eligible,reason,demo_mode,block_number,source) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+      [
+        d.chainId,
+        address.toLowerCase(),
+        uid ?? null,
+        eligible,
+        Number(reasonCode),
+        demoMode,
+        b.number.toString(),
+        source,
+      ],
+    );
+    return {
+      address,
+      eligible,
+      reasonCode: Number(reasonCode),
+      reason: reasons[Number(reasonCode)],
+      demoMode,
+      attestationUid: uid ?? null,
+      block: b.number,
+    };
+  };
+  const quote = async (q: any, b: any) => {
     if (
-      m.chainId === 84532 ||
-      !m.demoMode ||
-      !/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/)/.test(
-        process.env.LOCAL_RPC || "http://127.0.0.1:8545",
+      eq(q.tokenIn, q.tokenOut) ||
+      ![q.tokenIn, q.tokenOut].every((a) =>
+        d.tokens.some((t) => eq(t.address, a)),
       )
     )
-      delete m.burners;
-    return m;
-  });
-  app.get("/backing", async () => {
-    const [issuers, totalShares, totalSupply] = await read("vault", "backing");
-    return {
-      issuers,
-      totalShares,
-      totalSupply,
-      invariant: totalShares >= totalSupply,
-    };
-  });
-  app.get("/parity", parity);
-  app.get("/quote", async (req) => {
-    const { from, to, amount } = req.query as any;
-    if (
-      !isAddress(from || "") ||
-      !isAddress(to || "") ||
-      !/^\d+$/.test(amount || "")
-    )
-      throw Object.assign(
-        Error("from/to addresses and raw integer amount required"),
-        { statusCode: 400 },
-      );
-    return quote(from, to, BigInt(amount));
-  });
-  app.get("/batch/current", async () => {
-    const [[batchId, phase, phaseEndsBlock], blockNumber] = await Promise.all([
-      read("darkCrossHook", "currentBatch"),
-      publicClient.getBlockNumber(),
+      throw fault("NOT_FOUND", "Unknown token pair");
+    const kind = q.kind ?? "exactIn",
+      amountSpecified = BigInt(q.amount) * (kind === "exactIn" ? -1n : 1n),
+      zeroForOne = eq(q.tokenIn, d.pool.key.currency0);
+    const result = await read(
+      "parityHook",
+      "quote",
+      [d.pool.key, zeroForOne, amountSpecified],
+      b.number,
+    );
+    const [input, outputToken] = await Promise.all([
+      token(q.tokenIn, b),
+      token(q.tokenOut, b),
     ]);
+    const calculated = canonical.parityQuote(
+      { spt: input.sharesPerTokenX18, decimals: input.decimals },
+      { spt: outputToken.sharesPerTokenX18, decimals: outputToken.decimals },
+      amountSpecified,
+      BigInt(result.fee.totalPips),
+    );
+    for (const [key, value] of Object.entries(calculated))
+      if (BigInt(result[key]) !== value)
+        throw fault(
+          "INTERNAL",
+          "On-chain quote disagrees with frozen rounding rules",
+        );
+    return {
+      block: b.number,
+      poolId: d.pool.id,
+      tokenIn: q.tokenIn,
+      tokenOut: q.tokenOut,
+      kind,
+      zeroForOne,
+      amountSpecified,
+      ...result,
+      feeToken: q.tokenOut,
+      fee: fee(result.fee),
+    };
+  };
+  const current = async (b: any) => {
+    const [batchId, phase, phaseEndsBlock] = await read(
+      "darkCrossHook",
+      "currentBatch",
+      [],
+      b.number,
+    );
+    const participants = await read(
+      "darkCrossHook",
+      "participants",
+      [batchId],
+      b.number,
+    );
+    let oracle: any = { midX18: null, updatedAt: null, stale: true };
+    try {
+      const [mid, age] = await Promise.all([
+        rawRead(
+          "oracle",
+          "getMid",
+          [d.dark.baseToken, d.dark.quoteToken],
+          b.number,
+        ),
+        read("darkCrossHook", "ORACLE_MAX_AGE", [], b.number),
+      ]);
+      oracle = {
+        midX18: mid[0],
+        updatedAt: mid[1],
+        stale: b.timestamp - mid[1] > BigInt(age),
+      };
+    } catch (e) {
+      if (!String(e).includes("NoPrice")) throw e;
+    }
     return {
       batchId,
-      phase: ["Commit", "Reveal", "Settle"][Number(phase)],
+      phase: phases[Number(phase)],
       phaseEndsBlock,
-      blockNumber,
+      blockNumber: b.number,
+      batchOrigin: d.dark.batchOrigin,
+      participants: participants.length,
+      oracle,
     };
-  });
-  app.get("/batch/:id", async (req) => {
-    const { id } = req.params as any;
-    if (!/^\d+$/.test(id))
-      throw Object.assign(Error("Invalid batch"), { statusCode: 400 });
-    const [b, o, f] = await Promise.all([
-      rows("SELECT * FROM batches WHERE batch_id=$1", [id]),
-      rows("SELECT * FROM orders WHERE batch_id=$1", [id]),
-      rows("SELECT * FROM fills WHERE batch_id=$1", [id]),
-    ]);
+  };
+  const page = async (
+    source: string,
+    q: any,
+    extra = "",
+    args: any[] = [],
+    map = (x: any) => x,
+  ) => {
+    const params: any[] = [d.chainId, ...args];
+    let where = "chain_id=$1" + extra;
+    if (q.cursor) {
+      const [n, i] = q.cursor.split(":");
+      params.push(n, i);
+      where += ` AND (block_number,log_index)<($${params.length - 1}::numeric,$${params.length}::integer)`;
+    }
+    params.push(Number(q.limit ?? 50) + 1);
+    const rows = await sql(
+      `SELECT * FROM (${source}) p WHERE ${where} ORDER BY block_number DESC,log_index DESC LIMIT $${params.length}`,
+      params,
+    );
+    const more = rows.length > Number(q.limit ?? 50);
+    if (more) rows.pop();
+    const last = rows.at(-1);
     return {
-      batchId: id,
-      mid: null,
-      midSource: null,
-      crossedQty: "0",
-      routedQty: "0",
-      settledTx: null,
-      ...b[0],
-      orders: o,
-      fills: f,
+      items: rows.map(map),
+      nextCursor: more ? `${last.blockNumber}:${last.logIndex}` : null,
     };
-  });
-  for (const name of ["orders", "fills", "conversions"] as const)
-    app.get("/" + name + "/:addr", async (req) => {
-      const { addr } = req.params as any;
-      if (!isAddress(addr))
-        throw Object.assign(Error("Invalid address"), { statusCode: 400 });
-      return rows(
-        `SELECT * FROM ${name} WHERE lower(trader)=$1 ORDER BY ${name === "conversions" ? "block" : "batch_id"} DESC LIMIT 200`,
-        [addr.toLowerCase()],
-      );
+  };
+  const batchSource = `SELECT b.*, p.block_number,p.log_index FROM v_dark_batches b JOIN LATERAL (SELECT block_number,log_index FROM raw_logs r WHERE r.chain_id=b.chain_id AND r.event_name IN ('Committed','BatchSettled') AND r.args->>'batchId'=b.batch_id::text ORDER BY block_number DESC,log_index DESC LIMIT 1) p ON true`;
+  const orderMap = (r: any) =>
+    selectFields(
+      {
+        ...r,
+        rejectReason:
+          r.rejectReason === null
+            ? null
+            : [
+                null,
+                "WRONG_LOCK_TOKEN",
+                "INSUFFICIENT_LOCK",
+                "ZERO_AMOUNT",
+                "ZERO_LIMIT",
+              ][r.rejectReason],
+      },
+      orderFields,
+    );
+  const fillMap = (r: any) =>
+    selectFields({ ...r, timestamp: r.blockTimestamp }, fillFields);
+  function get(
+    path: string,
+    schema: string,
+    handler: (req: any) => Promise<any>,
+    query?: string,
+  ) {
+    app.get(path, async (req) => {
+      if (query) checked(query, req.query);
+      for (const record of [req.query, req.params])
+        for (const [k, v] of Object.entries(record as any))
+          if (typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v))
+            (record as any)[k] = getAddress(v.toLowerCase());
+      return output(schema, await handler(req));
     });
-  app.get("/intents/:addr", async () => []);
-  app.get("/hours", async () => {
-    const block = await publicClient.getBlock();
-    const [open, nextTransitionTs] = await Promise.all([
-      read("calendar", "isOpen", [block.timestamp]),
-      read("calendar", "nextTransition", [block.timestamp]),
-    ]);
-    return { open, nextTransitionTs };
-  });
-  app.get("/oracle", async () => {
-    const m = manifest();
-    const [round, dec, block] = await Promise.all([
-      publicClient.readContract({
-        address: m.contracts.oracle,
-        abi: oracleAbi,
-        functionName: "latestRoundData",
-      }),
-      publicClient.readContract({
-        address: m.contracts.oracle,
-        abi: oracleAbi,
-        functionName: "decimals",
-      }),
-      publicClient.getBlock(),
-    ]);
+  }
+  get("/deployment", "Deployment", async () => d);
+  get("/health", "HealthResponse", async () => {
+    let rpcChainId = null,
+      headBlock: any = null,
+      indexedBlock: any = null,
+      database = "down";
+    try {
+      rpcChainId = await client.getChainId();
+      headBlock = await client.getBlockNumber();
+    } catch {}
+    try {
+      indexedBlock =
+        (
+          await sql("SELECT last_block FROM indexer_cursor WHERE chain_id=$1", [
+            d.chainId,
+          ])
+        )[0]?.lastBlock ?? null;
+      database = "ok";
+    } catch {}
+    const lagBlocks =
+      headBlock !== null && indexedBlock !== null
+        ? Number(headBlock - BigInt(indexedBlock))
+        : null;
     return {
-      price: (round[1] * WAD) / 10n ** BigInt(dec),
-      updatedAt: round[3],
-      stale:
-        block.timestamp - round[3] >
-        BigInt(process.env.ORACLE_HEARTBEAT || 86400) + 60n,
+      ok:
+        rpcChainId === d.chainId &&
+        database === "ok" &&
+        lagBlocks !== null &&
+        lagBlocks >= 0 &&
+        lagBlocks <= 10,
+      network: d.network,
+      chainId: d.chainId,
+      rpcChainId,
+      headBlock,
+      indexedBlock,
+      lagBlocks,
+      db: database,
+      demoMode: d.demoMode,
+      deployCommit: d.deployCommit,
+      startBlock: d.startBlock,
+      addresses: {
+        contracts: d.contracts,
+        tokens: Object.fromEntries(d.tokens.map((t) => [t.symbol, t.address])),
+        poolId: d.pool.id,
+      },
     };
   });
-  app.get("/metrics", async () => {
-    const [v, f, b, p] = await Promise.all([
-      rows(
-        "SELECT COALESCE(sum(shares),0)::text AS volume FROM conversions WHERE ts > $1",
-        [Math.floor(Date.now() / 1000) - 86400],
+  get("/fees", "FeesResponse", async () => {
+    const b = await block();
+    return {
+      block: b.number,
+      timestamp: b.timestamp,
+      poolId: d.pool.id,
+      fee: fee(
+        await read("parityHook", "feeBreakdown", [d.pool.key], b.number),
       ),
-      rows(
-        "SELECT COALESCE(sum(crossed_qty),0)::text AS crossed,COALESCE(sum(routed_qty),0)::text AS routed FROM batches",
+      maxFeePips: 2500,
+      formula: "min(200 + ceil(1300*|skew|) + (open ? 0 : 1000), 2500) pips",
+    };
+  });
+  get("/inventory", "InventoryResponse", async () => {
+    const b = await block(),
+      f = fee(await read("parityHook", "feeBreakdown", [d.pool.key], b.number));
+    const tokens = await Promise.all(
+      [d.pool.key.currency0, d.pool.key.currency1].map(async (address) => {
+        const t = d.tokens.find((t) => eq(t.address, address))!;
+        const [inventory, inventoryShares, feesAccrued] = await Promise.all(
+          ["inventory", "inventoryShares", "feesAccrued"].map((fn) =>
+            read("parityHook", fn, [address], b.number),
+          ),
+        );
+        return {
+          symbol: t.symbol,
+          address,
+          inventory,
+          inventoryShares,
+          feesAccrued,
+        };
+      }),
+    );
+    return {
+      block: b.number,
+      poolId: d.pool.id,
+      tokens,
+      totalShares: tokens.reduce((s, t) => s + t.inventoryShares, 0n),
+      skewX18: f.skewX18,
+      fee: f,
+    };
+  });
+  get("/pool", "PoolStateResponse", async () => {
+    const b = await block();
+    const [token0, token1, peg, last] = await Promise.all([
+      token(d.pool.key.currency0, b),
+      token(d.pool.key.currency1, b),
+      read("parityHook", "pegStatus", [d.pool.key], b.number),
+      sql(
+        "SELECT * FROM parity_peg_status WHERE chain_id=$1 AND pool_id=$2 ORDER BY block_number DESC,log_index DESC LIMIT 1",
+        [d.chainId, d.pool.id.toLowerCase()],
       ),
-      rows("SELECT count(*)::int AS count FROM batches WHERE phase='Settled'"),
-      parity(),
     ]);
-    let fees = 0n;
-    for (const t of Object.values(manifest().tokens).filter(
-      (t) => t.symbol !== "USDC",
-    ))
-      fees += shares(
-        await read("parityHook", "feeAccrued", [t.address]),
-        await ratio(t.address),
-        t.decimals,
+    const slot = keccak256(
+      encodeAbiParameters(
+        [{ type: "bytes32" }, { type: "uint256" }],
+        [d.pool.id as any, 6n],
+      ),
+    );
+    const storageAbi = parseAbi([
+      "function extsload(bytes32 slot) view returns (bytes32)",
+    ]);
+    const [packed, liq] = await Promise.all(
+      [slot, toHex(BigInt(slot) + 3n, { size: 32 })].map((s) =>
+        client.readContract({
+          address: d.contracts.poolManager,
+          abi: storageAbi,
+          functionName: "extsload",
+          args: [s],
+          blockNumber: b.number,
+        }),
+      ),
+    );
+    const word = BigInt(packed),
+      tick = Number((word >> 160n) & 0xffffffn);
+    return {
+      block: b.number,
+      timestamp: b.timestamp,
+      poolId: d.pool.id,
+      key: d.pool.key,
+      token0,
+      token1,
+      sqrtPriceX96: word & ((1n << 160n) - 1n),
+      tick: tick >= 0x800000 ? tick - 0x1000000 : tick,
+      liquidity: BigInt(liq) & ((1n << 128n) - 1n),
+      poolPriceX18: peg.poolPriceX18,
+      parityPriceX18: peg.parityPriceX18,
+      deviationBps: Number(peg.deviationBps),
+      pegGuardBps: 50,
+      pegTripped: peg.tripped,
+      lastPegEvent: last[0]
+        ? {
+            tripped: last[0].tripped,
+            deviationBps: Number(last[0].deviationBps),
+            blockNumber: last[0].blockNumber,
+            txHash: last[0].txHash,
+          }
+        : null,
+    };
+  });
+  get(
+    "/quote",
+    "QuoteResponse",
+    async (req) => quote(req.query, await block()),
+    "SwapQuery",
+  );
+  get(
+    "/route",
+    "RouteResponse",
+    async (req) => {
+      const q = req.query,
+        b = await block(),
+        e = await eligibility(q.swapper, q.attestationUid, "route", b);
+      const result: any = {
+        route: "BLOCKED-ELIGIBILITY",
+        reason: e.reason,
+        block: b.number,
+        swapper: q.swapper,
+        eligibility: e,
+        quote: null,
+        fallThrough: null,
+        dark: null,
+      };
+      if (!e.eligible) return result;
+      const ts = await Promise.all(d.tokens.map((t) => token(t.address, b)));
+      if (ts.some((t) => !t.healthy))
+        return { ...result, route: "BLOCKED-PEG", reason: "ADAPTER_UNHEALTHY" };
+      result.quote = await quote(q, b);
+      result.reason = null;
+      if (result.quote.fillable) return { ...result, route: "PARITY" };
+      const exact = q.kind !== "exactOut";
+      const quoter = parseAbi([
+        `function ${exact ? "quoteExactInputSingle" : "quoteExactOutputSingle"}(((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,bool zeroForOne,uint128 exactAmount,bytes hookData) params) returns(uint256 amount,uint256 gasEstimate)`,
+      ]);
+      try {
+        const sim = await client.simulateContract({
+          address: d.contracts.quoter,
+          abi: [...quoter, ...routeErrors],
+          functionName: exact
+            ? "quoteExactInputSingle"
+            : "quoteExactOutputSingle",
+          args: [
+            {
+              poolKey: d.pool.key,
+              zeroForOne: result.quote.zeroForOne,
+              exactAmount: BigInt(q.amount),
+              hookData: encodeParityHookData({
+                swapper: q.swapper,
+                attestationUid: q.attestationUid,
+              }),
+            },
+          ],
+          blockNumber: b.number,
+        });
+        return {
+          ...result,
+          route: "FALL-THROUGH",
+          fallThrough: {
+            amountIn: exact ? BigInt(q.amount) : sim.result[0],
+            amountOut: exact ? sim.result[0] : BigInt(q.amount),
+            feePips: result.quote.fee.totalPips,
+          },
+        };
+      } catch (error) {
+        if (!permitsDarkFallback(error))
+          throw fault("CHAIN_UNAVAILABLE", String(error));
+        if (q.allowDark === "false")
+          return { ...result, route: "BLOCKED-PEG", reason: "PEG_GUARD" };
+        const c = await current(b);
+        return {
+          ...result,
+          route: "DARK",
+          dark: {
+            batchId: c.batchId,
+            phase: c.phase,
+            phaseEndsBlock: c.phaseEndsBlock,
+            oracleMidX18: c.oracle.midX18,
+            sellBase: eq(q.tokenIn, d.dark.baseToken),
+          },
+        };
+      }
+    },
+    "RouteQuery",
+  );
+  get("/nyse", "NyseResponse", async () => {
+    const b = await block();
+    const [open, nextTransition] = await Promise.all([
+      read("calendar", "isOpen", [b.timestamp], b.number),
+      read("calendar", "nextTransition", [b.timestamp], b.number),
+    ]);
+    return {
+      open,
+      block: b.number,
+      chainTimestamp: b.timestamp,
+      nextTransition,
+      nextState: open ? "CLOSED" : "OPEN",
+      secondsUntilTransition: Number(nextTransition - b.timestamp),
+      closedFeePips: 1000,
+      source: "chain",
+    };
+  });
+  get("/batches/current", "CurrentBatchResponse", async () =>
+    current(await block()),
+  );
+  get(
+    "/batches",
+    "BatchListResponse",
+    async (req) =>
+      page(batchSource, req.query, "", [], (r) => selectFields(r, batchFields)),
+    "PageQuery",
+  );
+  get(
+    "/orders/:address",
+    "OrderListResponse",
+    async (req) => {
+      checked("Address", req.params.address);
+      return page(
+        "SELECT * FROM v_dark_orders",
+        req.query,
+        " AND trader=$2",
+        [req.params.address.toLowerCase()],
+        orderMap,
       );
+    },
+    "PageQuery",
+  );
+  get(
+    "/fills",
+    "FillListResponse",
+    async (req) => {
+      const q = req.query,
+        args: any[] = [];
+      let extra = "";
+      if (q.account) {
+        args.push(q.account.toLowerCase());
+        extra += ` AND account=$${args.length + 1}`;
+      }
+      if (q.kind) {
+        args.push(q.kind);
+        extra += ` AND kind=$${args.length + 1}`;
+      }
+      return page("SELECT * FROM v_fills", q, extra, args, fillMap);
+    },
+    "FillsQuery",
+  );
+  get("/batches/:batchId", "BatchDetailResponse", async (req) => {
+    const id = checked("UInt", req.params.batchId),
+      args = [d.chainId, id];
+    const batch = (
+      await sql(
+        "SELECT * FROM v_dark_batches WHERE chain_id=$1 AND batch_id=$2",
+        args,
+      )
+    )[0];
+    if (!batch) throw fault("NOT_FOUND", "Unknown batch");
     return {
-      conversionVolume24h: v[0].volume,
-      crossedVolume: f[0]?.crossed ?? "0",
-      routedVolume: f[0]?.routed ?? "0",
-      hookFeePnl: fees,
-      meanAbsoluteDeviationBps:
-        p.reduce((s, v) => s + v.deviationBps, 0) / (p.length || 1),
-      batchesSettled: b[0].count,
+      batch: selectFields(batch, batchFields),
+      orders: (
+        await sql(
+          "SELECT * FROM v_dark_orders WHERE chain_id=$1 AND batch_id=$2",
+          args,
+        )
+      ).map(orderMap),
+      fills: (
+        await sql(
+          "SELECT * FROM v_fills WHERE chain_id=$1 AND batch_id=$2",
+          args,
+        )
+      ).map(fillMap),
+      skippedResiduals: await sql(
+        "SELECT trader,reason,tx_hash FROM dark_residual_skips WHERE chain_id=$1 AND batch_id=$2",
+        args,
+      ),
     };
+  });
+  get(
+    "/inventory/changes",
+    "InventoryChangesResponse",
+    async (req) =>
+      page(
+        `SELECT chain_id,block_number,log_index,block_timestamp,tx_hash,currency,actor,delta,inventory_after,CASE reason WHEN 0 THEN 'DEPOSIT' WHEN 1 THEN 'WITHDRAW' WHEN 2 THEN 'FILL_IN' ELSE 'FILL_OUT' END AS kind FROM parity_inventory_changes UNION ALL SELECT chain_id,block_number,log_index,block_timestamp,tx_hash,currency,recipient,-amount,NULL,'FEE_SWEEP' FROM parity_fee_sweeps`,
+        req.query,
+        "",
+        [],
+        (r) =>
+          selectFields(
+            { ...r, timestamp: r.blockTimestamp },
+            "kind currency actor delta inventoryAfter blockNumber timestamp txHash logIndex",
+          ),
+      ),
+    "PageQuery",
+  );
+  get(
+    "/eligibility/:address",
+    "EligibilityResponse",
+    async (req) => {
+      checked("Address", req.params.address);
+      return eligibility(
+        req.params.address,
+        req.query.attestationUid,
+        "eligibility",
+        await block(),
+      );
+    },
+    "EligibilityQuery",
+  );
+  get("/status", "CrankStatusResponse", async () => {
+    const port = process.env.CRANK_HEALTH_PORT;
+    if (!port) throw fault("CHAIN_UNAVAILABLE", "CRANK_HEALTH_PORT required");
+    const r = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!r.ok) throw fault("CHAIN_UNAVAILABLE", "Crank unavailable");
+    return r.json();
+  });
+  app.setNotFoundHandler((req, reply) =>
+    reply
+      .status(404)
+      .send({ error: { code: "NOT_FOUND", message: "Unknown route" } }),
+  );
+  app.setErrorHandler((e: any, req, reply) => {
+    const code = [
+      "BAD_REQUEST",
+      "NOT_FOUND",
+      "CHAIN_UNAVAILABLE",
+      "DB_UNAVAILABLE",
+      "INTERNAL",
+    ].includes(e.code)
+      ? e.code
+      : "INTERNAL";
+    reply
+      .status(e.statusCode ?? 500)
+      .send(output("ErrorResponse", { error: { code, message: e.message } }));
   });
 }

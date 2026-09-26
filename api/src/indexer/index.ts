@@ -1,262 +1,206 @@
-import { decodeEventLog, type Abi } from "viem";
+import { keccak256, toHex } from "viem";
+import type { Deployment } from "@wrapswap/types";
 import { db } from "../db/index.js";
-import {
-  abi,
-  manifest,
-  publicClient,
-  stringify,
-  read,
-} from "../chain/client.js";
-export function projection(
-  event: string,
-  a: any,
-  e: {
-    tx: string;
-    log_index: number;
-    chain_id: number;
-    block: string;
-    ts: string;
-    trader: string;
-  },
-): { sql: string; values: unknown[] } | null {
-  const b = a.batchId;
-  if (event === "Converted")
-    return {
-      sql: "INSERT INTO conversions VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT DO NOTHING",
-      values: [
-        e.tx,
-        e.log_index,
-        e.chain_id,
-        e.block,
-        e.ts,
-        a.fromToken,
-        a.toToken,
-        a.sharesMoved,
-        a.feeBps,
-        a.filledByHook,
-        e.trader,
-      ],
-    };
-  if (event === "Committed")
-    return {
-      sql: "INSERT INTO orders(batch_id,trader,commit_hash) VALUES($1,$2,$3) ON CONFLICT(batch_id,trader) DO UPDATE SET commit_hash=EXCLUDED.commit_hash",
-      values: [b, a.trader.toLowerCase(), a.hash],
-    };
-  if (event === "Revealed")
-    return {
-      sql: "INSERT INTO orders(batch_id,trader,revealed,is_buy,qty,limit_px,route_residual) VALUES($1,$2,true,$3,$4,$5,$6) ON CONFLICT(batch_id,trader) DO UPDATE SET revealed=true,is_buy=EXCLUDED.is_buy,qty=EXCLUDED.qty,limit_px=EXCLUDED.limit_px,route_residual=EXCLUDED.route_residual",
-      values: [
-        b,
-        a.trader.toLowerCase(),
-        a.isBuy,
-        a.qty,
-        a.limitPx,
-        a.routeResidual,
-      ],
-    };
-  if (event === "MidSelected")
-    return {
-      sql: "INSERT INTO batches(batch_id,mid,mid_source) VALUES($1,$2,$3) ON CONFLICT(batch_id) DO UPDATE SET mid=EXCLUDED.mid,mid_source=EXCLUDED.mid_source",
-      values: [b, a.price, Number(a.source) === 0 ? "Chainlink" : "TWAP"],
-    };
-  if (event === "BatchSettled")
-    return {
-      sql: "INSERT INTO batches(batch_id,phase,mid,crossed_qty,routed_qty,settled_tx) VALUES($1,'Settled',$2,$3,$4,$5) ON CONFLICT(batch_id) DO UPDATE SET phase='Settled',mid=EXCLUDED.mid,crossed_qty=EXCLUDED.crossed_qty,routed_qty=EXCLUDED.routed_qty,settled_tx=EXCLUDED.settled_tx",
-      values: [b, a.mid, a.crossedQty, a.routedQty, e.tx],
-    };
-  if (event === "Crossed" || event === "RoutedToLit")
-    return {
-      sql: "INSERT INTO fills VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING",
-      values: [
-        b,
-        a.trader.toLowerCase(),
-        a.isBuy,
-        a.qty,
-        a.mid ?? a.avgPx,
-        event === "Crossed" ? "cross" : "lit",
-        e.tx,
-        e.log_index,
-      ],
-    };
-  return null;
-}
-let busy = false;
-export async function catchup(rescan = false) {
-  if (busy) return;
-  busy = true;
-  try {
-    const m = manifest();
-    const identity = [m.chainId,m.blockNumber,m.contracts.vault,m.contracts.parityHook,m.contracts.darkCrossHook].join(":").toLowerCase();
-    const identityClient=await db.connect();
+import { publicClient, loadDeployment, json } from "../chain/client.js";
+import { decode, projection, accepts } from "./events.js";
+export { projection } from "./events.js";
+export class Indexer {
+  busy = false;
+  constructor(
+    readonly d: Deployment,
+    readonly client: any = publicClient,
+    readonly pool = db,
+    readonly confirmations = Number(process.env.INDEXER_CONFIRMATIONS ?? 2),
+  ) {
+    if (!Number.isInteger(confirmations) || confirmations < 0)
+      throw Error("Invalid INDEXER_CONFIRMATIONS");
+  }
+  async catchup() {
+    if (this.busy) return;
+    this.busy = true;
+    const c = await this.pool.connect().catch((e: unknown) => {
+      this.busy = false;
+      throw e;
+    });
     try {
-      await identityClient.query("BEGIN");
-      await identityClient.query("SELECT pg_advisory_xact_lock(84532026)");
-      const old=await identityClient.query("SELECT identity FROM indexer_deployments WHERE chain_id=$1",[m.chainId]);
-      if(old.rows[0]?.identity!==identity){
-        // These tables are owned exclusively by this deployment's event indexer.
-        await identityClient.query("TRUNCATE chain_events,conversions,batches,orders,fills,backing_snapshots,hook_inventory,cursor");
-        await identityClient.query("INSERT INTO indexer_deployments VALUES($1,$2) ON CONFLICT(chain_id) DO UPDATE SET identity=EXCLUDED.identity",[m.chainId,identity]);
+      await c.query("SELECT pg_advisory_lock($1)", [this.d.chainId]);
+      if ((await this.client.getChainId()) !== this.d.chainId)
+        throw Error("RPC chain mismatch");
+      await c.query("BEGIN");
+      await c.query("SELECT pg_advisory_xact_lock($1)", [this.d.chainId]);
+      const d = this.d,
+        start = BigInt(d.startBlock);
+      const identity = keccak256(
+        toHex(
+          [
+            d.deployCommit,
+            d.startBlock,
+            d.contracts.parityHook,
+            d.contracts.darkCrossHook,
+          ].join("|"),
+        ),
+      );
+      const old = (
+        await c.query(
+          "SELECT identity FROM indexer_deployments WHERE chain_id=$1",
+          [d.chainId],
+        )
+      ).rows[0];
+      if (old && old.identity !== identity) {
+        await c.query("DELETE FROM blocks WHERE chain_id=$1", [d.chainId]);
+        await c.query("DELETE FROM indexer_deployments WHERE chain_id=$1", [
+          d.chainId,
+        ]);
       }
-      await identityClient.query("COMMIT");
-    } catch(error) { await identityClient.query("ROLLBACK");throw error; }
-    finally { identityClient.release(); }
-    const latest = await publicClient.getBlockNumber();
-    const curs = await db.query(
-      "SELECT last_block FROM cursor WHERE chain_id=$1",
-      [m.chainId],
-    );
-    const previous = BigInt(curs.rows[0]?.last_block ?? m.blockNumber);
-    let start = rescan
-      ? previous > 10n
-        ? previous - 10n
-        : BigInt(m.blockNumber)
-      : previous + 1n;
-    if (!curs.rowCount) start = BigInt(m.blockNumber);
-    if (start < BigInt(m.blockNumber)) start = BigInt(m.blockNumber);
-    const combined = [
-      ...abi("ParityHook"),
-      ...abi("DarkCrossHook"),
-      ...abi("CanonicalStock"),
-    ] as Abi;
-    for (let from = start; from <= latest; from += 2000n) {
-      const to = from + 1999n > latest ? latest : from + 1999n;
-      const logs = await publicClient.getLogs({
-        address: [
-          m.contracts.parityHook,
-          m.contracts.darkCrossHook,
-          m.contracts.vault,
-        ],
-        fromBlock: from,
-        toBlock: to,
-      });
-      const events = [];
-      for (const log of logs) {
-        try {
-          const decoded = decodeEventLog({
-            abi: combined,
-            data: log.data,
-            topics: log.topics,
-          });
-          const [block, tx] = await Promise.all([
-            publicClient.getBlock({ blockNumber: log.blockNumber }),
-            publicClient.getTransaction({ hash: log.transactionHash }),
+      await c.query(
+        "INSERT INTO indexer_deployments(chain_id,network,identity,deploy_commit,start_block) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
+        [d.chainId, d.network, identity, d.deployCommit, d.startBlock],
+      );
+      let cursor = (
+        await c.query("SELECT * FROM indexer_cursor WHERE chain_id=$1", [
+          d.chainId,
+        ])
+      ).rows[0];
+      const head = await this.client.getBlockNumber();
+      if (cursor) {
+        let height = BigInt(cursor.last_block),
+          ancestor = height,
+          found = false;
+        for (let depth = 0; depth <= 64; depth++, ancestor--) {
+          if (ancestor < start) {
+            found = true;
+            break;
+          }
+          const saved = (
+            await c.query(
+              "SELECT block_hash FROM blocks WHERE chain_id=$1 AND block_number=$2",
+              [d.chainId, ancestor.toString()],
+            )
+          ).rows[0];
+          if (
+            ancestor <= head &&
+            saved?.block_hash ===
+              (await this.client.getBlock({ blockNumber: ancestor })).hash
+          ) {
+            found = true;
+            break;
+          }
+        }
+        if (!found)
+          throw Error("Reorg exceeds 64 blocks; operator resync required");
+        if (ancestor !== height) {
+          await c.query(
+            "DELETE FROM blocks WHERE chain_id=$1 AND block_number>$2",
+            [d.chainId, ancestor.toString()],
+          );
+          await c.query("DELETE FROM indexer_cursor WHERE chain_id=$1", [
+            d.chainId,
           ]);
-          events.push({
-            chain_id: m.chainId,
-            block: log.blockNumber.toString(),
-            block_hash: log.blockHash,
-            tx: log.transactionHash,
-            log_index: log.logIndex,
-            event_name: decoded.eventName,
-            args: JSON.parse(stringify(decoded.args)),
-            ts: block.timestamp.toString(),
-            trader: tx.from.toLowerCase(),
-          });
-        } catch (error) {
-          if (String(error).includes("Decode")) continue;
-          throw error;
+          cursor =
+            ancestor >= start ? { last_block: ancestor.toString() } : undefined;
+          if (cursor) {
+            const b = await this.client.getBlock({ blockNumber: ancestor });
+            await c.query(
+              "INSERT INTO indexer_cursor(chain_id,last_block,last_block_hash) VALUES($1,$2,$3)",
+              [d.chainId, ancestor.toString(), b.hash],
+            );
+          }
         }
       }
-      const c = await db.connect();
-      try {
+      await c.query("COMMIT");
+      const last = head - BigInt(this.confirmations);
+      const addresses = [
+        ...Object.values(d.contracts).filter(Boolean),
+        ...d.tokens.flatMap((t) => [t.address, t.adapter]),
+      ];
+      for (
+        let from = cursor ? BigInt(cursor.last_block) + 1n : start;
+        from <= last;
+        from += 2000n
+      ) {
+        const to = from + 1999n > last ? last : from + 1999n;
         await c.query("BEGIN");
-        await c.query(
-          "DELETE FROM chain_events WHERE chain_id=$1 AND block BETWEEN $2 AND $3",
-          [m.chainId, from.toString(), to.toString()],
-        );
-        for (const e of events)
+        await c.query("SELECT pg_advisory_xact_lock($1)", [d.chainId]);
+        const blocks = new Map<string, any>();
+        let previous =
+          from > start
+            ? (
+                await c.query(
+                  "SELECT block_hash FROM blocks WHERE chain_id=$1 AND block_number=$2",
+                  [d.chainId, (from - 1n).toString()],
+                )
+              ).rows[0]?.block_hash
+            : undefined;
+        for (let n = from; n <= to; n++) {
+          const b = await this.client.getBlock({ blockNumber: n });
+          if (previous && b.parentHash !== previous)
+            throw Error("Chain changed during indexing");
+          previous = b.hash;
+          blocks.set(n.toString(), b);
           await c.query(
-            "INSERT INTO chain_events VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING",
+            "INSERT INTO blocks VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
             [
-              e.chain_id,
-              e.block,
-              e.block_hash,
-              e.tx,
-              e.log_index,
-              e.event_name,
-              e.args,
-              e.ts,
-              e.trader,
+              d.chainId,
+              n.toString(),
+              b.hash,
+              b.parentHash,
+              b.timestamp.toString(),
             ],
           );
-        // Rebuild projections from the canonical journal so orphaned reveals and settlements disappear.
-        await c.query(
-          "DELETE FROM backing_snapshots WHERE block BETWEEN $1 AND $2",
-          [from.toString(), to.toString()],
-        );
-        await c.query(
-          "DELETE FROM hook_inventory WHERE block BETWEEN $1 AND $2",
-          [from.toString(), to.toString()],
-        );
-        await c.query("TRUNCATE conversions,batches,orders,fills");
-        const all = await c.query(
-          "SELECT * FROM chain_events ORDER BY block,log_index",
-        );
-        for (const e of all.rows) {
-          const p = projection(e.event_name, e.args, e);
-          if (p) await c.query(p.sql, p.values);
         }
+        const logs = await this.client.getLogs({
+          address: addresses,
+          fromBlock: from,
+          toBlock: to,
+        });
+        for (const log of logs) {
+          if (log.removed) continue;
+          if (!accepts(log, d)) continue;
+          const e = decode(log);
+          const b = blocks.get(log.blockNumber.toString());
+          if (b.hash !== log.blockHash) throw Error("Log block mismatch");
+          const p = {
+            chain_id: d.chainId,
+            block_number: log.blockNumber.toString(),
+            block_hash: log.blockHash,
+            block_timestamp: b.timestamp.toString(),
+            tx_hash: log.transactionHash,
+            log_index: log.logIndex,
+            contract: log.address.toLowerCase(),
+          };
+          const projected = projection(e.eventName!, e.args, p, d);
+          if (!projected) continue;
+          await c.query(
+            "INSERT INTO raw_logs VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING",
+            [...Object.values(p), log.topics[0], e.eventName, json(e.args)],
+          );
+          await c.query(projected.sql, projected.values);
+        }
+        if ((await this.client.getBlock({ blockNumber: to })).hash !== previous)
+          throw Error("Chain changed during window");
         await c.query(
-          "INSERT INTO cursor VALUES($1,$2) ON CONFLICT(chain_id) DO UPDATE SET last_block=EXCLUDED.last_block",
-          [m.chainId, to.toString()],
+          "INSERT INTO indexer_cursor(chain_id,last_block,last_block_hash) VALUES($1,$2,$3) ON CONFLICT(chain_id) DO UPDATE SET last_block=EXCLUDED.last_block,last_block_hash=EXCLUDED.last_block_hash,updated_at=now()",
+          [d.chainId, to.toString(), previous],
         );
         await c.query("COMMIT");
-      } catch (err) {
-        await c.query("ROLLBACK");
-        throw err;
+      }
+    } catch (e) {
+      await c.query("ROLLBACK");
+      throw e;
+    } finally {
+      try {
+        await c.query("SELECT pg_advisory_unlock($1)", [this.d.chainId]);
       } finally {
         c.release();
+        this.busy = false;
       }
     }
-    const [backing] = await Promise.all([read("vault", "backing")]);
-    for (const i of backing[0])
-      await db.query(
-        "INSERT INTO backing_snapshots VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING",
-        [
-          latest.toString(),
-          i.token,
-          i.tokensHeld.toString(),
-          i.spt.toString(),
-          i.sharesRepresented.toString(),
-          backing[2].toString(),
-        ],
-      );
-    for (const p of m.pools.filter((p) => p.kind === "parity"))
-      for (const currency of [p.key.currency0, p.key.currency1]) {
-        const [amount, fee] = await Promise.all([
-          read("parityHook", "inventory", [currency]),
-          read("parityHook", "feeAccrued", [currency]),
-        ]);
-        await db.query(
-          "INSERT INTO hook_inventory VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
-          [
-            latest.toString(),
-            p.id,
-            currency,
-            amount.toString(),
-            fee.toString(),
-          ],
-        );
-      }
-  } finally {
-    busy = false;
   }
 }
-export async function startIndexer() {
-  await catchup(true);
-  const m = manifest();
-  const stop = publicClient.watchContractEvent({
-    address: [m.contracts.parityHook, m.contracts.darkCrossHook],
-    abi: [...abi("ParityHook"), ...abi("DarkCrossHook")],
-    onLogs: () => void catchup(true).catch(console.error),
-    onError: console.error,
-  });
-  const timer = setInterval(
-    () => void catchup(true).catch(console.error),
-    4000,
-  );
-  return () => {
-    stop();
-    clearInterval(timer);
-  };
+export function startIndexer(d = loadDeployment()) {
+  const indexer = new Indexer(d);
+  const run = () => indexer.catchup().catch(console.error);
+  void run();
+  const timer = setInterval(run, Number(process.env.INDEXER_POLL_MS ?? 1000));
+  return () => clearInterval(timer);
 }
