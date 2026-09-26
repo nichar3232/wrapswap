@@ -1,5 +1,5 @@
 import type { Route } from "@wrapswap/types";
-import { fmtShares } from "./lib/format";
+import { Sh } from "./app/ui";
 
 export function RouteBadge({ route }: { route: Route }) {
   return (
@@ -32,14 +32,18 @@ export function FeeRows({
         <dt>
           Base fee <small>{(basePips / 100).toFixed(2)} bps · to LP</small>
         </dt>
-        <dd>{fmtShares(baseFee, 4)}</dd>
+        <dd>
+          <Sh v={baseFee} /> sh
+        </dd>
       </div>
       <div>
         <dt>
           Skew fee{" "}
           <small>{reducesImbalance || skewPips === 0 ? "0 — this trade rebalances the pool" : `${(skewPips / 100).toFixed(2)} bps · to LP`}</small>
         </dt>
-        <dd>{fmtShares(skewFee, 4)}</dd>
+        <dd>
+          <Sh v={skewFee} /> sh
+        </dd>
       </div>
     </dl>
   );

@@ -175,26 +175,28 @@ async function relay(page: Page, routes: Record<string, (r: import("@playwright/
   });
 }
 
-test("no wallet: the demo relay connects itself; a 429 shows a live countdown and blocks the action", async ({ page }) => {
+test("no wallet: the demo relay connects itself; no budget counter, no 100-share cap; a 429 still explains itself", async ({ page }) => {
   await api(page, undefined, { wallet: false });
-  let posted: unknown;
+  const posted: unknown[] = [];
   await relay(page, {
     "/convert": async (r) => {
-      posted = r.request().postDataJSON();
+      posted.push(r.request().postDataJSON());
       await r.fulfill({ status: 429, headers: { "retry-after": "125" }, json: { error: { code: "RATE_LIMITED", message: "3 demo actions per 10 minutes" } } });
     },
   });
   await page.goto("/app?tab=move&asset=AAPL");
   await expect(page.getByRole("button", { name: /^Account 0x8f2e/ })).toBeVisible();
   await expect(page.locator("header").getByText("Demo", { exact: true })).toBeVisible();
-  await convert(page).getByLabel("Amount", { exact: true }).fill("10");
+  // Over 100 shares goes to the relay: the app no longer blocks it.
+  await convert(page).getByLabel("Amount", { exact: true }).fill("250");
+  await expect(convert(page)).not.toContainText("at most 100 shares");
   await convert(page).getByRole("button", { name: "Convert", exact: true }).click();
-  expect(posted).toEqual({ asset: "AAPL", from: expect.stringMatching(/^m/), to: expect.stringMatching(/^m/), amount: "10" });
-  await expect(convert(page).getByTestId("relay-cooldown")).toHaveText(/Demo limit: 3 actions per 10 minutes\. Next action in 2m \d\ds\./);
+  expect(posted[0]).toEqual({ asset: "AAPL", from: expect.stringMatching(/^m/), to: expect.stringMatching(/^m/), amount: "250" });
   await expect(convert(page).getByText(/Demo limit reached/)).toBeVisible();
-  await expect(convert(page).getByRole("button", { name: "Convert", exact: true })).toBeDisabled();
+  await expect(page.getByTestId("relay-cooldown")).toHaveCount(0);
+  await expect(convert(page).getByRole("button", { name: "Convert", exact: true })).toBeEnabled();
   await page.getByRole("tab", { name: "Dark Cross" }).click();
-  await expect(page.locator("#pane-dark").getByTestId("relay-cooldown")).toBeVisible(); // one limit for every action
+  await expect(page.locator("#pane-dark").getByTestId("relay-cooldown")).toHaveCount(0);
 });
 
 test("no wallet: Send returns the deposit at once, then reveals Sui pay, Sui withdraw and Unichain settle as they arrive", async ({ page }) => {

@@ -5,7 +5,8 @@ import { amount, duration, fmtShares } from "../lib/format";
 import { claimFaucet } from "../wallet";
 import { findToken, toShares, type Asset } from "./assets";
 import { useTx } from "./tx";
-import { Hex, Skeleton, Spinner, TxPanel, Val } from "./ui";
+import { ConvertAll, ConvertAllResult, type AllResult } from "./ConvertAll";
+import { Bps, FeeBpsShares, Hex, Sh, Skeleton, Spinner, Tok, TxPanel, Val } from "./ui";
 import { useWallet } from "./wallet";
 
 const KIND: Record<string, string> = { PARITY: "Convert", "FALL-THROUGH": "Convert (pool)", "DARK-CROSS": "Dark Cross", "DARK-RESIDUAL": "Dark Cross residual" };
@@ -97,6 +98,7 @@ export function Portfolio({
   const mine = w.activity.filter((a) => !indexed.has(a.hash.toLowerCase())).slice(0, 5);
   const MINE_STATUS: Record<string, string> = { PARITY: "Convert · confirming", "DARK-COMMIT": "Dark Cross · settles with the batch", SEND: "Send · confidential via Sui" };
   const mocks = import.meta.env.VITE_USE_MOCKS === "true";
+  const [allDone, setAllDone] = useState<AllResult[]>();
 
   // Disconnected: one card, not three asset cards of dashes.
   if (!w.address)
@@ -115,9 +117,14 @@ export function Portfolio({
       </div>
     );
 
+  if (allDone) return <ConvertAllResult results={allDone} assets={assets} onDone={() => setAllDone(undefined)} />;
+
   return (
     <div className="page portfolio">
-      <Faucet d={d} assets={assets} faucetAddr={d?.faucet} />
+      <div className="port-actions">
+        <Faucet d={d} assets={assets} faucetAddr={d?.faucet} />
+        <ConvertAll d={d} assets={assets} onDone={setAllDone} />
+      </div>
       {assets.length === 0 && (
         <section className="card">
           <Skeleton w="100%" h="8em" />
@@ -136,7 +143,7 @@ export function Portfolio({
                 <span className="tile-k">{asset.symbol}</span>
                 <span className="tile-v">
                   <Val status={w.balances.status} w="4em" h="1em">
-                    {fmtShares(total)} <small>shares</small>
+                    <Sh v={total} /> <small>shares</small>
                   </Val>
                 </span>
               </div>
@@ -146,10 +153,10 @@ export function Portfolio({
                     <div className="holding-name">
                       <span className="platform">{p.name}</span>
                       <span className="symbol">
-                        {bal !== undefined ? amount(bal, p.token.decimals, 4) : "—"} {p.token.symbol}
+                        {bal !== undefined ? <Tok v={bal} decimals={p.token.decimals} symbol={p.token.symbol} /> : "—"} {p.token.symbol}
                       </span>
                     </div>
-                    <span className="holding-shares">{shares !== undefined ? fmtShares(shares) : "—"} sh</span>
+                    <span className="holding-shares">{shares !== undefined ? <Sh v={shares} /> : "—"} sh</span>
                     {bal !== undefined && bal > 0n ? (
                       <button className="ghost-btn move-btn" aria-label={`Convert ${p.token.symbol}`} onClick={() => onMove(p.token.address)}>
                         Convert
@@ -181,11 +188,22 @@ export function Portfolio({
               return (
                 <li key={f.txHash + f.logIndex}>
                   <span>
-                    {ti && to ? `${fmtShares(toShares(BigInt(f.amountIn), ti))} → ${fmtShares(toShares(BigInt(f.amountOut), to))} ${ti.underlying} sh · ${ti.symbol} → ${to.symbol}` : f.kind}
+                    {ti && to ? (
+                      <>
+                        <Sh v={toShares(BigInt(f.amountIn), ti)} /> → <Sh v={toShares(BigInt(f.amountOut), to)} /> {ti.underlying} sh · {ti.symbol} → {to.symbol}
+                      </>
+                    ) : (
+                      f.kind
+                    )}
                   </span>
                   <span className="muted">
                     {KIND[f.kind]}
-                    {f.feePips === null ? "" : ` · ${(f.feePips / 100).toFixed(2)} bps`}
+                    {f.feePips !== null && (
+                      <>
+                        {" · "}
+                        {to && f.feeAmount !== null ? <FeeBpsShares pips={f.feePips} shares={toShares(BigInt(f.feeAmount), to)} /> : <Bps pips={f.feePips} />}
+                      </>
+                    )}
                   </span>
                   <Hex value={f.txHash} kind="tx" simulated={mocks} />
                 </li>

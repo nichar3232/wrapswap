@@ -1,7 +1,7 @@
 import type { PoolAssetResponse } from "@wrapswap/types";
 import type { Feed } from "../hooks/useApi";
 import { amount, fmtShares } from "../lib/format";
-import type { Asset } from "./assets";
+import { issuerLabel, type Asset } from "./assets";
 import { keeperSetInventory, skewPct } from "./fees";
 import { Tip } from "../components";
 import { Skeleton, Val } from "./ui";
@@ -31,7 +31,7 @@ function Balance({ wrappers, skewX18 }: { wrappers: Wrapper[]; skewX18: string }
       className="balance-svg"
       viewBox={`0 0 ${W} 230`}
       role="img"
-      aria-label={`Inventory: ${wrappers.map((x) => `${x.platform} ${fmtShares(x.inventoryShares)} shares`).join(", ")}; skew ${skewPct(skewX18)}`}
+      aria-label={`Inventory: ${wrappers.map((x) => `${issuerLabel(x.platform)} ${fmtShares(x.inventoryShares)} shares`).join(", ")}; skew ${skewPct(skewX18)}`}
     >
       <path className="bal-post" d={`M${cx} ${cy} L${cx - 26} 214 H${cx + 26} Z`} />
       <line className="bal-beam" x1={ends[0].x} y1={ends[0].y} x2={ends[1].x} y2={ends[1].y} />
@@ -41,7 +41,7 @@ function Balance({ wrappers, skewX18 }: { wrappers: Wrapper[]; skewX18: string }
           <line x1={ends[i].x} y1={ends[i].y} x2={ends[i].x} y2={ends[i].y + 30} />
           <rect x={ends[i].x - 96} y={ends[i].y + 30} width={192} height={64} rx={12} />
           <text x={ends[i].x} y={ends[i].y + 56} textAnchor="middle" className="bal-name">
-            {x.platform}
+            {issuerLabel(x.platform)}
           </text>
           <text x={ends[i].x} y={ends[i].y + 78} textAnchor="middle" className="bal-fee">
             {amount(x.inventoryShares, 18, 0)} sh
@@ -73,7 +73,10 @@ export function Liquidity({ asset, pool, onMove }: { asset: Asset | undefined; p
         </section>
       </div>
     );
-  const name = (sym: string) => p.wrappers.find((x) => x.symbol === sym)?.platform ?? sym;
+  const name = (sym: string) => {
+    const w = p.wrappers.find((x) => x.symbol === sym);
+    return w ? issuerLabel(w.platform) : sym;
+  };
   const tokenOf = (sym: string) => asset.platforms.find((x) => x.token.symbol === sym)?.token.address;
   const cheap = p.directions.find((x) => x.from === p.cheapDirection.from && x.to === p.cheapDirection.to) ?? p.directions[0];
   const baseBps = (x: Direction) => ((x.totalPips - x.skewFeePips) / 100).toFixed(2);
@@ -117,7 +120,7 @@ export function Liquidity({ asset, pool, onMove }: { asset: Asset | undefined; p
               const t = asset.platforms.find((q) => q.token.address.toLowerCase() === x.address.toLowerCase())?.token;
               return (
                 <li key={x.address}>
-                  <span>{x.platform}</span>
+                  <span>{issuerLabel(x.platform)}</span>
                   <span className="mono">
                     {fmtShares(x.inventoryShares)} sh · {t ? amount(x.inventory, t.decimals, 2) : "—"} {x.symbol}
                   </span>

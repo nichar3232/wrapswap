@@ -23,6 +23,9 @@ const PLATFORM: Record<string, string> = { coinbase: "Coinbase", xstocks: "xStoc
 export const platformName = (t: { issuer: string }) =>
   PLATFORM[t.issuer.toLowerCase()] ?? t.issuer.charAt(0).toUpperCase() + t.issuer.slice(1);
 
+/** Issuer names as shown in the app: the wrappers are testnet mocks of those issuers' tokens. */
+export const issuerLabel = (platform: string) => (/\(mock\)$/.test(platform) ? platform : `${platform} (mock)`);
+
 /**
  * Assets from GET /assets (unhealthy adapters are left out: they can't be converted). While /assets is loading or
  * unavailable, the deployment's per-asset manifest (deployments/<network>.resolved.json → assets) stands in.
@@ -35,7 +38,7 @@ export function assetsOf(api: AssetsResponse | undefined, d: Deployment | undefi
         platforms: a.platforms
           .filter((p) => p.healthy)
           .map((p) => ({
-            name: p.platform || platformName(p),
+            name: issuerLabel(p.platform || platformName(p)),
             token: {
               address: p.address,
               symbol: p.symbol,
@@ -67,7 +70,7 @@ export function assetsOf(api: AssetsResponse | undefined, d: Deployment | undefi
     return d.assets.map((a) => ({
       symbol: a.symbol,
       platforms: a.wrappers.map((w) => ({
-        name: w.platform,
+        name: issuerLabel(w.platform),
         token: {
           address: w.token,
           symbol: w.symbol,
@@ -87,7 +90,7 @@ export function assetsOf(api: AssetsResponse | undefined, d: Deployment | undefi
   for (const t of d.tokens) by.set(t.underlying, [...(by.get(t.underlying) ?? []), t]);
   return [...by].map(([symbol, tokens]) => ({
     symbol,
-    platforms: tokens.map((token) => ({ name: platformName(token), token })),
+    platforms: tokens.map((token) => ({ name: issuerLabel(platformName(token)), token })),
     pool: { id: d.pool.id, key: d.pool.key },
     darkCross: { hook: d.contracts.darkCrossHook, baseToken: d.dark.baseToken, quoteToken: d.dark.quoteToken, batchBlocks: d.dark.batchBlocks },
   }));

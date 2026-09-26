@@ -104,9 +104,9 @@ test("Convert: quote card (shares in · base · skew · You keep), parity line, 
   await c.getByLabel("Amount", { exact: true }).fill("100");
   const card = c.getByRole("region", { name: "Quote" });
   await expect(card.locator(".qc-row")).toContainText("101.25");
-  await expect(card.getByTestId("fee-breakdown")).toContainText("Base fee 2.00 bps · to LP0.0202");
+  await expect(card.getByTestId("fee-breakdown")).toContainText("Base fee 2.00 bps · to LP0.02 sh");
   await expect(card.getByTestId("fee-breakdown")).toContainText("0 — this trade rebalances the pool");
-  await expect(c.getByTestId("you-keep")).toContainText("101.25 → 101.22 AAPL shares");
+  await expect(c.getByTestId("you-keep")).toContainText("101.25 → 101.23 AAPL shares");
   await expect(c).toContainText("Same share, converted at parity. Price gap between issuers is not charged.");
   // The other direction adds to the imbalance: a skew fee to the LP.
   await c.getByRole("button", { name: /^Flip/ }).click();
@@ -114,7 +114,7 @@ test("Convert: quote card (shares in · base · skew · You keep), parity line, 
   await c.getByRole("button", { name: /^Flip/ }).click();
   await c.getByRole("button", { name: "Convert", exact: true }).click();
   await expect(c.getByText("Converted (mock)")).toBeVisible();
-  await expect(c.locator(".review-line")).toHaveText("101.25 AAPL shares on Coinbase → 101.22 on xStocks");
+  await expect(c.locator(".review-line")).toHaveText("101.25 AAPL shares on Coinbase (mock) → 101.23 on xStocks (mock)");
   await expect(c.getByTestId("fee-breakdown")).toContainText("0 — this trade rebalances the pool");
   await expect(c.getByTestId("receipt-skew")).toHaveText(/^\+20\.00% → \+19\.\d\d%$/);
   await expect(c.getByRole("button", { name: "Copy transaction hash" })).toBeVisible();
@@ -131,15 +131,15 @@ test("Convert: clicking a direction row selects it, sets from → to, and re-quo
   await xstocks.click();
   await expect(xstocks).toHaveAttribute("aria-checked", "true");
   await expect(coinbase).toHaveAttribute("aria-checked", "false");
-  await expect(c.locator(".pair-line")).toHaveText("xStocks → Coinbase");
+  await expect(c.locator(".pair-line")).toHaveText("xStocks (mock) → Coinbase (mock)");
   await expect(c.locator(".unit")).toHaveText("mAAPLx");
   await expect(card.getByTestId("fee-breakdown")).toContainText(/Skew fee \d+\.\d\d bps · to LP/);
   await expect(c.getByTestId("you-keep")).toContainText("100.00 → ");
   await coinbase.click();
   await expect(coinbase).toHaveAttribute("aria-checked", "true");
-  await expect(c.locator(".pair-line")).toHaveText("Coinbase → xStocks");
+  await expect(c.locator(".pair-line")).toHaveText("Coinbase (mock) → xStocks (mock)");
   await expect(c.locator(".unit")).toHaveText("mcbAAPL");
-  await expect(c.getByTestId("you-keep")).toContainText("101.25 → 101.22 AAPL shares");
+  await expect(c.getByTestId("you-keep")).toContainText("101.25 → 101.23 AAPL shares");
 });
 
 test("Dark Cross: side + size → sealed commit; commit → reveal → settle; 3-row result; privacy line; history", async ({ page }) => {
@@ -155,7 +155,7 @@ test("Dark Cross: side + size → sealed commit; commit → reveal → settle; 3
   await expect(x).toContainText("1.00 bp · protocol");
   // Same body as Convert: wrapper cards, flip, a direction line that carries the batch status.
   await x.getByRole("radio", { name: /Coinbase/ }).click();
-  await expect(x.locator(".pair-line")).toContainText("Coinbase → xStocks · sell mcbAAPL");
+  await expect(x.locator(".pair-line")).toContainText("Coinbase (mock) → xStocks (mock) · sell mcbAAPL");
   await x.getByLabel("Size").fill("60");
   await x.getByRole("button", { name: `Commit sealed order · batch #${k}` }).click();
   const order = x.getByRole("region", { name: "Your sealed order" });
@@ -168,26 +168,26 @@ test("Dark Cross: side + size → sealed commit; commit → reveal → settle; 3
   const result = x.getByTestId("settled-result");
   await expect(result).toBeVisible({ timeout: 10000 });
   await expect(result).toContainText("Crossed at the 30-min midpoint 1 bp venue fee · protocol");
-  await expect(result).toContainText("50.62 → 50.61 sh"); // 50 mcbAAPL at mid 1.0125, less 1 bp
+  await expect(result).toContainText("50.63 → 50.62 sh"); // 50 mcbAAPL at mid 1.0125 (50.625 sh), less 1 bp; half-up
   await expect(result).toContainText("Residual via Convert base + skew · LP");
-  await expect(result).toContainText("10.12 → 10.12 sh");
+  await expect(result).toContainText("10.13 → 10.12 sh");
   await expect(result).toContainText("Unfilled, refunded0.00 sh");
   const history = x.locator("details.dark-history");
   await history.locator("summary").click(); // collapsed by default so the body fits one screen
   await expect(history.getByRole("row")).toHaveCount(4); // header + 3 settled batches
-  await expect(history).toContainText("50.62 sh");
+  await expect(history).toContainText("50.63 sh"); // 50.625, half-up
 });
 
 test("Liquidity: inventory, skew, fee each direction, cheap-direction CTA prefills Move, LP economics", async ({ page }) => {
   await demo(page, "/app?tab=liquidity&asset=AAPL");
   const l = panel(page, "liquidity");
   await expect(l.getByTestId("skew")).toHaveText("skew +20.00%");
-  await expect(l.getByRole("img", { name: /^Inventory: Coinbase 8,100\.00 shares, xStocks 12,150\.00 shares/ })).toBeVisible();
-  await expect(l.locator(".dir.cheap")).toContainText("Coinbase → xStocks2.00 bps2.00 base · skew 0 — rebalances the pool");
-  await expect(l.locator(".dir:not(.cheap)")).toContainText(/xStocks → Coinbase\d\.\d\d bps2\.00 base \+ \d\.\d\d skew · to LP/);
+  await expect(l.getByRole("img", { name: /^Inventory: Coinbase \(mock\) 8,100\.00 shares, xStocks \(mock\) 12,150\.00 shares/ })).toBeVisible();
+  await expect(l.locator(".dir.cheap")).toContainText("Coinbase (mock) → xStocks (mock)2.00 bps2.00 base · skew 0 — rebalances the pool");
+  await expect(l.locator(".dir:not(.cheap)")).toContainText(/xStocks \(mock\) → Coinbase \(mock\)\d\.\d\d bps2\.00 base \+ \d\.\d\d skew · to LP/);
   await expect(l).toContainText("All Convert fees (base + skew) go to the LP. The protocol takes 0 on Convert.");
   await expect(l).toContainText("Both sides are the same share — no impermanent loss from price divergence. Risk is inventory getting stuck lopsided.");
-  await expect(l.getByRole("region", { name: "LP economics" })).toContainText("0.0222 sh");
+  await expect(l.getByRole("region", { name: "LP economics" })).toContainText("0.0223 sh"); // 0.022275, half-up
   // A 4,050 sh gap from 2 fills worth 0.0223 sh of base fees: the keeper set it, not conversions.
   await expect(l.getByRole("region", { name: "AAPL inventory" }).getByTestId("keeper-set")).toHaveText("Inventory set by pool keeper");
   await expect(l.getByRole("button", { name: /deposit|withdraw|add liquidity/i })).toHaveCount(0); // keeper-only
@@ -205,7 +205,7 @@ test("Liquidity: inventory, skew, fee each direction, cheap-direction CTA prefil
   // The keeper block sits above LP economics.
   const [kY, lpY] = await Promise.all([keeper, l.getByRole("region", { name: "LP economics" })].map((x) => x.evaluate((e) => e.getBoundingClientRect().top)));
   expect(kY).toBeLessThan(lpY);
-  await l.getByRole("button", { name: "Cheap direction now: Coinbase → xStocks" }).click();
+  await l.getByRole("button", { name: "Cheap direction now: Coinbase (mock) → xStocks (mock)" }).click();
   await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
   await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toHaveAttribute("aria-checked", "true");
 });
@@ -361,9 +361,9 @@ test("Recent fills: a Convert and a Dark Cross commit from this page are listed 
   await tab(page, "Portfolio").click();
   const rows = panel(page, "portfolio").getByRole("region", { name: "Recent fills" }).locator("li");
   await expect(rows.nth(0)).toHaveAttribute("data-activity", "DARK-COMMIT");
-  await expect(rows.nth(0)).toContainText(`Dark Cross commit · 10.12 AAPL sh mcbAAPL · batch #${k}`);
+  await expect(rows.nth(0)).toContainText(`Dark Cross commit · 10.13 AAPL sh mcbAAPL · batch #${k}`);
   await expect(rows.nth(1)).toHaveAttribute("data-activity", "PARITY");
-  await expect(rows.nth(1)).toContainText("101.25 → 101.22 AAPL sh · mcbAAPL → mAAPLx");
+  await expect(rows.nth(1)).toContainText("101.25 → 101.23 AAPL sh · mcbAAPL → mAAPLx");
   await expect(rows.nth(1)).toContainText("Convert (mock)");
   // Indexed fills still follow, up to eight rows in all.
   expect(await rows.count()).toBeGreaterThan(2);
@@ -396,3 +396,54 @@ for (const [width, height] of [
     }
   });
 }
+
+test("Convert receipt: In and Out in tokens (4 places) and shares (2, half-up), the multiplier under Out, fee as bps · shares, exact values on hover", async ({ page }) => {
+  await demo(page, "/app?tab=move&asset=AAPL");
+  const c = convert(page);
+  await c.getByRole("radio", { name: /Coinbase/ }).click();
+  await c.getByLabel("Amount", { exact: true }).fill("100");
+  await c.getByRole("button", { name: "Convert", exact: true }).click();
+  await expect(c.getByText("Converted (mock)")).toBeVisible();
+  await expect(c.locator(".receipt-rows dt").first()).toHaveText("In");
+  await expect(c.locator(".receipt-rows > div").first()).toContainText("100.0000 mcbAAPL · 101.25 sh");
+  const out = c.getByTestId("receipt-out");
+  await expect(out).toHaveText(/^101\.2298 mAAPLx · 101\.23 sh$/); // 101.22975 at multiplier 1: tokens 4 places and shares 2, both half-up
+  await expect(c.getByTestId("receipt-multiplier")).toHaveText("1 xStocks (mock) token = 1.0000 sh (multiplier)");
+  await expect(c.getByTestId("receipt-fee")).toHaveText("2.00 bps · 0.02 sh");
+  // Every number carries its exact value.
+  await expect(out.locator(".num").nth(1)).toHaveAttribute("title", "101.22975 shares (raw 101229750000000000000)");
+  await expect(c.getByTestId("receipt-fee").locator(".num").first()).toHaveAttribute("title", /^200 pips/);
+});
+
+test("Convert all to xStocks: every Coinbase (mock) holding in one go; after-state with new holdings, tx links and the cost comparison", async ({ page }) => {
+  await demo(page, "/app?tab=portfolio&asset=AAPL");
+  const p = panel(page, "portfolio");
+  await expect(p.getByRole("region", { name: "AAPL holdings" })).toContainText("Coinbase (mock)");
+  const card = p.getByRole("region", { name: "Convert all to xStocks" });
+  await expect(card).toContainText("shares across AAPL, NVDA, TSLA → xStocks (mock)");
+  await card.getByRole("button", { name: "Convert all to xStocks" }).click();
+  const done = p.getByRole("region", { name: "Converted all to xStocks" });
+  await expect(done).toBeVisible({ timeout: 20000 });
+  const legs = done.locator("table.all-legs tbody tr");
+  await expect(legs).toHaveCount(3);
+  await expect(legs.nth(0)).toContainText("AAPL");
+  await expect(legs.nth(0)).toContainText("1 xStocks (mock) token = 1.0000 sh (multiplier)");
+  await expect(legs.nth(1)).toContainText("1 xStocks (mock) token = 1.0050 sh (multiplier)"); // NVDA xStocks multiplier 1.005
+  for (let i = 0; i < 3; i++) {
+    await expect(legs.nth(i).locator("td").nth(3)).toHaveText(/^\d+\.\d\d bps · \d+\.\d\d sh$/);
+    await expect(legs.nth(i).getByRole("button", { name: /Copy transaction hash/ })).toBeVisible();
+  }
+  // New holdings: nothing left on Coinbase (mock).
+  const holdings = done.locator(".new-holdings li");
+  await expect(holdings.filter({ hasText: "Coinbase (mock)" })).toHaveCount(3);
+  for (const li of await holdings.filter({ hasText: "Coinbase (mock)" }).all()) await expect(li).toContainText("0.00 sh");
+  // Cost comparison: the real fee vs. an illustrative sell + rebuy, and the saving.
+  await expect(done.getByTestId("cost-unison")).toHaveText(/^\d+\.\d\d bps · \d+\.\d\d sh$/);
+  await expect(done.getByTestId("cost-alt")).toHaveText(/^45\.00 bps · [\d,]+\.\d\d sh$/);
+  await expect(done.getByTestId("cost-saved")).toHaveText(/^[\d,]+\.\d\d sh$/);
+  await expect(done).toContainText("Illustrative, not a quote");
+  await done.getByRole("button", { name: "Back to portfolio" }).click();
+  await expect(p.getByRole("region", { name: "Convert all to xStocks" })).toContainText("Everything is already in xStocks (mock).");
+  // Recent fills lists the three conversions at once.
+  await expect(p.getByRole("region", { name: "Recent fills" }).locator('li[data-activity="PARITY"]')).toHaveCount(3);
+});

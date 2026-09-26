@@ -3257,3 +3257,80 @@ details.dark-history[open] > summary {
     gap: 6px;
   }
 }
+/* Rounded numbers carry the exact value in a tooltip. */
+.num {
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+.receipt-rows > .receipt-mult {
+  justify-content: flex-end;
+  margin-top: -6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Portfolio: faucet and Convert all side by side */
+.port-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 20px;
+}
+.convert-all {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px 20px;
+}
+.convert-all .tx {
+  grid-column: 1 / -1;
+}
+/* Convert all: after-state */
+.convert-all-done {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.convert-all-done .card-title {
+  margin-top: 6px;
+}
+table.all-legs {
+  width: 100%;
+  font-size: 14px;
+}
+table.all-legs th,
+table.all-legs td {
+  text-align: left;
+  padding: 8px 10px 8px 0;
+  vertical-align: top;
+}
+.mult-line {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.new-holdings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 8px 20px;
+}
+.cost-compare .cost-save {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-weight: 600;
+}
+/* "(mock)" labels: keep each holding name on one line */
+.portfolio .holding .platform {
+  font-size: 18px;
+  white-space: nowrap;
+}
+@media (max-height: 820px) and (min-width: 721px) {
+  .port-actions .card {
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+  .portfolio .asset {
+    padding-top: 16px;
+    padding-bottom: 16px;
+  }
+}

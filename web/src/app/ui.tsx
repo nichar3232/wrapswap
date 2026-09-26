@@ -3,6 +3,7 @@ import { explorerUrl } from "@wrapswap/types";
 import type { FeedStatus } from "../hooks/useApi";
 import { config } from "../config";
 import { isDemo } from "../wallet";
+import { exact, fmtShares, fmtTokens } from "../lib/format";
 import type { TxState } from "./tx";
 
 export const shortHex = (h: string, head = 6, tail = 4) =>
@@ -184,3 +185,29 @@ export function Empty({ children, action }: { children: ReactNode; action?: Reac
     </div>
   );
 }
+
+/*
+ * Numbers for display. Shares: two places, tokens: four, both half-up; the raw value stays in state and in the tx data,
+ * and the exact figure (every digit, plus the raw integer) is in each number's hover tooltip.
+ */
+export const Sh = ({ v, digits = 2 }: { v: bigint | string; digits?: number }) => (
+  <span className="num" title={exact(v, 18, "shares")}>
+    {fmtShares(v, digits)}
+  </span>
+);
+export const Tok = ({ v, decimals, symbol }: { v: bigint | string; decimals: number; symbol: string }) => (
+  <span className="num" title={exact(v, decimals, symbol)}>
+    {fmtTokens(v, decimals)}
+  </span>
+);
+export const Bps = ({ pips }: { pips: number | bigint }) => (
+  <span className="num" title={`${pips.toString()} pips (raw; 100 pips = 1 bp)`}>
+    {(Number(pips) / 100).toFixed(2)} bps
+  </span>
+);
+/** A fee as both rate and amount: "2.00 bps · 0.02 sh". */
+export const FeeBpsShares = ({ pips, shares }: { pips: number | bigint; shares: bigint | string }) => (
+  <>
+    <Bps pips={pips} /> · <Sh v={shares} /> sh
+  </>
+);

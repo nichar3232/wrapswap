@@ -6,12 +6,11 @@ import { useApi, type Feed } from "../hooks/useApi";
 import { amount, fmtShares } from "../lib/format";
 import { relayAmount, relayConvert } from "../relay";
 import { allowance, approve, convertExactIn, convertedOf, waitReceipt } from "../wallet";
-import { RelayLimitNote, useRelayCooldown } from "./relayUi";
 import { toShares, type Asset } from "./assets";
 import { quoteBreakdown, skewPct } from "./fees";
 import { useTx } from "./tx";
 import type { MoveIntent } from "./types";
-import { Hex, Spinner, TxPanel, Val } from "./ui";
+import { FeeBpsShares, Hex, Sh, Spinner, Tok, TxPanel, Val } from "./ui";
 import { useWallet } from "./wallet";
 
 type Receipt = {
@@ -29,7 +28,10 @@ type Receipt = {
   skewFee: bigint;
   preSkew: bigint;
   postSkew: bigint;
+  amountIn: bigint;
   amountOut: bigint;
+  tokenIn: { symbol: string; decimals: number };
+  tokenOut: { symbol: string; decimals: number; sharesPerTokenX18: string };
 };
 
 /** Convert: one wrapper to the other at share parity, through the asset's ParityHook pool. */
@@ -40,7 +42,6 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
   const [approvedKey, setApprovedKey] = useState("");
   const [receipt, setReceipt] = useState<Receipt>();
   const tx = useTx<unknown>();
-  const cooldown = useRelayCooldown(w.relay);
 
   useEffect(() => {
     if (!intent) return;
@@ -107,9 +108,7 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
             ? route.data?.reason || "Paused: the pool is more than 50 bps from NAV parity."
             : activeRoute === "FALL-THROUGH"
               ? "Hook inventory is short for this size. Try a smaller amount."
-              : w.relay && qb && qb.sharesIn > 100n * 10n ** 18n
-                ? "The demo relay moves at most 100 shares per action."
-                : "";
+              : "";
 
   const finish = (hash: Hash | undefined, simulated: boolean, c: ReturnType<typeof convertedOf>, out: bigint) => {
     setApprovedKey("");
@@ -137,7 +136,10 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
       skewFee: c?.skewFee ?? qb!.skewFee,
       preSkew: qb!.preSkewX18,
       postSkew: c?.postSkew ?? qb!.postSkewX18,
+      amountIn: raw,
       amountOut: out,
+      tokenIn: { symbol: a.symbol, decimals: a.decimals },
+      tokenOut: { symbol: b.symbol, decimals: b.decimals, sharesPerTokenX18: b.sharesPerTokenX18 },
     });
   };
   const run = async () => {
@@ -181,8 +183,43 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
           <span className="ok-dot" aria-hidden="true" /> Converted{receipt.simulated ? " (mock)" : ""}
         </p>
         <p className="review-line">
-          <strong>{fmtShares(receipt.sharesIn)}</strong> {asset.symbol} shares on {receipt.from} → <strong>{fmtShares(receipt.sharesOut)}</strong> on {receipt.to}
+          <strong>
+            <Sh v={receipt.sharesIn} />
+          </strong>{" "}
+          {asset.symbol} shares on {receipt.from} →{" "}
+          <strong>
+            <Sh v={receipt.sharesOut} />
+          </strong>{" "}
+          on {receipt.to}
         </p>
+        <dl className="receipt-rows">
+          <div>
+            <dt>In</dt>
+            <dd>
+              <Tok v={receipt.amountIn} decimals={receipt.tokenIn.decimals} symbol={receipt.tokenIn.symbol} /> {receipt.tokenIn.symbol} ·{" "}
+              <Sh v={receipt.sharesIn} /> sh
+            </dd>
+          </div>
+          <div>
+            <dt>Out</dt>
+            <dd data-testid="receipt-out">
+              <Tok v={receipt.amountOut} decimals={receipt.tokenOut.decimals} symbol={receipt.tokenOut.symbol} /> {receipt.tokenOut.symbol} ·{" "}
+              <Sh v={receipt.sharesOut} /> sh
+            </dd>
+          </div>
+          <div className="receipt-mult">
+            <dt className="sr-only">Multiplier</dt>
+            <dd data-testid="receipt-multiplier">
+              1 {receipt.to} token = <Sh v={receipt.tokenOut.sharesPerTokenX18} digits={4} /> sh (multiplier)
+            </dd>
+          </div>
+          <div>
+            <dt>Fee</dt>
+            <dd data-testid="receipt-fee">
+              <FeeBpsShares pips={receipt.basePips + (receipt.skewFee === 0n ? 0 : receipt.skewPips)} shares={receipt.baseFee + receipt.skewFee} />
+            </dd>
+          </div>
+        </dl>
         <FeeRows
           basePips={receipt.basePips}
           skewPips={receipt.skewFee === 0n ? 0 : receipt.skewPips}
@@ -191,12 +228,6 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
           reducesImbalance={receipt.skewFee === 0n}
         />
         <dl className="receipt-rows">
-          <div>
-            <dt>Received</dt>
-            <dd>
-              {amount(receipt.amountOut, b.decimals, 6)} {b.symbol}
-            </dd>
-          </div>
           <div>
             <dt>Inventory skew</dt>
             <dd data-testid="receipt-skew">
@@ -294,13 +325,12 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
           {w.busy === "connect" ? "Connecting…" : "Connect to convert"}
         </button>
       ) : (
-        <button className="primary wide" disabled={!!blocked || tx.busy || !qb || cooldown > 0} aria-busy={tx.busy || undefined} onClick={() => void run()}>
+        <button className="primary wide" disabled={!!blocked || tx.busy || !qb} aria-busy={tx.busy || undefined} onClick={() => void run()}>
           {tx.busy && <Spinner />}
           {tx.state.step === "signing" ? "Confirm in wallet…" : tx.busy ? "Converting…" : approvedKey === approvalKey || w.demo ? "Convert" : "Approve and convert"}
         </button>
       )}
       {w.notice && <p className="block-reason">{w.notice}</p>}
-      <RelayLimitNote left={cooldown} />
       <TxPanel tx={tx.state} onRetry={() => void run()} />
     </div>
   );

@@ -128,8 +128,8 @@ nor the contracts show USD prices.
 
 The Unison MCP server gives an agent the same surface as the app:
 - **Read:** `list_assets`, `get_pool`, `quote_convert`, `get_batch`, `get_portfolio`.
-- **Execute:** `convert`, `commit_dark_order` and `send_confidential`. They go through the demo relay and are capped at
-  100 shares per action.
+- **Execute:** `convert`, `commit_dark_order` and `send_confidential`. They go through the demo relay; the MCP server
+  caps each at 100 shares.
 
 The server holds no keys and no addresses.
 
@@ -260,7 +260,7 @@ demo figures.
 - Testnet only. The issuer wrappers, the price oracle and the faucet are mocks. The Uniswap v4 contracts are the real
   Unichain Sepolia deployments.
 - Send is confidential, not anonymous: the keeper that applies each Sui batch can see amounts.
-- The demo relay signs with a funded testnet key so visitors without a wallet can act. It is rate-limited and capped.
+- The demo relay signs with a funded testnet key so visitors without a wallet can act. It is rate-limited per IP, and actions that pay out to another address are capped at 100 shares.
 - The tax treatment of converting between wrappers depends on jurisdiction. The protocol does not determine it.
 
 ## Submission

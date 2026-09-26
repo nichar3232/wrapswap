@@ -24,6 +24,7 @@ import { readBatch, readPool, sealApproveLeafTx, type BatchState, type PoolState
 import { prepareInstruction } from "../../../services/crank/sui/payer";
 import { leafHash, verifyPath } from "../../../services/crank/sui/merkle";
 import { decodeJson, leafProof, normalizeSuiAddress, type Instruction, type Leaf, type Manifest } from "../../../services/crank/sui/protocol";
+import { issuerLabel } from "./assets";
 import { useTx } from "./tx";
 import { CopyButton, Hex, Spinner, TxPanel, Val, shortHex } from "./ui";
 import { useWallet } from "./wallet";
@@ -583,7 +584,7 @@ function SendPanel({ d, given, demo }: { d: Deployment | undefined; given: Panel
     if (!quote) return { label: "Quoting…", disabled: true };
     if (quote.feePips > 10000) return { label: "Fee above your maximum", disabled: true };
     if (known && viewBalance !== undefined && quote.sharesDebited > viewBalance) return { label: "Insufficient balance", disabled: true };
-    return { label: `Withdraw to ${wt!.platform}`, disabled: false, onClick: () => void doWithdraw() };
+    return { label: `Withdraw to ${issuerLabel(wt!.platform)}`, disabled: false, onClick: () => void doWithdraw() };
   })();
   const primaryButton = (
     <button className="primary wide" disabled={primary.disabled} onClick={primary.onClick} data-testid="send-primary">
@@ -762,7 +763,7 @@ function SendPanel({ d, given, demo }: { d: Deployment | undefined; given: Panel
               <select className="token" aria-label="Deposit token" value={depToken} onChange={(e) => setDepToken(Number(e.target.value))}>
                 {tokens?.map((t, i) => (
                   <option key={t.address} value={i}>
-                    {t.platform} · {t.symbol}
+                    {issuerLabel(t.platform)} · {t.symbol}
                   </option>
                 ))}
               </select>
@@ -820,7 +821,7 @@ function SendPanel({ d, given, demo }: { d: Deployment | undefined; given: Panel
                 <select className="token" aria-label="Deliver on platform" value={wdToken} onChange={(e) => setWdToken(Number(e.target.value))}>
                   {tokens?.map((t, i) => (
                     <option key={t.address} value={i}>
-                      {t.platform} · {t.symbol}
+                      {issuerLabel(t.platform)} · {t.symbol}
                     </option>
                   ))}
                 </select>

@@ -116,13 +116,15 @@ async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Pr
 /** GET {api}/demo/status, or null when no relay is served. */
 export const relayStatus = () => call<RelayStatus>("GET", "/status").catch(() => null);
 
-async function action<T>(name: "convert" | "dark-commit" | "send", body: unknown) {
+async function action<T>(name: "convert" | "convert-all" | "dark-commit" | "send", body: unknown) {
   const out = await call<T>("POST", `/${name}`, body);
   write(LOG_KEY, JSON.stringify([...actionLog(), Date.now()]));
   return out;
 }
 /** Convert {asset, from, to, amount (whole tokens)} → WrapSwapRouter.swapExactIn delivering to the relay. */
 export const relayConvert = (b: { asset: string; from: string; to: string; amount: string }) => action<RelayConvert>("convert", b);
+/** Every other wrapper balance of every asset into the `to` issuer (default xStocks), one swap per asset; one action. */
+export const relayConvertAll = (to = "xStocks") => action<{ to: string; results: RelayConvert[] }>("convert-all", { to });
 /** Escrow + commit on the asset's DarkCrossHook; the relay reveals in the reveal phase and the crank settles. */
 export const relayDarkCommit = (b: { asset: string; from: string; amount: string }) => action<RelayDarkCommit>("dark-commit", b);
 /** Send on the Sui confidential path: ShareVault deposit → sealed pay on Sui → withdraw into the other issuer. */

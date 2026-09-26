@@ -55,10 +55,13 @@ Before going on stage, run `pnpm preflight` (`scripts/dev/preflight`). It prints
 - The Sui path uses two relay Sui identities: A `0xa25a…1a53` pays, and B `0xf755…d44d` receives and withdraws.
 - Keys live only in `~/wrapswap-run/env/demo-relay.env` and `demo-relay-sui.env`, and are never logged or bundled.
 - Budgets:
-  - browsers: 3 actions per 10 minutes per client IP
+  - browsers: 3 actions per 10 minutes per client IP (`POST /api/demo/convert-all` counts as one)
   - the MCP server: its own 20 per 10 minutes, identified by the `x-unison-relay-client` token in `~/wrapswap-run/env/relay-internal.env`
-  - 100 shares per action
+  - 100 shares per action for the actions that pay out to someone else (`send`, `send-unichain`); conversions and
+    dark commits settle back to the relay and take any size
 - A 429 carries `Retry-After` and `retryAfter`.
+- `POST /api/demo/convert-all` `{to?}`: every other wrapper balance of every asset into `to` (default xStocks), one
+  swap per asset. The app's "Convert all to xStocks" button uses it when no wallet is connected.
 - `POST /api/demo/send` `{asset: AAPL, from, to, amount, recipient}`: **the Sui confidential path.**
   1. Deposit the source wrapper into ShareVault `0x76B1661dB3858b5455Ae4371291c954fa248Bd5d` on Unichain.
   2. Once the keeper credits A, A sends a sealed private `pay` to B on Sui.

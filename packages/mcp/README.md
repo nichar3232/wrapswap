@@ -5,8 +5,8 @@ share-for-share conversions between issuer wrappers (Coinbase, xStocks), and exe
 All sizes are shares of the stock; there is no USD anywhere.
 
 The server holds no keys and no addresses. It reads the public Unison API (GET routes) and executes through the demo
-relay (`POST /demo/*`), which signs with a funded testnet demo account, caps every action at 100 shares, and allows
-3 actions per 10 minutes per client IP.
+relay (`POST /demo/*`), which signs with a funded testnet demo account and gives this server its own budget of 20
+actions per 10 minutes. The server itself caps every execution at 100 shares.
 
 ## Remote (Streamable HTTP)
 

@@ -3,7 +3,6 @@ import { isAddress, parseUnits } from "viem";
 import { fmtShares } from "../lib/format";
 import { RelayError, relayAmount, relaySend, relaySendJob, relayStatus, type RelaySendJob, type RelaySendStep } from "../relay";
 import { toShares, type Asset } from "./assets";
-import { RelayLimitNote, useRelayCooldown } from "./relayUi";
 import { useTx } from "./tx";
 import { CopyButton, Spinner, TxPanel, shortHex } from "./ui";
 import { useWallet } from "./wallet";
@@ -46,7 +45,6 @@ export function RelaySend({ assets }: { assets: Asset[] }) {
   /** The relay answered 409: another Sui send holds the queue. */
   const [conflict, setConflict] = useState(false);
   const tx = useTx<unknown>();
-  const cooldown = useRelayCooldown(w.relay);
 
   useEffect(() => {
     if (!recipient && w.address) setRecipient(w.address);
@@ -104,9 +102,7 @@ export function RelaySend({ assets }: { assets: Asset[] }) {
   const blocked =
     raw === 0n
       ? "Enter an amount."
-      : shares > 100n * 10n ** 18n
-        ? "The demo relay moves at most 100 shares per action."
-        : !isAddress(recipient)
+      : !isAddress(recipient)
           ? "Enter the recipient's 0x address."
           : "";
 
@@ -203,11 +199,10 @@ export function RelaySend({ assets }: { assets: Asset[] }) {
             </p>
           )}
           {blocked && raw > 0n && <p className="block-reason">{blocked}</p>}
-          <button className="primary wide" disabled={!!blocked || tx.busy || cooldown > 0 || !!busyNote} onClick={() => void run()}>
+          <button className="primary wide" disabled={!!blocked || tx.busy || !!busyNote} onClick={() => void run()}>
             {tx.busy && <Spinner />}
             {tx.busy ? "Depositing on Unichain…" : "Send confidentially"}
           </button>
-          <RelayLimitNote left={cooldown} />
         </>
       )}
       <TxPanel tx={tx.state} onRetry={() => void run()} />

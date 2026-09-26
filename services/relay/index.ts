@@ -7,8 +7,11 @@
 //                                                                   the relay reveals it in the reveal phase and the
 //                                                                   crank settles (crossed, or residual via ParityHook)
 //   GET  /demo/status       relay address, balances, pending reveals, recent actions (tx hashes)
-// `from`/`to` are wrapper symbols or platform names; `amount` is whole tokens as a decimal string. Every action is
-// capped at 100 canonical shares and each client IP gets 3 actions per 10 minutes. The key is read from a file under
+//   POST /demo/convert-all  {to?}                               → every non-`to` wrapper balance of every asset into
+//                                                                   the `to` issuer (default xStocks), one swap per asset
+// `from`/`to` are wrapper symbols or platform names; `amount` is whole tokens as a decimal string. Actions that deliver
+// to someone else (send-unichain, send) are capped at 100 canonical shares; conversions and dark commits settle back to
+// the relay itself, so they take any size. Each client IP gets 3 actions per 10 minutes (convert-all counts as one). The key is read from a file under
 // ~/wrapswap-run/env/ only (RELAY_KEY_FILE), never from the environment the stack shares, and is never logged.
 import "dotenv/config";
 import Fastify from "fastify";
@@ -16,7 +19,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { createWalletClient, http, parseUnits, getAddress, keccak256, toHex, type Hex } from "viem";
+import { createWalletClient, formatUnits, http, parseUnits, getAddress, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { abis, canonical, encodeParityHookData } from "@wrapswap/types";
 import { loadDeployment, publicClient, rpc } from "../../api/src/chain/client.js";
@@ -70,13 +73,13 @@ const wrapperOf = (a: Asset, name: unknown) => {
   if (!w) throw fail(400, "BAD_REQUEST", "unknown wrapper for asset");
   return w;
 };
-// Whole tokens as a decimal string → raw units, capped at 100 canonical shares.
-const rawAmount = (w: Asset["wrappers"][number], amount: unknown) => {
+// Whole tokens as a decimal string → raw units; `cap` limits it to 100 canonical shares (for actions that pay out).
+const rawAmount = (w: Asset["wrappers"][number], amount: unknown, cap = true) => {
   if (typeof amount !== "string" || !/^\d{1,6}(\.\d{1,18})?$/.test(amount)) throw fail(400, "BAD_REQUEST", "amount: decimal string of whole tokens");
   const raw = parseUnits(amount, w.decimals);
   const shares = canonical.toSharesDown(raw, BigInt(w.multiplier), w.decimals);
   if (raw <= 0n) throw fail(400, "BAD_REQUEST", "amount must be positive");
-  if (shares > MAX_SHARES) throw fail(400, "OVER_LIMIT", "max 100 shares per action");
+  if (cap && shares > MAX_SHARES) throw fail(400, "OVER_LIMIT", "max 100 shares per action");
   return { raw, shares };
 };
 
@@ -145,7 +148,7 @@ async function convert(body: any, recipient: Hex) {
     from = wrapperOf(a, body.from),
     to = wrapperOf(a, body.to);
   if (from.token === to.token) throw fail(400, "BAD_REQUEST", "from and to must differ");
-  const { raw, shares } = rawAmount(from, body.amount);
+  const { raw, shares } = rawAmount(from, body.amount, recipient.toLowerCase() !== account.address.toLowerCase());
   const key = a.pool.key,
     zeroForOne = from.token.toLowerCase() === key.currency0.toLowerCase();
   const q: any = await client.readContract({ address: a.parityHook as Hex, abi: abis.IParityHook, functionName: "quote", args: [key, zeroForOne, -raw] } as any);
@@ -170,7 +173,7 @@ async function darkCommit(body: any) {
   const hook = a.darkCrossHook as Hex,
     from = wrapperOf(a, body.from);
   const sellBase = from.token.toLowerCase() === a.darkBaseToken!.toLowerCase();
-  const { raw, shares } = rawAmount(from, body.amount);
+  const { raw, shares } = rawAmount(from, body.amount, false);
   const [mid] = await client.readContract({ address: d.contracts.oracle as Hex, abi: oracleAbi, functionName: "getMid", args: [a.darkBaseToken as Hex, a.darkQuoteToken as Hex] });
   // Limit 0.2% through the mid: a seller of base accepts at least mid×0.998, a seller of quote pays at most mid×1.002.
   const limit = sellBase ? (mid * 998n) / 1000n : (mid * 1002n) / 1000n;
@@ -228,7 +231,7 @@ const action = (name: string, run: (body: any) => Promise<any>) =>
 
     // Validate before spending the IP's allowance, then queue behind the relay's other transactions.
     if (name === "send-unichain") getAddress(String(body.recipient ?? "")); // throws on a bad address
-    if (name !== "dark-commit") rawAmount(wrapperOf(assetOf(body.asset), body.from), body.amount);
+    if (name !== "dark-commit") rawAmount(wrapperOf(assetOf(body.asset), body.from), body.amount, name === "send-unichain");
     const viaMcp = takeAction(req.raw);
     const result = await serial(() => run(body));
     record({ action: name, asset: result.asset, txHash: result.txHash, batchId: result.batchId, client: viaMcp ? "mcp" : "web" });
@@ -259,12 +262,34 @@ app.get("/demo/send/:id", async (req) => {
   return { ...job, path: "sui-confidential" };
 });
 action("dark-commit", darkCommit);
+// Convert all: the relay's whole balance of every other wrapper, per asset, into the `to` issuer. One action.
+app.post("/demo/convert-all", async (req) => {
+  const body = (req.body ?? {}) as any;
+  const target = String(body.to ?? "xStocks");
+  const jobs: { asset: string; from: Asset["wrappers"][number]; to: Asset["wrappers"][number]; balance: bigint }[] = [];
+  for (const a of assets) {
+    const to = wrapperOf(a, target);
+    for (const from of a.wrappers.filter((w) => w.token !== to.token)) {
+      const balance = await client.readContract({ address: from.token as Hex, abi: erc20, functionName: "balanceOf", args: [account.address] });
+      if (balance > 0n) jobs.push({ asset: a.symbol, from, to, balance });
+    }
+  }
+  if (!jobs.length) throw fail(400, "NOTHING_TO_CONVERT", `no wrapper balances to convert into ${target}`);
+  const viaMcp = takeAction(req.raw);
+  const results = [];
+  for (const j of jobs) {
+    const r = await serial(() => convert({ asset: j.asset, from: j.from.symbol, to: j.to.symbol, amount: formatUnits(j.balance, j.from.decimals) }, account.address));
+    record({ action: "convert-all", asset: r.asset, txHash: r.txHash, client: viaMcp ? "mcp" : "web" });
+    results.push(r);
+  }
+  return { to: target, results };
+});
 app.get("/demo/status", async () => {
   const eth = await client.getBalance({ address: account.address });
   const tokens = await Promise.all(assets.flatMap((a) => a.wrappers.map(async (w) => ({ asset: a.symbol, symbol: w.symbol,
     balance: String(await client.readContract({ address: w.token as Hex, abi: erc20, functionName: "balanceOf", args: [account.address] })) }))));
   return { ok: eth > 0n, address: account.address, ethWei: eth.toString(), tokens, sui: { ...sui.identities, busy: sui.busy()?.id ?? null },
-    limits: { actionsPer10Min: ACTIONS, mcpActionsPer10Min: MCP_ACTIONS, mcpBudgetConfigured: mcpToken.length === 64, maxShares: "100" },
+    limits: { actionsPer10Min: ACTIONS, mcpActionsPer10Min: MCP_ACTIONS, mcpBudgetConfigured: mcpToken.length === 64, maxShares: "100", maxSharesAppliesTo: ["send", "send-unichain"] },
     pendingReveals: pending.filter((p) => !p.revealTx).map((p) => ({ asset: p.asset, batchId: p.batchId.toString() })), recent };
 });
 await app.listen({ port: Number(process.env.RELAY_PORT ?? 18210), host: "127.0.0.1" });
