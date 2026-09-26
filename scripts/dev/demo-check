@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+source scripts/dev/env
+scripts/dev/up
+for run in 1 2 3; do
+  scripts/dev/reset
+  DEMO_RUN=$run npx playwright test e2e/demo.spec.ts --workers=1
+done
+diff -u logs/integration/run-1.json logs/integration/run-2.json
+diff -u logs/integration/run-1.json logs/integration/run-3.json

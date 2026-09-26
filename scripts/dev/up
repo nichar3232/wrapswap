@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+source scripts/dev/env
+[[ $NETWORK == anvil ]] || { echo 'up is local only; use scripts/dev/seed for base-sepolia' >&2; exit 1; }
+export DEPLOYER_PK=${DEPLOYER_PK:-$(cast wallet private-key --mnemonic "$DEMO_MNEMONIC" --mnemonic-index 0)}
+export CRANK_PK=${CRANK_PK:-$(cast wallet private-key --mnemonic "$DEMO_MNEMONIC" --mnemonic-index 4)}
+bash scripts/install-contracts.sh
+if [[ -f logs/integration/snapshot ]] && [[ -n $(docker compose ps -q --status running anvil) ]]; then
+  scripts/dev/reset
+  printf 'Convert: http://127.0.0.1:%s/#convert\nAPI: http://127.0.0.1:%s/health\nCrank: http://127.0.0.1:%s/status\n' "$WEB_PORT" "$API_PORT" "$CRANK_HEALTH_PORT"
+  exit 0
+fi
+docker compose up -d --wait anvil postgres
+# Pause background mining before deployment. Explicit mining is used during replay.
+cast rpc --rpc-url "$RPC_URL" anvil_setIntervalMining 0 >/dev/null
+cast rpc --rpc-url "$RPC_URL" evm_setAutomine true >/dev/null
+cast rpc --rpc-url "$RPC_URL" anvil_setBlockTimestampInterval 1 >/dev/null
+forge script contracts/script/Deploy.s.sol:Deploy --rpc-url "$RPC_URL" --broadcast --slow
+[[ -f deployments/anvil.json ]] || { echo 'contracts boundary: Deploy.s.sol did not write deployments/anvil.json (§4)' >&2; exit 1; }
+docker compose build
+docker compose run --rm --no-deps api pnpm exec tsx scripts/dev/manifest.ts
+scripts/dev/seed
+cast rpc --rpc-url "$RPC_URL" evm_snapshot | tr -d '"' > logs/integration/snapshot
+docker compose up -d --wait indexer api crank web
+scripts/dev/wait-head
+printf 'Convert: http://127.0.0.1:%s/#convert\nAPI: http://127.0.0.1:%s/health\nCrank: http://127.0.0.1:%s/status\n' "$WEB_PORT" "$API_PORT" "$CRANK_HEALTH_PORT"
