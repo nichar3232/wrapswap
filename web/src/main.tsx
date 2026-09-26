@@ -19,6 +19,7 @@ import { ApiState, Fees, RouteBadge } from "./components";
 import {
   approve,
   connect,
+  convertExactIn,
   darkSend,
   subscribeWallet,
   verifyOrder,
@@ -270,6 +271,8 @@ function Convert({
       : q?.amountOut;
   const minOut = output ? (BigInt(output) * 995n) / 1000n : 0n;
   const approvalKey = `${address}:${a.address}:${raw}`;
+  const router = d.contracts.wrapSwapRouter;
+  const liveUnavailable = !config.useMocks && !router;
   const blocked =
     !address ||
     !eligible ||
@@ -323,16 +326,15 @@ function Convert({
           Approve only this amount to the deployment’s swap router. Slippage
           tolerance: 0.5%.
         </p>
-        {!config.useMocks && (
+        {liveUnavailable && (
           <p role="alert">
-            Live conversion is unavailable: the shared interface does not export
-            a router ABI with minimum-output protection. Permit2 is unavailable
-            for the same reason.
+            Live conversion is unavailable: this deployment has no
+            WrapSwapRouter with minimum-output protection.
           </p>
         )}
         <button
           className="primary"
-          disabled={blocked || !config.useMocks}
+          disabled={blocked || liveUnavailable}
           onClick={() =>
             void run(async () => {
               if (activeRoute === "DARK") {
@@ -345,18 +347,24 @@ function Convert({
                   d,
                   address!,
                   a.address,
-                  d.contracts.swapRouter,
+                  router ?? d.contracts.swapRouter,
                   raw,
                 );
                 setApproved(approvalKey);
                 onMessage(
                   "Approval confirmed. Review the quote, then convert.",
                 );
-              } else {
+              } else if (config.useMocks) {
                 onMessage(
                   `Simulated conversion confirmed: ${units(output!, b.decimals)} ${b.symbol} through ParityHook.`,
                 );
                 setApproved("");
+              } else {
+                await convertExactIn(d, address!, a.address, raw, minOut, uid);
+                setApproved("");
+                onMessage(
+                  `Conversion confirmed: at least ${units(minOut, b.decimals)} ${b.symbol} through ParityHook.`,
+                );
               }
             })
           }

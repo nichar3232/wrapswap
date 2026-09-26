@@ -9,6 +9,8 @@ import {
 import {
   IMockIssuerTokenAbi,
   IDarkCrossHookAbi,
+  IWrapSwapRouterAbi,
+  encodeParityHookData,
   type Address,
   type Deployment,
 } from "@wrapswap/types";
@@ -86,6 +88,34 @@ export const approve = (
   spender: Address,
   amount: bigint,
 ) => send(d, account, token, IMockIssuerTokenAbi, "approve", [spender, amount]);
+/** Exact-in swap through WrapSwapRouter (INTERFACES.md §13); approve tokenIn to the router first. */
+export async function convertExactIn(
+  d: Deployment,
+  account: Address,
+  tokenIn: Address,
+  amountIn: bigint,
+  amountOutMin: bigint,
+  attestationUid?: Address,
+) {
+  const router = d.contracts.wrapSwapRouter;
+  if (!router) throw Error("This deployment has no WrapSwapRouter.");
+  const rpc = createPublicClient({
+    transport: http(new URL(config.rpcUrl, location.origin).href),
+  });
+  // Deadline from chain time: anvil runs on a warped clock, not host time.
+  const { timestamp } = await rpc.getBlock();
+  return send(d, account, router, IWrapSwapRouterAbi, "swapExactIn", [
+    {
+      key: d.pool.key,
+      zeroForOne: tokenIn.toLowerCase() === d.pool.key.currency0.toLowerCase(),
+      amountIn,
+      amountOutMin,
+      recipient: account,
+      deadline: timestamp + 600n,
+      hookData: encodeParityHookData({ swapper: account, attestationUid }),
+    },
+  ]);
+}
 export const darkSend = (
   d: Deployment,
   account: Address,
