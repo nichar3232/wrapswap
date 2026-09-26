@@ -1,0 +1,28 @@
+{
+  "network": "sui-testnet",
+  "sui": {
+    "packageId": "0x2f18fa6d27e46235a4dcb9c0de62adbf612e3f60700ffeeac4e13d50ea4f452c",
+    "publishTx": "CNfNqe3P3ni7NkpknM3p1KMhqhV2hBeS2WcoLKo4Ugdt",
+    "upgradeCap": "0xad398dd0183b04d0a095ba2c364ed55bf31c8367d7d4355e8b3b0e339de622f2",
+    "poolId": "0xa1e1a8262c772c99fab34f0a389cfec6ed6f966889d4c9b3674313ccc16007e7",
+    "operatorCapId": "0xc043eba0e30f433e25aae612a2ba202a1e19fa88877e2d12e248b14ee1c880df",
+    "firstBatchId": "0x2c82f61a795e0996a4896ce417354c628bb3f6765b3ef469e9aa2d9e51f2cfd1",
+    "createPoolTx": "6aUSmRzhj8jv3JAGoaf3ew726FNDvFNGqAkXUbkY4Dic",
+    "operator": "0xb07be57ee7e7d5ca43f681c6938cc8698fd892b42d1b33f613909ae585c741c7",
+    "windowMs": 180000,
+    "sealProbePackageId": "0xebb8a7e3ae227d2b3bc9f52934a2b0003ad93da11cc66e018888412aef654d32"
+  },
+  "seal": {
+    "threshold": 2,
+    "keyServers": [
+      { "name": "mysten-testnet-1", "objectId": "0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75" },
+      { "name": "mysten-testnet-2", "objectId": "0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8" },
+      { "name": "studio-mirai-open", "objectId": "0x164ac3d2b3b8694b8181c13f671950004765c23f270321a45fdd04d40cccf0f2" }
+    ]
+  },
+  "walrus": {
+    "publisher": "https://publisher.walrus-testnet.walrus.space",
+    "aggregator": "https://aggregator.walrus-testnet.walrus.space"
+  },
+  "evm": null
+}
