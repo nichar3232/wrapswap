@@ -146,8 +146,10 @@ abstract contract ShareVaultBase is Fixture {
         depositAs(bob, maaplx, 5e18, SUI_B);
         address carol = makeAddr("carol");
         address dave = makeAddr("dave");
-        IParityHook.FeeBreakdown memory fee = hook.feeBreakdown(key);
-        assertGe(fee.totalPips, 200);
+        // The fee of the trade the vault would actually execute (size-dependent under the skew model).
+        (,, uint24 tradeFeePips, bool direct) = vault.quoteWithdrawal(address(maaplx), 10e18);
+        assertFalse(direct);
+        assertGe(tradeFeePips, 200);
 
         ShareVault.Withdrawal[] memory ws = new ShareVault.Withdrawal[](2);
         // maxFeeBps below the live fee forces a skip of the conversion...
@@ -158,7 +160,7 @@ abstract contract ShareVaultBase is Fixture {
 
         vm.expectEmit(true, false, false, true, address(vault));
         emit ShareVault.WithdrawalSkipped(
-            "skip", abi.encodeWithSelector(ShareVault.FeeAboveMax.selector, uint256(fee.totalPips), uint256(1))
+            "skip", abi.encodeWithSelector(ShareVault.FeeAboveMax.selector, uint256(tradeFeePips), uint256(1))
         );
         settle(ws);
 
@@ -238,8 +240,8 @@ contract ShareVaultMcbCurrency1Test is ShareVaultBase {
 }
 
 /// @notice Runs against a fork of the live Unichain Sepolia deployment (real PoolManager, ParityHook, router, tokens).
-///         Skipped unless UNICHAIN_SEPOLIA_RPC_URL is set and a manifest is available, either at
-///         deployments/unichain-sepolia.json or passed inline as SHARE_VAULT_MANIFEST_JSON.
+///         Skipped unless UNICHAIN_SEPOLIA_RPC_URL is set and a manifest is available, either the resolved
+///         deployments/unichain-sepolia.resolved.json or passed inline as SHARE_VAULT_MANIFEST_JSON.
 contract ShareVaultUnichainForkTest is Test {
     ShareVault internal vault;
     MockToken internal mcb;
@@ -252,8 +254,8 @@ contract ShareVaultUnichainForkTest is Test {
     function setUp() public {
         string memory rpc = vm.envOr("UNICHAIN_SEPOLIA_RPC_URL", string(""));
         string memory j = vm.envOr("SHARE_VAULT_MANIFEST_JSON", string(""));
-        if (bytes(j).length == 0 && vm.exists("deployments/unichain-sepolia.json")) {
-            j = vm.readFile("deployments/unichain-sepolia.json");
+        if (bytes(j).length == 0 && vm.exists("deployments/unichain-sepolia.resolved.json")) {
+            j = vm.readFile("deployments/unichain-sepolia.resolved.json");
         }
         if (bytes(rpc).length == 0 || bytes(j).length == 0) {
             vm.skip(true);
@@ -270,7 +272,7 @@ contract ShareVaultUnichainForkTest is Test {
         });
         vault = new ShareVault(
             IIssuerRegistry(vm.parseJsonAddress(j, ".contracts.registry")),
-            WrapSwapRouter(vm.parseJsonAddress(j, ".contracts.wrapSwapRouter")),
+            WrapSwapRouter(vm.parseJsonAddress(j, ".router")),
             key,
             address(this)
         );

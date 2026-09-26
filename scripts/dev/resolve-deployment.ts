@@ -118,6 +118,7 @@ const resolved = {
   faucet: getAddress(m.faucet),
   protocolFeeRecipient: getAddress(m.protocolFeeRecipient),
   deployBlock: block,
+  ...(m.send ? { send: { ...m.send, shareVault: getAddress(m.send.shareVault) } } : {}),
   assets: assets.map((a) => ({
     symbol: a.symbol,
     wrappers: a.wrappers.map(({ adapterName, name, ...w }) => w),

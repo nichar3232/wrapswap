@@ -212,7 +212,7 @@ check(!q[3], 'cross-issuer withdrawal must convert (custody lacks enough mcbAAPL
 const nonce = () => crypto.randomUUID();
 const cPay = await submit(A, { v: 1, kind: 'pay', to: addrB, shares: PAY.toString(), memo: 'three Apple shares, first instalment', nonce: nonce() }, 'A submits encrypted payment (1 share to B)');
 await submit(A, { v: 1, kind: 'pay', to: addrB, shares: (a0.balance).toString(), memo: 'double spend attempt', nonce: nonce() }, 'A submits a second payment exceeding the remaining balance (must be rejected)');
-const cOk = await submit(B, { v: 1, kind: 'withdraw', recipient: evmB.address, target: mcb.address, shares: W_OK.toString(), maxFeeBps: 25, nonce: nonce() }, `B submits withdrawal of ${formatShares(W_OK, 2)} shares into mcbAAPL (max fee 25 bps)`);
+const cOk = await submit(B, { v: 1, kind: 'withdraw', recipient: evmB.address, target: mcb.address, shares: W_OK.toString(), maxFeeBps: 100, nonce: nonce() }, `B submits withdrawal of ${formatShares(W_OK, 2)} shares into mcbAAPL (max fee 100 bps)`);
 const cSkip = await submit(B, { v: 1, kind: 'withdraw', recipient: evmB.address, target: mcb.address, shares: W_SKIP.toString(), maxFeeBps: 1, nonce: nonce() }, `B submits withdrawal of ${formatShares(W_SKIP, 2)} shares into mcbAAPL with max fee 1 bps (below the live fee: must skip)`);
 
 const pool1 = await readPool(client, dep.sui.poolId);

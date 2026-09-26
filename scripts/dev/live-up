@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Native live-network stack (default NETWORK=unichain-sepolia, chainId 1301; USE_MOCKS=false): its own Postgres
-# container plus indexer, API, crank and web in the detached tmux session "wrapswap-live" (one window each).
+# container plus indexer, API, crank, Sui keeper and web in the detached tmux session "wrapswap-live" (one window each).
 # Web is the production build (dist/web) served by scripts/dev/serve-web.mjs, never the Vite dev server; it proxies
 # /api, /crank and /rpc with a per-IP rate limit, so one port (13010) covers the whole app for Tailscale Funnel.
 # Secrets (DEMO_MNEMONIC, CRANK_PRIVATE_KEY, optional UNICHAIN_SEPOLIA_RPC_URL) come from LIVE_ENV; public
@@ -43,6 +43,8 @@ start indexer 'pnpm exec tsx scripts/dev/indexer.mjs'
 sleep 5
 start api 'pnpm dev:api'
 start crank 'pnpm dev:crank'
+# Unison Pay (Sui Send) keeper: one per pool (lockfile in ~/wrapswap-run/sui-state); Sui key from the Sui CLI keystore.
+start sui-keeper 'pnpm dev:sui-keeper'
 start web 'node scripts/dev/serve-web.mjs'
 # Demo relay: the key stays in its file under ~/wrapswap-run/env/; only the path is in the shared environment.
 if [[ -f $HOME/wrapswap-run/env/demo-relay.env ]]; then

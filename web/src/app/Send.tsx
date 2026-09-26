@@ -501,7 +501,7 @@ function SendPanel({ d, given, demo }: { d: Deployment | undefined; given: Panel
       }
       const fromBlock = await rpc.getBlockNumber();
       const totalAtSubmit = (await readPool(grpc, sd.sui.poolId)).totalShares;
-      const r = await sealAndSubmit({ v: 1, kind: "withdraw", recipient: recipient!, target: wt!.address, shares: wdShares!.toString(), maxFeeBps: 25, nonce: crypto.randomUUID() });
+      const r = await sealAndSubmit({ v: 1, kind: "withdraw", recipient: recipient!, target: wt!.address, shares: wdShares!.toString(), maxFeeBps: 100, nonce: crypto.randomUUID() });
       setFlow((f) => ({ ...f, withdraw: { digest: r.digest, commitment: r.commitment, shares: wdShares!, target: wt!.symbol, fromBlock, totalAtSubmit, simulated: false } }));
       setWdInput("");
       return { simulated: false, result: r.digest };
@@ -575,7 +575,7 @@ function SendPanel({ d, given, demo }: { d: Deployment | undefined; given: Panel
     if (!evmAccount) return { label: "Connect the receiving wallet", disabled: !!w.busy, onClick: () => void w.connect() };
     if (!wdShares) return { label: "Enter shares", disabled: true };
     if (!quote) return { label: "Quoting…", disabled: true };
-    if (quote.feePips > 2500) return { label: "Fee above your maximum", disabled: true };
+    if (quote.feePips > 10000) return { label: "Fee above your maximum", disabled: true };
     if (known && viewBalance !== undefined && quote.sharesDebited > viewBalance) return { label: "Insufficient balance", disabled: true };
     return { label: `Withdraw to ${wt!.platform}`, disabled: false, onClick: () => void doWithdraw() };
   })();

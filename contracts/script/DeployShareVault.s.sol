@@ -9,12 +9,12 @@ import {ShareVault} from "../src/ShareVault.sol";
 import {IIssuerRegistry} from "../src/interfaces/IIssuerRegistry.sol";
 import {IWrapSwapRouter} from "../src/interfaces/IWrapSwapRouter.sol";
 
-/// @notice Deploys ShareVault against an existing Unison deployment manifest (default deployments/unichain-sepolia.json)
+/// @notice Deploys ShareVault against the resolved Unison manifest (default deployments/unichain-sepolia.resolved.json)
 ///         and authorises the keeper. Reads only; the manifest is never rewritten here.
 /// Env: DEPLOYER_PRIVATE_KEY, optional SHARE_VAULT_MANIFEST, optional SHARE_VAULT_KEEPER (defaults to the deployer).
 contract DeployShareVault is Script {
     function run() external returns (ShareVault vault) {
-        string memory path = vm.envOr("SHARE_VAULT_MANIFEST", string("deployments/unichain-sepolia.json"));
+        string memory path = vm.envOr("SHARE_VAULT_MANIFEST", string("deployments/unichain-sepolia.resolved.json"));
         string memory j = vm.readFile(path);
         require(vm.parseJsonUint(j, ".chainId") == block.chainid, "manifest chainId != RPC chain");
 
@@ -26,7 +26,7 @@ contract DeployShareVault is Script {
             hooks: IHooks(vm.parseJsonAddress(j, ".pool.key.hooks"))
         });
         IIssuerRegistry registry = IIssuerRegistry(vm.parseJsonAddress(j, ".contracts.registry"));
-        IWrapSwapRouter router = IWrapSwapRouter(vm.parseJsonAddress(j, ".contracts.wrapSwapRouter"));
+        IWrapSwapRouter router = IWrapSwapRouter(vm.parseJsonAddress(j, ".router"));
 
         uint256 pk = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address deployer = vm.addr(pk);

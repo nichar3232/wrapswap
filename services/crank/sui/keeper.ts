@@ -15,7 +15,7 @@ import { publicClient, scanDeposits, settle, vaultReserves } from './evm.js';
 const PIPS = 1_000_000n;
 /** Covers the share value of one raw unit of rounding on each side of a conversion (6-decimal tokens: ~1e12). */
 const ROUNDING_MARGIN = 10n ** 13n;
-const MAX_FEE_BPS = 250; // ParityHook MAX_FEE_PIPS = 2500
+const MAX_FEE_BPS = 100; // ParityHook ceiling: base up to 5000 pips + skew fee capped at 5000 pips
 /** Seal key servers read the Clock through their own full nodes; give the close time a moment to propagate. */
 const SEAL_CLOCK_MARGIN_MS = 4_000;
 /** ~5 minutes of Unichain's 1 s blocks. */
