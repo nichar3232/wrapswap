@@ -7,7 +7,7 @@ Placeholders referenced: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{
 ## 0. Preconditions (5 min)
 
 - [ ] `git log` on the branch you'll submit contains the integrated contracts, web and deployment lanes. `make types` passes: it re-verifies every INTERFACES.md §10 number.
-- [ ] The deployment step has resolved every LINE placeholder in `FEEDBACK.md` and `submission/*.md` to GitHub line links. Check with `grep -rn '{{LINE:' FEEDBACK.md submission/`, which should print nothing.
+- [ ] The deployment step has resolved every LINE placeholder in `FEEDBACK.md` and `submission/*.md` to GitHub line links. Check with `grep -rn '{{LINE:' FEEDBACK.md submission/ --exclude=submit-checklist.md`, which should print nothing (re-run `scripts/dev/resolve-lines.py` after code moves).
 - [ ] The README "Uniswap stack integration" table shows the Base Sepolia addresses as verified.
 
 ## 1. Record Part A on the local anvil stack (≈15 min)
