@@ -1,0 +1,6 @@
+[package]
+name = "unison_pay"
+edition = "2024"
+
+[addresses]
+unison_pay = "0x0"
