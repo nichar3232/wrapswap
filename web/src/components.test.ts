@@ -10,7 +10,7 @@ import {
 } from "@wrapswap/types";
 import { Fees, RouteBadge } from "./components";
 import { Val } from "./app/ui";
-import { fixtures, mockResponse } from "./mocks/api";
+import { demoVariant, fixtures, mockResponse } from "./mocks/api";
 describe("route badges", () => {
   for (const route of [
     "PARITY",
@@ -43,14 +43,14 @@ for (const network of ["anvil", "unichain-sepolia"] as Network[])
       const html = renderToStaticMarkup(React.createElement(Fees, { fee }));
       expect(html).toContain("2 bps");
       expect(html).toContain("2.60 bps");
-      expect(html).toContain(DEMO.variants[network].parityFill.feeBps + " bps");
+      expect(html).toContain(demoVariant(network).parityFill.feeBps + " bps");
       expect(html.includes("NYSE closed: +10 bps off-hours premium")).toBe(
-        !DEMO.variants[network].marketOpen,
+        !demoVariant(network).marketOpen,
       );
     });
     it("quotes both token directions with exact canonical rounding", () => {
       const f = fixtures(network),
-        v = DEMO.variants[network];
+        v = demoVariant(network);
       const quote = mockResponse("quote", network) as { amountOut: string };
       expect(quote.amountOut).toBe(v.parityFill.amountOut.toString());
       const reverse = mockResponse(
