@@ -83,8 +83,12 @@ export async function scanDeposits(vault: Hex, fromBlock: bigint, toBlock: bigin
   return out;
 }
 
-const SETTLE_BASE_GAS = 300_000n;
-const SETTLE_GAS_PER_WITHDRAWAL = 600_000n;
+// settleWithdrawals gas, calibrated on 1301: 1.5x the highest gasUsed observed for a settlement. Every recorded
+// settlement is one withdrawal per tx, so the figure already includes the per-tx overhead:
+//   0x38c217b6fad1… 357,175 (conversion through the router, highest)   0x635b4c364390… 332,039 (final vault, conversion)
+//   0xf36e87ef15f5… 99,362 (final vault, direct)   0xb888dea98244… / 0xcb9c50d20d43… 308,222
+//   0x360d684d0c3f… used an *estimated* limit of 311,639 and its withdrawal was skipped (inner try/catch out of gas).
+export const SETTLE_GAS_PER_WITHDRAWAL = 535_763n; // ceil(1.5 * 357_175)
 
 export type SettlementResult = {
   txHash: Hex;
@@ -102,7 +106,7 @@ export async function settle(
   // Explicit gas: every withdrawal runs inside try/catch, so the outer call never reverts and eth_estimateGas settles
   // on a limit where a conversion runs out of gas and is *skipped* (observed on 1301: WithdrawalSkipped with
   // FailedInnerCall). A conversion through the router costs ~350k; give each withdrawal ample headroom.
-  const gas = SETTLE_BASE_GAS + SETTLE_GAS_PER_WITHDRAWAL * BigInt(ws.length);
+  const gas = SETTLE_GAS_PER_WITHDRAWAL * BigInt(ws.length);
   const txHash = await withNonceRetry(() =>
     wc.writeContract({
       address: vault,
