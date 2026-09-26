@@ -4,6 +4,7 @@ import { Mark, ThemeToggle } from "../brand";
 import { explorerUrl } from "@wrapswap/types";
 import { Diagram } from "./Diagram";
 import { Halftone } from "./Halftone";
+import { OnePrice } from "./OnePrice";
 import {
   EXPLORER,
   NETWORK_NAME,
@@ -207,6 +208,8 @@ function Landing() {
           </div>
         </div>
       </section>
+
+      <OnePrice />
 
       <section className="black how" id="how-it-works">
         <h2>How it works</h2>

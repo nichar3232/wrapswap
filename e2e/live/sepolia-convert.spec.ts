@@ -34,7 +34,7 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
   const [baseBefore, quoteBefore] = [await balance(base.address), await balance(quote.address)];
   const q = await api(`/quote?tokenIn=${base.address}&tokenOut=${quote.address}&amount=${DEMO.parityFill.amountIn}&kind=exactIn`, 'QuoteResponse');
 
-  await page.goto(webURL);
+  await page.goto(webURL+'/app');
   await page.getByRole('button', { name: 'Convert', exact: true }).click();
   await page.getByRole('button', { name: /connect wallet/i }).click();
   await page.getByLabel('Conversion amount').fill(formatUnits(DEMO.parityFill.amountIn, base.decimals));

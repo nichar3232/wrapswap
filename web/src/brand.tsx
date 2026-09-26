@@ -53,7 +53,10 @@ export function ThemeToggle() {
     <button
       type="button"
       className="theme-toggle"
-      aria-label={`Switch to ${next} theme`}
+      // The label never names a theme: e2e selects the Dark Cross tab with /dark/i.
+      aria-label="Toggle color theme"
+      aria-pressed={theme === "dark"}
+      title={`Switch to ${next} theme`}
       onClick={() => setTheme(next)}
     >
       {theme === "light" ? (
