@@ -2,7 +2,7 @@
 # Native live-network stack (default NETWORK=unichain-sepolia, chainId 1301; USE_MOCKS=false): its own Postgres
 # container plus indexer, API, crank and web in the detached tmux session "wrapswap-live" (one window each).
 # Web is the production build (dist/web) served by scripts/dev/serve-web.mjs, never the Vite dev server; it proxies
-# /api, /crank and /rpc with a per-IP rate limit, so one port (13010) covers the whole app for Tailscale Funnel.
+# /api, /crank, /rpc and /mcp with a per-IP rate limit, so one port (13010) covers the whole app for Tailscale Funnel.
 # Secrets (DEMO_MNEMONIC, CRANK_PRIVATE_KEY, optional UNICHAIN_SEPOLIA_RPC_URL) come from LIVE_ENV; public
 # externals from scripts/dev/$NETWORK.env. Ports: web 13010, API 18010, crank 18110, Postgres 15410.
 # Stop with scripts/dev/live-down.
@@ -44,6 +44,8 @@ sleep 5
 start api 'pnpm dev:api'
 start crank 'pnpm dev:crank'
 start web 'node scripts/dev/serve-web.mjs'
+# Unison MCP server (Streamable HTTP, stateless) behind /mcp; reads only the public API through the funnel.
+start mcp 'pnpm --dir packages/mcp start:http'
 sleep 3; rm -f "$envfile"
 for kind in api crank web; do
   for i in $(seq 90); do node scripts/dev/health.mjs $kind 2>/dev/null && break; sleep 2; done
