@@ -7,7 +7,7 @@ Pinned upstream (the compatible pair we built against; see [Dependency pins](#7-
 - v4-core `46c6834698c48bc4a463a86d8420f4eb1d7f3b75` (package 1.0.2)
 - v4-periphery `9969eec44cfdf07e24b41de47f40276a58401976` (package 1.0.4)
 
-Conventions in this file: upstream code is linked by pinned permalink. WrapSwap code is cited as `{{LINE:Contract.function(argTypes)}}`; the deployment step resolves these to GitHub line links. Design decisions are cited as "DECISIONS.md: <entry>". Each item has three parts: **What happened** (what we actually hit), **Where** (the exact API or file), and **Suggested fix**.
+Conventions in this file: upstream code is linked by pinned permalink. WrapSwap code is cited by double-brace `LINE:Contract.function(argTypes)` placeholders; the deployment step resolves these to GitHub line links. Design decisions are cited as "DECISIONS.md: <entry>". Each item has three parts: **What happened** (what we actually hit), **Where** (the exact API or file), and **Suggested fix**.
 
 ---
 
