@@ -68,7 +68,11 @@ for (const a of m.assets) {
   const key = await read(dark, 'parityPoolKey');
   if (poolId(key).toLowerCase() !== a.pool.toLowerCase()) throw Error(`${a.symbol}: DarkCrossHook pool key does not hash to ${a.pool}`);
   if (hexToString(await read(dark, 'asset'), { size: 32 }).replace(/\0+$/, '') !== a.symbol) throw Error(`${a.symbol}: DarkCrossHook.asset() mismatch`);
-  const logs = await client.getLogs({ address: poolManager, event: initialize, args: { id: a.pool }, fromBlock: deployBlock, toBlock: 'latest' });
+  // Public RPCs cap eth_getLogs at 10,000 blocks; Initialize is near the deploy block, so scan forward in windows.
+  const head = await client.getBlockNumber();
+  let logs: Awaited<ReturnType<typeof client.getLogs<typeof initialize>>> = [];
+  for (let from = BigInt(deployBlock); !logs.length && from <= head; from += 9000n)
+    logs = await client.getLogs({ address: poolManager, event: initialize, args: { id: a.pool }, fromBlock: from, toBlock: from + 8999n < head ? from + 8999n : head });
   if (!logs.length) throw Error(`${a.symbol}: no Initialize event for pool ${a.pool} since the deploy block`);
   const [base, quote, oracle, batchOrigin, batchBlocks, commitBlocks, revealBlocks] = await Promise.all(
     ['baseToken', 'quoteToken', 'oracle', 'batchOrigin', 'BATCH_BLOCKS', 'COMMIT_BLOCKS', 'REVEAL_BLOCKS'].map((f) => read(dark, f)));
