@@ -6,11 +6,11 @@
 import { EncryptedObject } from '@mysten/seal';
 import { isAddress, type Hex } from 'viem';
 import { SEAL_THRESHOLD, execute, loadKeypair, sealClient, sessionKeyFor, suiClient, walrusGet, walrusPut, type Client } from './lib.js';
-import { applyBatchTx, readBatch, readPool, rootWithReceiptTx, sealApproveBatchTx, type BatchState, type EnvelopeState } from './chain.js';
+import { applyBatchTx, pauseTx, readBatch, readPool, rootWithReceiptTx, sealApproveBatchTx, type BatchState, type EnvelopeState } from './chain.js';
 import { buildManifest, commitmentOf, decodeJson, encodeJson, leafIdentity, normalizeSuiAddress, type Instruction, type Leaf, type Manifest } from './protocol.js';
 import { loadDeployment, type Deployment } from './config.js';
 import { loadState, log, saveState, type KeeperState } from './state.js';
-import { publicClient, scanDeposits, settle } from './evm.js';
+import { publicClient, scanDeposits, settle, vaultReserves } from './evm.js';
 
 const PIPS = 1_000_000n;
 /** Covers the share value of one raw unit of rounding on each side of a conversion (6-decimal tokens: ~1e12). */
@@ -109,6 +109,14 @@ export class Keeper {
     for (const ev of events) {
       const key = `evm:${evm.chainId}:${ev.txHash}:${ev.logIndex}`;
       if (this.state.credited.includes(key)) continue;
+      // Solvency: never credit past what ShareVault custodies (Sui total_shares <= vault shares held).
+      const { held } = await vaultReserves(evm.shareVault);
+      const after = BigInt(this.state.total) + ev.shares;
+      if (after > held) {
+        log(this.state, 'invariant.credit_refused', { evmTx: ev.txHash, shares: ev.shares.toString(), wouldBe: after.toString(), held: held.toString() });
+        saveState(this.state);
+        return receipts; // retried next tick; the cursor does not advance past it
+      }
       const owner = normalizeSuiAddress(ev.suiRecipientTag);
       this.add(owner, ev.shares);
       this.state.total = (BigInt(this.state.total) + ev.shares).toString();
@@ -311,7 +319,21 @@ export class Keeper {
     return { step: 'settle+debit_withdrawal', sui: t.digest, evm: res.txHash, walrus: manifestBlob, detail: { debited: debited.toString(), outcomes } };
   }
 
-  /** One pass: attest deposits, apply a closed window, settle its withdrawals. */
+  /** Solvency invariant: Sui total_shares <= ShareVault shares held. Pauses the pool (no new sends) while it is
+   *  broken and resumes it once custody covers the total again. */
+  async enforceSolvency(): Promise<Receipt | null> {
+    const evm = this.dep.evm;
+    if (!evm) return null;
+    const [pool, { held }] = await Promise.all([readPool(this.client, this.dep.sui.poolId), vaultReserves(evm.shareVault)]);
+    const solvent = pool.totalShares <= held;
+    if (solvent === !pool.paused) return null;
+    const t = await execute(this.client, this.kp, pauseTx(this.dep.sui.packageId, this.dep.sui.poolId, this.dep.sui.operatorCapId, !solvent));
+    log(this.state, solvent ? 'invariant.restored_resume' : 'invariant.broken_pause', { suiTotal: pool.totalShares.toString(), held: held.toString(), sui: t.digest });
+    saveState(this.state);
+    return { step: solvent ? 'resume' : 'pause', sui: t.digest, detail: { suiTotal: pool.totalShares.toString(), held: held.toString() } };
+  }
+
+  /** One pass: attest deposits, apply a closed window, settle its withdrawals, check solvency. */
   async tick(): Promise<Receipt[]> {
     const out: Receipt[] = [];
     out.push(...(await this.creditDeposits()));
@@ -319,6 +341,8 @@ export class Keeper {
     if (applied) out.push(applied);
     const settled = await this.settlePending();
     if (settled) out.push(settled);
+    const solvency = await this.enforceSolvency();
+    if (solvency) out.push(solvency);
     return out;
   }
 }
