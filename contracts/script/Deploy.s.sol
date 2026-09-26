@@ -29,7 +29,7 @@ import {XStocksMultiplierAdapter} from "../src/adapters/XStocksMultiplierAdapter
 
 /// @title Deploy
 /// @notice Deploys the WrapSwap reframe (no seeding) and writes deployments/<network>.json in the INTERFACES.md §4
-///         shape. Network is derived from chainId: 31337 -> anvil, 84532 -> base-sepolia (NETWORK, if set, must agree).
+///         shape. Network is derived from chainId: 31337 -> anvil, 1301 -> unichain-sepolia (NETWORK, if set, must agree).
 ///
 /// Usage (two phases; forge simulates every broadcast at one block, so block numbers need a read-only pass):
 ///   DEPLOY_COMMIT=$(git rev-parse HEAD) forge script contracts/script/Deploy.s.sol \
@@ -43,8 +43,8 @@ import {XStocksMultiplierAdapter} from "../src/adapters/XStocksMultiplierAdapter
 /// Env: DEPLOY_COMMIT (required, 40 lowercase hex), DEPLOYED_AT (optional ISO-8601; default from block.timestamp),
 ///      DEMO_MNEMONIC (required off anvil; anvil default mnemonic on 31337), DEPLOYER_PK (optional, overrides index 0),
 ///      DEMO_MODE (required off anvil; default true on anvil),
-///      POOL_MANAGER, V4_QUOTER (required on base-sepolia; deployed locally on anvil),
-///      EAS, EAS_SCHEMA_UID, EAS_TRUSTED_ATTESTER (required on base-sepolia; optional on anvil),
+///      POOL_MANAGER, V4_QUOTER (required on unichain-sepolia; deployed locally on anvil),
+///      EAS, EAS_SCHEMA_UID, EAS_TRUSTED_ATTESTER (required on unichain-sepolia; optional on anvil),
 ///      EAS_INDEXER, POSITION_MANAGER, STATE_VIEW, PERMIT2, UNIVERSAL_ROUTER (optional; null when unset),
 ///      DEPLOY_FROM_BLOCK (optional, manifest() search lower bound; default the phase-1 startBlock).
 contract Deploy is Script {
@@ -79,8 +79,8 @@ contract Deploy is Script {
         address stateView;
         address permit2;
         address universalRouter;
-        address poolManager; // external on base-sepolia
-        address quoter; // external on base-sepolia
+        address poolManager; // external on unichain-sepolia
+        address quoter; // external on unichain-sepolia
     }
 
     struct Deployment {
@@ -173,8 +173,8 @@ contract Deploy is Script {
 
     function config() public view returns (Config memory c) {
         if (block.chainid == 31337) c.network = "anvil";
-        else if (block.chainid == 84532) c.network = "base-sepolia";
-        else revert("Deploy: unsupported chainId (31337 anvil, 84532 base-sepolia)");
+        else if (block.chainid == 1301) c.network = "unichain-sepolia";
+        else revert("Deploy: unsupported chainId (31337 anvil, 1301 unichain-sepolia)");
         c.anvil = block.chainid == 31337;
         string memory declared = vm.envOr("NETWORK", c.network);
         require(keccak256(bytes(declared)) == keccak256(bytes(c.network)), "Deploy: NETWORK disagrees with chainId");

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Read-only Base Sepolia smoke checks against deployments/base-sepolia.json.
+# Read-only Unichain Sepolia smoke checks against deployments/unichain-sepolia.json.
 # Env: RPC_URL. Checks code at every address, ParityHook flag bits, pool at parity, seeded inventory.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${RPC_URL:?}"
-m=deployments/base-sepolia.json
+m=deployments/unichain-sepolia.json
 fail=0
 ok() { printf 'PASS %s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1"; fail=1; }
-[[ $(cast chain-id --rpc-url "$RPC_URL") == 84532 ]] && ok 'chainId 84532' || bad 'chainId'
+[[ $(cast chain-id --rpc-url "$RPC_URL") == 1301 ]] && ok 'chainId 1301' || bad 'chainId'
 for a in $(jq -r '[.contracts[], .tokens[].address, .tokens[].adapter] | map(select(. != null)) | .[]' "$m"); do
   [[ $(cast code "$a" --rpc-url "$RPC_URL") != 0x ]] && ok "code $a" || bad "code $a"
 done

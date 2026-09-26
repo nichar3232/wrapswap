@@ -33,7 +33,7 @@ Decisions this report makes (the contracts lane should copy them into `decisions
   using the existing `PegGuardTripped` error (erratum E12). It also rejects `tickSpacing != 10`, using
   `UnsupportedPool`.
 - **D6.** `DarkCrossHook` holds no owner. Everything is fixed at construction: `parityPoolKey`, tokens, treasury.
-- **D7.** `Deploy.s.sol` stops importing `Addresses.sol`. Externals come from env with Base Sepolia defaults taken from
+- **D7.** `Deploy.s.sol` stops importing `Addresses.sol`. Externals come from env with Unichain Sepolia defaults taken from
   §4.
 - **D8.** Treasury proceeds from DarkCross (cross fees and forfeits) are credited to the treasury's escrow `available`
   balance. They are not transferred out inside `settle` (erratum E10).
@@ -186,7 +186,7 @@ Rules:
 - `totalPips ≤ 2500 < 1e6` passes `LPFeeLibrary.validate`.
 - Stored `slot0.lpFee` stays 0 for dynamic pools. The override is per-swap, which is the existing assertion at
   `ParityVault.t.sol:269-270`, kept in the rewrite.
-- If Base Sepolia has a protocol fee set, the effective swap fee is `protocolFee ⊕ lpFee`. `FallThrough.feePips`
+- If Unichain Sepolia has a protocol fee set, the effective swap fee is `protocolFee ⊕ lpFee`. `FallThrough.feePips`
   reports only the LP part (erratum E15).
 
 ### 1.2 `contracts/src/DarkCrossHook.sol` — REWRITE (L)
@@ -287,7 +287,7 @@ model, an in-contract EAS gate and forfeits redistributed to revealers. Target:
 |---|---|---|---|
 | `contracts/src/adapters/IIssuerAdapter.sol` (`:4-9`) | DELETE | The legacy interface (`token`, `sharesPerToken`, `paused`, `name`) is superseded by `IWrapperAdapter`. | L |
 | `contracts/src/adapters/StaticAdapter.sol` | REWRITE (S) | `StaticAdapter is IWrapperAdapter, Ownable`. Constructor `(token, bytes32 underlying, string name, uint256 spt, address owner)`; `tokenDecimals` is read once from `IERC20Metadata` and stored immutable. `setSharesPerToken` (`:19-22`) reverts `InvalidRatio(0)` on zero and emits `RatioUpdated(token, old, new)`. `setPaused` (`:24-26`) emits `AdapterPaused`. `health() = (paused, false, updatedAt)`, where `updatedAt` is the last set time. `ratio() = (spt, !paused)`. DELETE `MockAdapter` (`:29-31`). | L |
-| `contracts/src/adapters/B20Adapter.sol` | REWRITE → `B20MultiplierAdapter` (S) | `sharesPerToken()` reads `multiplier()` (existing `:20-22`) and reverts `InvalidRatio` if 0 or above a sanity cap of `1e24`, i.e. one token equal to at most 1e6 shares. `paused` reads `IMockIssuerToken(token).transfersPaused()` instead of `pausedFeatures().length` (`:24-26`). The real B20 on chain 8453 is out of scope because the `Network` enum is anvil and base-sepolia only. `health() = (paused, false, uint64(block.timestamp))`; see erratum E8. `ratio()` returns `(spt, !paused && spt>0)` and does not revert, using try/catch on the token. `underlying()` and `tokenDecimals()` are immutable. `name() = "Coinbase B20"` (KEEP). | M |
+| `contracts/src/adapters/B20Adapter.sol` | REWRITE → `B20MultiplierAdapter` (S) | `sharesPerToken()` reads `multiplier()` (existing `:20-22`) and reverts `InvalidRatio` if 0 or above a sanity cap of `1e24`, i.e. one token equal to at most 1e6 shares. `paused` reads `IMockIssuerToken(token).transfersPaused()` instead of `pausedFeatures().length` (`:24-26`). The real B20 on chain 8453 is out of scope because the `Network` enum is anvil and unichain-sepolia only. `health() = (paused, false, uint64(block.timestamp))`; see erratum E8. `ratio()` returns `(spt, !paused && spt>0)` and does not revert, using try/catch on the token. `underlying()` and `tokenDecimals()` are immutable. `name() = "Coinbase B20"` (KEEP). | M |
 | NEW `contracts/src/adapters/XStocksMultiplierAdapter.sol` | NEW (S) | The same as B20 over an xStocks-shaped `multiplier()`. The §4 example lists mAAPLx as `XStocksMultiplier`. Share the code through `abstract contract MultiplierAdapterBase`. | L |
 
 ### 1.7 Mocks
@@ -512,7 +512,7 @@ Every conversion and the direction it must round:
     visible.
   - `EASEligibility.t.sol::testFuzz_resolveSwapper`
 
-### S10 (additional). Pool-init front-run on Base Sepolia — severity: Medium
+### S10 (additional). Pool-init front-run on Unichain Sepolia — severity: Medium
 
 - **Sketch:** the PoolKey is predictable once the hook is deployed. An attacker initialises it first at an off-parity
   `sqrtPriceX96`. `Deploy.s.sol`'s initialize then reverts `PoolAlreadyInitialized`, and every fall-through trips the
@@ -533,29 +533,29 @@ Every conversion and the direction it must round:
 
 Current state:
 
-- `Deploy.s.sol:52-104` targets chain 8453/84532 through `Addresses.forChain` and reverts on 31337.
+- `Deploy.s.sol:52-104` targets chain 8453/1301 through `Addresses.forChain` and reverts on 31337.
 - It deploys `CanonicalStock` (`:66`), two vault/issuer pools with `tickSpacing 60` (`:89-90`, `:126`) and a USDC
   lit pool (`:91`, `:96`).
 - It initialises pools through the PositionManager (`:92-96`) with an imprecise `_sqrtFor` (`:131-134`).
-- It writes a legacy JSON shape (`:162-208`) to `deployments/local.json` / `base-sepolia.json` (`:207`).
+- It writes a legacy JSON shape (`:162-208`) to `deployments/local.json` / `unichain-sepolia.json` (`:207`).
 
 Required rewrite (M-L):
 
 1. **Network and externals.**
-   - `NETWORK` env is `anvil` or `base-sepolia`. Assert `anvil ⇔ chainid 31337` and `base-sepolia ⇔ 84532`, else
+   - `NETWORK` env is `anvil` or `unichain-sepolia`. Assert `anvil ⇔ chainid 31337` and `unichain-sepolia ⇔ 1301`, else
      revert.
    - Drop `import "./Addresses.sol"` (`:4`). Read externals from env with `vm.envOr` defaults:
      `POOL_MANAGER`, `POSITION_MANAGER`, `STATE_VIEW`, `V4_QUOTER`, `UNIVERSAL_ROUTER`, `PERMIT2`, `EAS`,
      `EAS_INDEXER`, `EAS_SCHEMA_UID`, `EAS_TRUSTED_ATTESTER`.
-   - Base Sepolia defaults are the §4 placeholder values, which match `Addresses.sol:30-34`. The trusted attester
+   - Unichain Sepolia defaults are the §4 placeholder values, which match `Addresses.sol:30-34`. The trusted attester
      defaults to `0x357458739F90461b99789350868CD7CF330Dd7EE`.
    - **Verify `EAS_SCHEMA_UID`.** `Deploy.s.sol:39` hardcodes `0xf8b05c79…0de9`, which I believe is Coinbase's
-     *Verified Account* schema, not *Verified Country*. The value must come from env and be checked on BaseScan
+     *Verified Account* schema, not *Verified Country*. The value must come from env and be checked on Uniscan
      before the demoMode-off test.
    - On anvil every nullable external is `null`. **Deploy locally:** `new PoolManager(deployer)`,
      `new V4Quoter(pm)` (periphery `src/lens/V4Quoter.sol`, pragma `^0.8.0`, compiles under 0.8.26),
      `new PoolSwapTest(pm)`, `new PoolModifyLiquidityTest(pm)`.
-   - On Base Sepolia deploy `PoolSwapTest` and `PoolModifyLiquidityTest` against the canonical PoolManager.
+   - On Unichain Sepolia deploy `PoolSwapTest` and `PoolModifyLiquidityTest` against the canonical PoolManager.
 2. **Accounts.**
    - `DEMO_MNEMONIC` via `vm.deriveKey(mnemonic, i)` for i = 0..4. Default is the anvil test mnemonic, but only when
      chainid is 31337.
@@ -790,7 +790,7 @@ and asserted:
   fee `46575000000000000`, out `101203425000000000000`) and Step 2 (cross, residual 447 pips). End state: demo
   400 / 601.203425, A escrow `60720161625000000000`, B escrow `49975000`, hook fees `51100875000000000`. `skewX18`
   sign flips with ordering.
-- `test_section10_baseSepolia_mcbC0` / `test_section10_baseSepolia_maaplxC0`: warp to Sat `1790424000`, closed.
+- `test_section10_unichainSepolia_mcbC0` / `test_section10_unichainSepolia_maaplxC0`: warp to Sat `1790424000`, closed.
   1460 / 1447 pips. End state per §10: `60710036625000000000`, `162475875000000000`.
 
 `Deploy.t.sol` (runs `Deploy.run()` against an in-process chain with `NETWORK=anvil`):
@@ -836,7 +836,7 @@ and asserted:
   {zeroForOne, amountSpecified: ±amt, sqrtPriceLimitX96: MIN+1/MAX−1}, {false,false}, encodeParityHookData({swapper:
   user, attestationUid}))`. The current code passes `"0x"` at `web/src/main.tsx:417`, which makes the router the
   swapper.
-- **Base Sepolia path:** `ERC20.approve(PERMIT2, max)` once, then `Permit2.approve(token, UR, amt, expiry)` (or a
+- **Unichain Sepolia path:** `ERC20.approve(PERMIT2, max)` once, then `Permit2.approve(token, UR, amt, expiry)` (or a
   signed `PERMIT2_PERMIT` command), then UR `execute(V4_SWAP: SWAP_EXACT_IN_SINGLE|SWAP_EXACT_OUT_SINGLE with hookData
   v1, SETTLE_ALL, TAKE_ALL)`, with min-out/max-in from `/route`.
 - The quote source is `/route`, which wraps `/quote`. Exact-out is now supported.
@@ -942,12 +942,12 @@ Dependencies: T1 → T8, T9. T3, T4 → T5 → T8. T6, T7 → T8. T8 → T9 → 
     lane's write set.
   - Fix: allow a two-phase Deploy (`run()` then `manifest()`, D9); specify `DEPLOY_COMMIT`/`DEPLOYED_AT` env; assign
     `foundry.toml` (read access to `./broadcast`) and `Addresses.sol` to the contracts lane.
-- **E6. The §10 Base-Sepolia variant is reproducible only under unstated preconditions.**
+- **E6. The §10 Unichain-Sepolia variant is reproducible only under unstated preconditions.**
   - The numbers are arithmetically correct. I recomputed all of them, and the contracts produce them.
   - They hold only (a) while `isOpen` is false: now through Mon 2026-09-28 13:30 UTC, about 49 h from today, or any
     later closed window, which gives identical numbers because the fee depends only on `open`; (b) on a fresh
     deployment with no third-party swaps, deposits or commits before or between the steps, since the pool is
-    permissionless under demoMode; and (c) with scripted, not human, dark steps, because Base Sepolia has 2 s blocks.
+    permissionless under demoMode; and (c) with scripted, not human, dark steps, because Unichain Sepolia has 2 s blocks.
     COMMIT is 24 s, **REVEAL is 12 s**, and the whole batch is 40 s.
   - Also: the machine-readable `skewX18` values assume mcbAAPL is currency0, but the realised Sepolia ordering is
     unknown until deploy, and the JSON has no ordering flag.
@@ -983,7 +983,7 @@ Dependencies: T1 → T8, T9. T3, T4 → T5 → T8. T6, T7 → T8. T8 → T9 → 
   - Problem: `abi.decode` of `uint8` with dirty high bits panics rather than reverting `InvalidHookData`.
   - Fix: specify "any decode failure ⇒ `InvalidHookData()`". The implementation reads words manually.
 - **E15. `FallThrough.feePips` excludes the protocol fee (§1.7).** Fix: document it as the LP fee only; the effective
-  fee can be higher if the PoolManager protocol fee is non-zero on Base Sepolia.
+  fee can be higher if the PoolManager protocol fee is non-zero on Unichain Sepolia.
 - **E16. The settle-time mid is chosen by whoever settles (§1.8).** Fix, optional: `settle` reverts (a new error, or
   reuse `OracleStale`) if `|mid − parity(adapters)| > PEG_GUARD_BPS`. This bounds oracle abuse to the peg band.
 - **E17. Revert-shape clarity (§5 `/route` step 4).** Fix: say that `PegGuardTripped` arrives wrapped, as

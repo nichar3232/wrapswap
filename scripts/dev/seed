@@ -18,7 +18,7 @@ app() {
   if [[ $NETWORK == anvil ]]; then
     docker compose run --rm --no-deps -e NETWORK="$NETWORK" -e RPC_URL="$RPC_URL" api "$@"
   else
-    docker run --rm -e NETWORK -e RPC_URL -e DEMO_MNEMONIC -v "$PWD/deployments:/app/deployments:ro" "${COMPOSE_PROJECT_NAME}-app" "$@"
+    "$@"
   fi
 }
 dark=$(app node --input-type=module -e 'import fs from "node:fs";console.log(JSON.parse(fs.readFileSync(`deployments/${process.env.NETWORK}.json`)).contracts.darkCrossHook)')
@@ -33,8 +33,8 @@ if [[ $NETWORK == anvil ]]; then
   cast rpc --rpc-url "$RPC_URL" evm_mine >/dev/null
 fi
 run 'run()'
-# On Base Sepolia fund escrow first so only the two commit txs must land inside the commit window.
-if [[ $NETWORK == base-sepolia ]]; then run 'fundEscrow()'; fi
+# On Unichain Sepolia fund escrow first so only the two commit txs must land inside the commit window.
+if [[ $NETWORK == unichain-sepolia ]]; then run 'fundEscrow()'; fi
 phase() { cast call "$dark" 'currentBatch()(uint256,uint8,uint256)' --rpc-url "$RPC_URL"; }
 # Start at a new COMMIT phase with enough room for all six funding/commit txs.
 for ((i=0;i<180;i++)); do
@@ -45,17 +45,40 @@ for ((i=0;i<180;i++)); do
   if [[ $NETWORK == anvil ]]; then cast rpc --rpc-url "$RPC_URL" anvil_mine 1 >/dev/null; else sleep 1; fi
 done
 [[ $p == 0 ]] && ((end-head >= 8)) || { echo 'No usable commit phase in 180 attempts' >&2; exit 1; }
-run 'commit()'
+if [[ $NETWORK == unichain-sepolia ]]; then
+  # 1 s blocks leave a 12 s commit / 6 s reveal window: send the two counterparties' txs concurrently with cast
+  # (forge script's simulate + --slow is too slow). Same orders as SeedDemo.commit()/reveal().
+  manifest=deployments/$NETWORK.json
+  base=$(jq -r .dark.baseToken "$manifest"); quote=$(jq -r .dark.quoteToken "$manifest")
+  order() { # i -> sell amount limit token
+    if [[ $1 == 2 ]]; then echo "true 60000000 1010000000000000000 $base"; else echo "false 50625000000000000000 1015000000000000000 $quote"; fi
+  }
+  pk() { cast wallet private-key --mnemonic "$DEMO_MNEMONIC" --mnemonic-index "$1"; }
+  for i in 2 3; do
+    read -r sell amount limit token <<<"$(order $i)"
+    trader=$(cast wallet address --private-key "$(pk $i)")
+    salt=$(cast to-uint256 "$i")
+    h=$(cast call "$dark" 'commitHashOf(uint256,address,bool,uint256,uint256,bool,bytes32)(bytes32)' "$batch" "$trader" "$sell" "$amount" "$limit" "$sell" "$salt" --rpc-url "$RPC_URL")
+    cast send "$dark" 'commit(bytes32,address,uint256,bytes32)' "$h" "$token" "$amount" 0x0000000000000000000000000000000000000000000000000000000000000000 --private-key "$(pk $i)" --rpc-url "$RPC_URL" >/dev/null &
+  done
+  wait
+else
+  run 'commit()'
+fi
 printf '%s\n' "$batch" > "logs/integration/batch-$NETWORK"
-if [[ $NETWORK == base-sepolia ]]; then
+if [[ $NETWORK == unichain-sepolia ]]; then
   # The crank never reveals. Reveal as the two counterparties before leaving settlement to it.
   for ((i=0;i<180;i++)); do
     state=$(phase); p=$(awk 'NR==2{print $1}' <<<"$state")
     [[ $p == 1 ]] && break
-    sleep 1
+    sleep 0.3
   done
   [[ $p == 1 ]] || { echo 'Missed reveal window' >&2; exit 1; }
-  run 'reveal()'
+  for i in 2 3; do
+    read -r sell amount limit token <<<"$(order $i)"
+    cast send "$dark" 'reveal(bool,uint256,uint256,bool,bytes32)' "$sell" "$amount" "$limit" "$sell" "$(cast to-uint256 "$i")" --private-key "$(pk $i)" --rpc-url "$RPC_URL" >/dev/null &
+  done
+  wait
 else
   timestamp=1790692200
   [[ ${SEED_VARIANT:-ANVIL} != NYSE-CLOSED ]] || timestamp=1791037800

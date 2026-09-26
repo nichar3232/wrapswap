@@ -22,7 +22,7 @@ interface ISeedLiquidityRouter {
 }
 
 /// @notice Only frozen project interfaces; never instantiates or imports component implementations.
-/// @dev RPC phase/time orchestration lives in scripts/dev/seed. No vm.warp on Base Sepolia.
+/// @dev RPC phase/time orchestration lives in scripts/dev/seed. No vm.warp on Unichain Sepolia.
 contract SeedDemo is Script {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -39,7 +39,7 @@ contract SeedDemo is Script {
     function load() internal {
         string memory network = vm.envString("NETWORK");
         bool local = keccak256(bytes(network)) == keccak256("anvil");
-        require(local ? block.chainid == 31337 : keccak256(bytes(network)) == keccak256("base-sepolia") && block.chainid == 84532, "network/chain mismatch");
+        require(local ? block.chainid == 31337 : keccak256(bytes(network)) == keccak256("unichain-sepolia") && block.chainid == 1301, "network/chain mismatch");
         mnemonic = vm.envString("DEMO_MNEMONIC");
         json = vm.readFile(string.concat("deployments/", network, ".json"));
         dark = IDarkCrossHook(a(".contracts.darkCrossHook"));
@@ -78,7 +78,7 @@ contract SeedDemo is Script {
         parity.setKeeper(owner, true);
         eligibility.setTrustedRouter(a(".contracts.swapRouter"), true);
         eligibility.setTrustedRouter(address(dark), true);
-        // Base Sepolia gas is ~0.006 gwei; a smaller top-up keeps a lightly funded deployer able to seed.
+        // Unichain Sepolia gas is ~0.006 gwei; a smaller top-up keeps a lightly funded deployer able to seed.
         uint256 topUpWei = vm.envOr("SEED_GAS_TOPUP_WEI", uint256(0.01 ether));
         for (uint32 i = 1; i <= 4; ++i) {
             address who = account(i);
@@ -108,7 +108,7 @@ contract SeedDemo is Script {
         ISeedLiquidityRouter(router).modifyLiquidity(key, ModifyLiquidityParams(lower, upper, int256(uint256(liquidity)), LP_SALT), "");
         vm.stopBroadcast();
     }
-    /// @dev Phase-independent escrow funding, so commit() needs only the two commit txs (Base Sepolia's
+    /// @dev Phase-independent escrow funding, so commit() needs only the two commit txs (Unichain Sepolia's
     ///      12-block commit window is ~24 s).
     function fundEscrow() external {
         load();

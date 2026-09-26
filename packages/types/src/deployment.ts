@@ -1,14 +1,14 @@
 import type { Deployment, Network } from "./generated/schemas.js";
 import { assertDeployment } from "./generated/validators.js";
 
-export const NETWORKS = ["anvil", "base-sepolia"] as const satisfies readonly Network[];
-export const CHAIN_IDS = { anvil: 31337, "base-sepolia": 84532 } as const satisfies Record<Network, number>;
+export const NETWORKS = ["anvil", "unichain-sepolia"] as const satisfies readonly Network[];
+export const CHAIN_IDS = { anvil: 31337, "unichain-sepolia": 1301 } as const satisfies Record<Network, number>;
 
 /** Repo-relative path of a network's deployment file: deployments/${NETWORK}.json. */
 export const deploymentPath = (network: Network) => `deployments/${network}.json` as const;
 
 export function parseNetwork(value: string | undefined): Network {
-  if (value === "anvil" || value === "base-sepolia") return value;
+  if (value === "anvil" || value === "unichain-sepolia") return value;
   throw new Error(`NETWORK must be one of ${NETWORKS.join(", ")} (got ${JSON.stringify(value)})`);
 }
 

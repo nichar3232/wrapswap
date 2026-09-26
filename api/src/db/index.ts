@@ -7,7 +7,7 @@ export async function migrate(d: Deployment, down = false, pool = db) {
   const c = await pool.connect();
   try {
     await c.query("BEGIN");
-    await c.query("SELECT pg_advisory_xact_lock(84532026)");
+    await c.query("SELECT pg_advisory_xact_lock(1301026)");
     if (down)
       await c.query(
         readFileSync(new URL("./down.sql", import.meta.url), "utf8"),

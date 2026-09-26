@@ -81,11 +81,11 @@ completed seed marker to mutate a live seed. Scenario tests reset the snapshot a
 apply the same mutations directly through shared ABIs. The fall-through test uses
 1 mcbAAPL to remain inside the LP peg guard.
 
-For Base Sepolia, first obtain the deployment owner's conforming manifest and build
+For Unichain Sepolia, first obtain the deployment owner's conforming manifest and build
 the app image (`source scripts/dev/env; docker compose build api`). Then:
 
 ```sh
-NETWORK=base-sepolia RPC_URL="$BASE_SEPOLIA_RPC" \
+NETWORK=unichain-sepolia RPC_URL="$UNICHAIN_SEPOLIA_RPC" \
   DEMO_MNEMONIC="$PRIVATE_DEMO_MNEMONIC" DEPLOYER_PK="$PRIVATE_DEPLOYER_PK" \
   scripts/dev/seed
 ```
@@ -93,7 +93,7 @@ NETWORK=base-sepolia RPC_URL="$BASE_SEPOLIA_RPC" \
 The deployer must be mnemonic index 0, with enough gas to fund indices 1–4 to 0.01 ETH.
 The script uses the real clock, waits for a usable commit phase, commits and reveals
 as indices 2/3, and leaves settlement to the live crank. It never writes the committed
-Base Sepolia manifest. It has **not been broadcast on Sepolia**. Exact §10 live residual
+Unichain Sepolia manifest. It has **not been broadcast on Sepolia**. Exact §10 live residual
 numbers require the conversion to precede settlement; see CR-1.
 
 ## Video timeline (ANVIL)
@@ -152,7 +152,7 @@ legacy narrative belongs to submission (`rg -n 'USDC|uAAPL' README.md submission
 Passed: both NETWORK builds of SeedDemo, full forge build, image build, Compose config,
 Anvil/Postgres health, shell syntax, integration TypeScript checking, discovery of five
 Playwright cases. Commands: `NETWORK=anvil forge build contracts/script/SeedDemo.s.sol`;
-`NETWORK=base-sepolia forge build contracts/script/SeedDemo.s.sol`; `forge build`;
+`NETWORK=unichain-sepolia forge build contracts/script/SeedDemo.s.sol`; `forge build`;
 `source scripts/dev/env; docker compose build; docker compose config --quiet`;
 `pnpm exec tsc -p e2e/tsconfig.json`; `npx playwright test e2e --list`.
 

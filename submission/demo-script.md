@@ -1,12 +1,12 @@
 # WrapSwap demo video script — 3:00 hard cap
 
-Placeholders used in this file: `{{URL:web-live}}`, `{{URL:basescan-parityhook}}`, `{{URL:repo-readme-integrations}}`
+Placeholders used in this file: `{{URL:web-live}}`, `{{URL:uniscan-parityhook}}`, `{{URL:repo-readme-integrations}}`
 
 - **Length.** 3:00 total: Part A 0:00–2:20, Part B 2:20–3:00. ETHGlobal rejects videos under 2:00 or over 4:00. Don't speed up footage to fit.
 - **Voiceover.** Read it in your own voice; AI voiceovers are not allowed. The whole voiceover is 365 words, which is 2:26 at 150 wpm. Every block also fits its own slot at 150 wpm (tightest: B2, 44 words in 20 s = 17.6 s).
 - **Numbers.** Every on-screen number comes from INTERFACES.md §10:
   - Part A uses **Variant ANVIL**: NYSE OPEN, block warped to `1790692200` (Tue 2026-09-29 10:30 EDT).
-  - Part B uses **Variant BASE-SEPOLIA**: real clock, NYSE CLOSED Sat 2026-09-26 to Mon 2026-09-28 13:30 UTC.
+  - Part B uses **Variant UNICHAIN-SEPOLIA**: real clock, NYSE CLOSED Sat 2026-09-26 to Mon 2026-09-28 13:30 UTC.
   - If the app shows a different number, stop and re-seed. Don't narrate over a mismatch.
 - **Tokens.** Demo tokens are mocks with issuer-faithful decimals and multipliers:
   - `mcbAAPL` mocks Coinbase tokenized AAPL: 6 decimals, 1.0125 shares per token.
@@ -68,15 +68,15 @@ Start state: a fresh `scripts/dev/record-ready` stack, before any swap.
 
 ---
 
-## Part B — live Base Sepolia, Variant BASE-SEPOLIA (2:20–3:00)
+## Part B — live Unichain Sepolia, Variant UNICHAIN-SEPOLIA (2:20–3:00)
 
 Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote only**. Don't execute a swap on Sepolia before recording, or the skew moves and the numbers stop matching §10.
 
-### B1 · 2:20–2:30 — Verified hook on Basescan
+### B1 · 2:20–2:30 — Verified hook on Uniscan
 
-- **Screen:** `{{URL:basescan-parityhook}}` → Contract tab, green "verified" check, `beforeSwap` in the source.
-- **Voiceover (23 words):** "Same hook, live on Base Sepolia, verified. It gates swaps to non-US wallets via Coinbase's Verified Country attestation; testnet runs a demoMode bypass."
-- **Caption:** `ParityHook · Base Sepolia (84532) · verified · non-US gate: Coinbase Verified Country EAS (demoMode on for testnet)`
+- **Screen:** `{{URL:uniscan-parityhook}}` → Contract tab, green "verified" check, `beforeSwap` in the source.
+- **Voiceover (23 words):** "Same hook, live on Unichain Sepolia, verified. It gates swaps to non-US wallets via Coinbase's Verified Country attestation; testnet runs a demoMode bypass."
+- **Caption:** `ParityHook · Unichain Sepolia (1301) · verified · non-US gate: Coinbase Verified Country EAS (demoMode on for testnet)`
 
 ### B2 · 2:30–2:50 — Live quote, NYSE closed
 
@@ -108,8 +108,8 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 | A 60 mcbAAPL @1.0100, B 50.625 mAAPLx @1.0150, mid 1.0125 | shared | `dark.orders`, `dark.oracleMidX18` |
 | crossed 50 ↔ 50.625; A gets 50.5996875; B gets 49.975 | shared | `dark.crossedBase/crossedQuote`, `dark.crossOut` |
 | residual 10 mcbAAPL → 10.120474125 mAAPLx, 4.47 bps, min 10.1 | ANVIL | `variants.anvil.residual`, `dark.residual.minOut` |
-| 14.60 bps = 2.00 + 2.60 + 10.00, fee 0.147825, out 101.102175 | BASE-SEPOLIA | `variants.base-sepolia.parityFill` |
-| next open Mon 2026-09-28 13:30 UTC | BASE-SEPOLIA | `variants.base-sepolia.nextOpen = 1790602200` |
+| 14.60 bps = 2.00 + 2.60 + 10.00, fee 0.147825, out 101.102175 | UNICHAIN-SEPOLIA | `variants.unichain-sepolia.parityFill` |
+| next open Mon 2026-09-28 13:30 UTC | UNICHAIN-SEPOLIA | `variants.unichain-sepolia.nextOpen = 1790602200` |
 
 ## Technical claims in the voiceover → source
 

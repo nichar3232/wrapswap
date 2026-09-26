@@ -1,6 +1,6 @@
 CREATE TABLE indexer_deployments (
   chain_id        INTEGER PRIMARY KEY,
-  network         TEXT NOT NULL CHECK (network IN ('anvil', 'base-sepolia')),
+  network         TEXT NOT NULL CHECK (network IN ('anvil', 'unichain-sepolia')),
   identity        TEXT NOT NULL,             -- keccak256(deployCommit|startBlock|parityHook|darkCrossHook)
   deploy_commit   TEXT NOT NULL,
   start_block     NUMERIC(78,0) NOT NULL,

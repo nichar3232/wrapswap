@@ -1,6 +1,6 @@
 # ETHGlobal Tokyo 2026 — project submission draft
 
-Placeholders used in this file: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{{URL:basescan-parityhook}}`, `{{URL:basescan-darkcrosshook}}`, `{{URL:basescan-eligibility}}`, `{{URL:addr-parityhook}}`, `{{URL:addr-darkcrosshook}}`, `{{URL:addr-eligibility}}`, `{{URL:addr-registry}}`, `{{URL:addr-calendar}}`, `{{URL:addr-oracle}}`, `{{URL:addr-mcbaapl}}`, `{{URL:addr-maaplx}}`, `{{URL:feedback-md}}`
+Placeholders used in this file: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{{URL:uniscan-parityhook}}`, `{{URL:uniscan-darkcrosshook}}`, `{{URL:uniscan-eligibility}}`, `{{URL:addr-parityhook}}`, `{{URL:addr-darkcrosshook}}`, `{{URL:addr-eligibility}}`, `{{URL:addr-registry}}`, `{{URL:addr-calendar}}`, `{{URL:addr-oracle}}`, `{{URL:addr-mcbaapl}}`, `{{URL:addr-maaplx}}`, `{{URL:feedback-md}}`
 
 **About these fields.** The Hacker Dashboard form sits behind a login and the public event page returned HTTP 500 on 2026-09-26, so the exact form fields couldn't be fetched. The public [event details page](https://ethglobal.com/events/tokyo2026/info/details) confirms the dashboard asks for a title, a description and a repository link, lets you pick up to three partner prizes (each with an integration explanation and feedback), and requires disclosure of AI use. The fields below follow that plus the lane's fallback list. **Confirm the field names in the dashboard before pasting.**
 
@@ -32,7 +32,7 @@ WrapSwap is share-for-share conversion, no USDC leg. A Uniswap v4 hook, ParityHo
 
 Users only ever hold real issuer securities; shares are internal accounting. Swaps are gated to non-US users through the Coinbase Verified Country EAS attestation. On testnet, an owner-set `demoMode` bypasses the gate so anyone can try it, and that toggle is public on-chain.
 
-The closed-market fee is deliberate: the hook keeps quoting when NYSE is closed and prices the off-hours risk. On Base Sepolia this weekend, the same 100 mcbAAPL quote is 14.60 bps (101.102175 mAAPLx out), against 4.60 bps (101.203425 mAAPLx out) with the market open.
+The closed-market fee is deliberate: the hook keeps quoting when NYSE is closed and prices the off-hours risk. On Unichain Sepolia this weekend, the same 100 mcbAAPL quote is 14.60 bps (101.102175 mAAPLx out), against 4.60 bps (101.203425 mAAPLx out) with the market open.
 
 ## How it's made
 
@@ -55,7 +55,7 @@ The closed-market fee is deliberate: the hook keeps quoting when NYSE is closed 
 
 ## Tech stack
 
-Solidity 0.8.26, Foundry, Uniswap v4-core / v4-periphery (PoolManager, ERC-6909 claims, dynamic fees, PositionManager, Permit2, V4Quoter), Ethereum Attestation Service (Coinbase Verified Country), Base Sepolia, TypeScript, Node.js, viem, Postgres 16, React + Vite, Playwright.
+Solidity 0.8.26, Foundry, Uniswap v4-core / v4-periphery (PoolManager, ERC-6909 claims, dynamic fees, PositionManager, Permit2, V4Quoter), Ethereum Attestation Service (Coinbase Verified Country), Unichain Sepolia, TypeScript, Node.js, viem, Postgres 16, React + Vite, Playwright.
 
 ## AI usage (required disclosure)
 
@@ -67,20 +67,20 @@ The project was built with AI coding agents (Claude) working in parallel lanes a
 - Live demo: {{URL:web-live}}
 - Video: {{URL:video}}
 
-## Contract addresses (Base Sepolia, chain 84532)
+## Contract addresses (Unichain Sepolia, chain 1301)
 
 | Contract | Address | Explorer |
 |---|---|---|
-| ParityHook | {{URL:addr-parityhook}} | {{URL:basescan-parityhook}} |
-| DarkCrossHook | {{URL:addr-darkcrosshook}} | {{URL:basescan-darkcrosshook}} |
-| Eligibility (EAS) | {{URL:addr-eligibility}} | {{URL:basescan-eligibility}} |
+| ParityHook | {{URL:addr-parityhook}} | {{URL:uniscan-parityhook}} |
+| DarkCrossHook | {{URL:addr-darkcrosshook}} | {{URL:uniscan-darkcrosshook}} |
+| Eligibility (EAS) | {{URL:addr-eligibility}} | {{URL:uniscan-eligibility}} |
 | IssuerRegistry | {{URL:addr-registry}} | — |
 | NyseCalendar | {{URL:addr-calendar}} | — |
 | Mock price oracle | {{URL:addr-oracle}} | — |
 | mcbAAPL (mock Coinbase AAPL, 6 dec) | {{URL:addr-mcbaapl}} | — |
 | mAAPLx (mock xStocks AAPLx, 18 dec) | {{URL:addr-maaplx}} | — |
 
-Uniswap v4 PoolManager and periphery: the official Base Sepolia deployments listed in `deployments/base-sepolia.json`.
+Uniswap v4 PoolManager and periphery: the official Unichain Sepolia deployments listed in `deployments/unichain-sepolia.json`.
 
 ## Prize tracks
 

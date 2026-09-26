@@ -13,7 +13,7 @@ interface IPriceOracle {
 }
 
 /// @title IMockPriceOracle
-/// @notice Settable oracle used on anvil and Base Sepolia; only authorized pushers may set.
+/// @notice Settable oracle used on anvil and Unichain Sepolia; only authorized pushers may set.
 interface IMockPriceOracle is IPriceOracle {
     event PusherSet(address indexed pusher, bool allowed);
 

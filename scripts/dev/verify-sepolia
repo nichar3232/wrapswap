@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Verifies every contract created by the latest Deploy.s.sol broadcast on Base Sepolia (Etherscan v2 API).
-# Env: BASESCAN_API_KEY (Etherscan v2 key), RPC_URL.
+# Verifies every contract created by the latest Deploy.s.sol broadcast on Unichain Sepolia (Etherscan v2 API).
+# Env: ETHERSCAN_API_KEY (Etherscan v2 key), RPC_URL.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-: "${BASESCAN_API_KEY:?}" "${RPC_URL:?}"
-broadcast=broadcast/Deploy.s.sol/84532/run-latest.json
+: "${ETHERSCAN_API_KEY:?}" "${RPC_URL:?}"
+broadcast=broadcast/Deploy.s.sol/1301/run-latest.json
 declare -A src=(
   [PoolSwapTest]=lib/v4-core/src/test/PoolSwapTest.sol
   [PoolModifyLiquidityTest]=lib/v4-core/src/test/PoolModifyLiquidityTest.sol
@@ -28,7 +28,7 @@ while IFS=$'\t' read -r name address hash; do
   [[ $name == ParityHook ]] && data=${data:64}
   args=${data:$(( ${#initcode} - 2 ))}
   echo "== $name $address"
-  if forge verify-contract "$address" "${src[$name]}:$name" --chain 84532 --verifier etherscan \
-      --etherscan-api-key "$BASESCAN_API_KEY" --constructor-args "0x$args" --watch; then :; else failed=1; fi
+  if forge verify-contract "$address" "${src[$name]}:$name" --chain 1301 --verifier etherscan \
+      --etherscan-api-key "$ETHERSCAN_API_KEY" --constructor-args "0x$args" --watch; then :; else failed=1; fi
 done < <(jq -r '.transactions[] | select(.transactionType=="CREATE" or .transactionType=="CREATE2") | [.contractName, .contractAddress, .hash] | @tsv' "$broadcast")
 exit $failed

@@ -26,7 +26,7 @@ describe("route badges", () => {
       expect(html).toContain(route.startsWith("BLOCKED") ? "error" : "good");
     });
 });
-for (const network of ["anvil", "base-sepolia"] as Network[])
+for (const network of ["anvil", "unichain-sepolia"] as Network[])
   describe(network, () => {
     it("schema-valid fixtures for every mocked route", () => {
       const f = fixtures(network);
@@ -44,7 +44,7 @@ for (const network of ["anvil", "base-sepolia"] as Network[])
       expect(html).toContain("2.60 bps");
       expect(html).toContain(DEMO.variants[network].parityFill.feeBps + " bps");
       expect(html.includes("NYSE closed: +10 bps off-hours premium")).toBe(
-        network === "base-sepolia",
+        network === "unichain-sepolia",
       );
     });
     it("quotes both token directions with exact canonical rounding", () => {
