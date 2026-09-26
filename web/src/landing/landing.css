@@ -379,6 +379,127 @@ section[id] {
   color: var(--black-ink);
 }
 
+/* ---------- One price (illustrative chart under the hero) ---------- */
+.one-price {
+  padding-bottom: 32px;
+}
+.op-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.one-price h2 {
+  margin-bottom: 16px;
+}
+.op-sub {
+  margin: 0;
+  max-width: 36em;
+  color: var(--black-ink-soft);
+}
+.op-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.op-tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border: 1px solid var(--black-hairline);
+  color: var(--black-ink-soft);
+}
+.op-toggle {
+  display: inline-flex;
+  border: 1px solid var(--black-hairline);
+  border-radius: 999px;
+  padding: 3px;
+}
+.op-toggle button {
+  border: 0;
+  background: none;
+  color: var(--black-ink-soft);
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.op-toggle button[aria-pressed="true"] {
+  background: var(--black-ink);
+  color: #05070d;
+}
+.op-chart {
+  margin-top: 32px;
+  border-top: 1px solid var(--black-hairline);
+  border-bottom: 1px solid var(--black-hairline);
+}
+.op-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.op-grid {
+  stroke: var(--black-hairline);
+}
+.op-axis {
+  font: 400 11px var(--mono);
+  fill: var(--black-ink-soft);
+}
+.op-line {
+  fill: none;
+  stroke-width: 2;
+  transition: d 700ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.op-line.op-c {
+  stroke: #8fb0ff;
+}
+.op-line.op-x {
+  stroke: #f5b86b;
+}
+.op-line.op-nav {
+  stroke: var(--black-ink);
+  stroke-dasharray: 4 4;
+  stroke-width: 1.5;
+}
+.op-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--black-ink-soft);
+}
+.op-key {
+  display: inline-block;
+  width: 18px;
+  height: 2px;
+  margin-right: -6px;
+}
+.op-key.op-c {
+  background: #8fb0ff;
+}
+.op-key.op-x {
+  background: #f5b86b;
+}
+.op-key.op-nav {
+  background: repeating-linear-gradient(90deg, var(--black-ink) 0 4px, transparent 4px 8px);
+}
+.op-readout {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--black-ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  .op-line {
+    transition: none;
+  }
+}
+
 /* ---------- Architecture diagram (always on the black section) ---------- */
 .diagram {
   --dg-card: #0a0c12;

@@ -8,7 +8,8 @@ import {
   type Route,
   type Network,
 } from "@wrapswap/types";
-import { Fees, RouteBadge, ApiState } from "./components";
+import { Fees, RouteBadge } from "./components";
+import { Val } from "./app/ui";
 import { fixtures, mockResponse } from "./mocks/api";
 describe("route badges", () => {
   for (const route of [
@@ -87,30 +88,13 @@ it("fee curve boundary cases show zero skew and maximum closed fee", () => {
     expect(html.includes("off-hours premium")).toBe(!!closedPips);
   }
 });
-it("renders loading, error and empty states", () => {
-  expect(
-    renderToStaticMarkup(
-      React.createElement(ApiState, {
-        state: { loading: true },
-        label: "Fills",
-      }),
-    ),
-  ).toContain("Loading fills");
-  expect(
-    renderToStaticMarkup(
-      React.createElement(ApiState, {
-        state: { loading: false, error: "Offline" },
-        label: "Fills",
-      }),
-    ),
-  ).toContain('role="alert"');
-  expect(
-    renderToStaticMarkup(
-      React.createElement(ApiState, {
-        state: { loading: false, data: [] },
-        label: "Fills",
-        empty: true,
-      }),
-    ),
-  ).toContain("No fills yet");
+it("feed values render skeleton, unavailable or data, never raw errors", () => {
+  const html = (status: "loading" | "ok" | "stale" | "unavailable") =>
+    renderToStaticMarkup(React.createElement(Val, { status, children: "14.60 bps" }));
+  expect(html("loading")).toContain("skeleton");
+  expect(html("loading")).not.toContain("14.60");
+  expect(html("unavailable")).toContain("unavailable");
+  expect(html("unavailable")).not.toMatch(/error|syntax|http/i);
+  expect(html("ok")).toBe("14.60 bps");
+  expect(html("stale")).toBe("14.60 bps");
 });
