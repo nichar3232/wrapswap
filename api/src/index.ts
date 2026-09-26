@@ -14,6 +14,7 @@ await app.register(cors, {
 });
 await migrate(d);
 await routes(app, d);
+await (await import("./routes/pay.js")).payRoutes(app);
 await app.listen({
   port: Number(process.env.API_PORT),
   host: process.env.API_HOST ?? "127.0.0.1",

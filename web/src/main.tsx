@@ -156,6 +156,7 @@ function App() {
             {t}
           </button>
         ))}
+        <a className="nav-pay" href="/pay">Pay</a>
       </nav>
       <main id="main">
         <h1>share-for-share conversion, no USDC leg.</h1>
@@ -838,4 +839,4 @@ function Pool({ d }: { d: Deployment }) {
     </>
   );
 }
-createRoot(document.getElementById("root")!).render(<App />);
+if (location.pathname.startsWith("/pay")) import("./pay/PayApp").then((m) => m.mountPay(document.getElementById("root")!)); else createRoot(document.getElementById("root")!).render(<App />);

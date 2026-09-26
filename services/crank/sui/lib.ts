@@ -9,11 +9,12 @@ import { decodeSuiPrivateKey } from '@mysten/sui/cryptography';
 import { SealClient, SessionKey } from '@mysten/seal';
 import type { Transaction } from '@mysten/sui/transactions';
 
-// Seal testnet key servers, open mode, from docs.sui.io/sui-stack/seal/pricing (verified 2026-09-26).
+// Seal testnet key servers, open mode, from docs.sui.io/sui-stack/seal/pricing (verified 2026-09-26). All three
+// answer browser CORS preflights (Studio Mirai's open server does not, so it is not used).
 export const SEAL_SERVERS = [
   { name: 'mysten-testnet-1', objectId: '0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75', weight: 1 },
   { name: 'mysten-testnet-2', objectId: '0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8', weight: 1 },
-  { name: 'studio-mirai-open', objectId: '0x164ac3d2b3b8694b8181c13f671950004765c23f270321a45fdd04d40cccf0f2', weight: 1 },
+  { name: 'rubynodes-open', objectId: '0x6068c0acb197dddbacd4746a9de7f025b2ed5a5b6c1b1ab44dade4426d141da2', weight: 1 },
 ] as const;
 export const SEAL_THRESHOLD = 2;
 
