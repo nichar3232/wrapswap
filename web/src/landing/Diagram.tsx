@@ -10,9 +10,24 @@ import {
 } from "./diagramData";
 
 const ZONE_LABELS = {
-  unichain: "UNICHAIN SEPOLIA · UNISWAP v4",
-  sui: "SUI TESTNET · CONFIDENTIAL PAYMENTS",
+  unichain: ["UNISWAP v4"],
+  sui: ["CONFIDENTIAL PAYMENTS"],
 };
+
+/** Every edge dot uses this one duration and starts at 0s, so they all travel in lockstep. */
+const DOT_SECONDS = 2.6;
+
+function ZoneLabel({ lines, at }: { lines: string[]; at: [number, number] }) {
+  return (
+    <text className="dg-zone-label" x={at[0]} y={at[1]}>
+      {lines.map((line, i) => (
+        <tspan key={line} x={at[0]} dy={i === 0 ? 0 : 13}>
+          {line}
+        </tspan>
+      ))}
+    </text>
+  );
+}
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(
@@ -30,20 +45,11 @@ function useReducedMotion() {
 function NodeBox({ n }: { n: Node }) {
   const cx = n.x + n.w / 2,
     cy = n.y + n.h / 2;
-  // Baselines for kick / title / sub, centred as a block.
-  const [ky, ty, sy] = n.kick
-    ? n.sub
-      ? [cy - 15, cy + 4, cy + 21]
-      : [cy - 6, cy + 13, 0]
-    : n.sub
-      ? [0, cy - 3, cy + 14]
-      : [0, cy + 5, 0];
+  // The name alone, or with a small kicker above it, centred as a block.
+  const [ky, ty] = n.kick ? [cy - 7, cy + 15] : [0, cy + 6];
   const body = (
     <>
-      {n.accent && (
-        <rect className="dg-pulse" x={n.x - 5} y={n.y - 5} width={n.w + 10} height={n.h + 10} rx={12} />
-      )}
-      <rect className={n.accent ? "dg-box dg-accent" : "dg-box"} x={n.x} y={n.y} width={n.w} height={n.h} rx={8} />
+      <rect className={n.accent ? "dg-box dg-accent" : "dg-box"} x={n.x} y={n.y} width={n.w} height={n.h} rx={10} />
       {n.kick && (
         <text className="dg-kick" x={cx} y={ky} textAnchor="middle">
           {n.kick}
@@ -52,11 +58,6 @@ function NodeBox({ n }: { n: Node }) {
       <text className="dg-title" x={cx} y={ty} textAnchor="middle">
         {n.title}
       </text>
-      {n.sub && (
-        <text className="dg-sub" x={cx} y={sy} textAnchor="middle">
-          {n.sub}
-        </text>
-      )}
     </>
   );
   return n.href ? (
@@ -78,22 +79,19 @@ function NodeBox({ n }: { n: Node }) {
 }
 
 function Svg({ l, kind, reduced }: { l: Layout; kind: string; reduced: boolean }) {
-  const zone = (z: "unichain" | "sui") => l.nodes.filter((n) => n.zone === z && !n.group);
+  const zone = (z: "unichain" | "sui") => l.nodes.filter((n) => n.zone === z);
   const byId = Object.fromEntries(l.nodes.map((n) => [n.id, n]));
   const edges = (z: "unichain" | "sui") => l.edges.filter((e) => byId[e.from].zone === z);
-  const group = l.nodes.find((n) => n.group)!;
   const marker = `dg-arrow-${kind}`;
   const drawEdges = (z: "unichain" | "sui") =>
-    edges(z).map((e, i) => {
+    edges(z).map((e) => {
       const w = chipWidth(e.label);
       return (
         <g key={e.from + e.to} className="dg-edge">
           <path id={`dg-${kind}-${e.from}-${e.to}`} d={e.d} markerEnd={`url(#${marker})`} />
           {!reduced && (
-            // Hidden until its motion starts, so a delayed dot never flashes at the SVG origin.
-            <circle className="dg-dot" r={2.5} visibility="hidden">
-              <set attributeName="visibility" to="visible" begin={`${((i * 0.37) % 2).toFixed(2)}s`} />
-              <animateMotion dur={`${2.6 + (i % 4) * 0.4}s`} begin={`${((i * 0.37) % 2).toFixed(2)}s`} repeatCount="indefinite" path={e.d} />
+            <circle className="dg-dot" r={3}>
+              <animateMotion dur={`${DOT_SECONDS}s`} begin="0s" repeatCount="indefinite" path={e.d} />
             </circle>
           )}
           <rect className="dg-chip" x={e.mid[0] - w / 2} y={e.mid[1] - 8} width={w} height={16} rx={3} />
@@ -108,32 +106,23 @@ function Svg({ l, kind, reduced }: { l: Layout; kind: string; reduced: boolean }
       className={`dg-svg dg-${kind}`}
       viewBox={`0 0 ${l.width} ${l.height}`}
       role="group"
-      aria-label="Architecture: issuer tokens are normalized to shares and routed through WrapSwapRouter to the ParityHook or crossed in sealed batches by the DarkCrossHook, both settling on the Uniswap v4 PoolManager; on Sui, Unison Pay keeps encrypted balances and withdraws cross-issuer through the ShareVault on Unichain."
+      aria-label="Architecture: issuer tokens go through the WrapSwapRouter and are either filled instantly at share parity by the ParityHook or crossed in sealed batches by the DarkCrossHook, both settling on the Uniswap v4 PoolManager on Unichain; on Sui, Unison Pay holds private payment balances that deposit from and withdraw to issuer tokens."
     >
       <defs>
-        <marker id={marker} viewBox="0 0 6 6" refX="5.5" refY="3" markerWidth="6" markerHeight="6" orient="auto">
+        <marker id={marker} viewBox="0 0 6 6" refX="5.5" refY="3" markerWidth="4.5" markerHeight="4.5" orient="auto">
           <path d="M0,0 L6,3 L0,6 Z" className="dg-arrowhead" />
         </marker>
       </defs>
       <g className="dg-zone dg-zone-sui">
-        <rect className="dg-hit" x={0} y={0} width={kind === "wide" ? l.divider.x1 : l.width} height={kind === "wide" ? l.height : l.divider.y1} />
-        <text className="dg-zone-label" x={l.zoneLabels.sui[0]} y={l.zoneLabels.sui[1]}>
-          {ZONE_LABELS.sui}
-        </text>
+        <rect className="dg-hit" x={0} y={0} width={l.suiZone.w} height={l.suiZone.h} />
+        <ZoneLabel lines={ZONE_LABELS.sui} at={l.zoneLabels.sui} />
         {drawEdges("sui")}
         {zone("sui").map((n) => (
           <NodeBox key={n.id} n={n} />
         ))}
       </g>
-      <line className="dg-divider" {...l.divider} />
       <g className="dg-zone dg-zone-unichain">
-        <text className="dg-zone-label" x={l.zoneLabels.unichain[0]} y={l.zoneLabels.unichain[1]}>
-          {ZONE_LABELS.unichain}
-        </text>
-        <rect className="dg-group" x={group.x} y={group.y} width={group.w} height={group.h} rx={10} />
-        <text className="dg-group-label" x={group.x + 12} y={group.y + 16}>
-          ISSUER TOKENS
-        </text>
+        <ZoneLabel lines={ZONE_LABELS.unichain} at={l.zoneLabels.unichain} />
         {drawEdges("unichain")}
         {zone("unichain").map((n) => (
           <NodeBox key={n.id} n={n} />

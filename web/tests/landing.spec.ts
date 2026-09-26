@@ -32,10 +32,12 @@ test("Landing: Unison brand, proof from deployment, Launch app", async ({
       proof.getByText("Deployment addresses are being published."),
     ).toBeVisible();
   }
-  await page.getByRole("button", { name: "Toggle color theme" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  // The landing page has no theme toggle and always renders light, even with a stored dark preference.
+  await expect(page.getByRole("button", { name: "Toggle color theme" })).toHaveCount(0);
+  await page.evaluate(() => localStorage.setItem("unison:theme", "dark"));
   await page.reload();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.evaluate(() => localStorage.removeItem("unison:theme"));
   await page.getByRole("link", { name: "Launch app" }).first().click();
   await expect(page).toHaveURL(/\/app$/);
   await expect(
@@ -161,7 +163,7 @@ test.describe("Landing controls all navigate or scroll", () => {
     }
   });
 
-  test("CTAs, Try it links, brand links, theme and footer", async ({
+  test("CTAs, Try it links, brand links, no theme toggle and footer", async ({
     page,
   }) => {
     for (const where of ["header", ".hero-copy"]) {
@@ -184,9 +186,7 @@ test.describe("Landing controls all navigate or scroll", () => {
       await expect(page).toHaveURL(/\/$/);
     }
     await page.goto("/");
-    await page.getByRole("button", { name: "Toggle color theme" }).click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await page.getByRole("button", { name: "Toggle color theme" }).click();
+    await expect(page.getByRole("button", { name: "Toggle color theme" })).toHaveCount(0);
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
     // "One price" chart: toggling collapses both pool lines onto NAV.
     const withUnison = page.getByRole("button", { name: "With Unison" });
@@ -195,7 +195,6 @@ test.describe("Landing controls all navigate or scroll", () => {
     await expect(page.getByText(/Spread between issuers: 0/)).toBeVisible();
     await page.getByRole("button", { name: "Separate pools" }).click();
     await expect(page.getByText(/Peak spread between issuers/)).toBeVisible();
-    await expect(page.locator("#one-price").getByText("Illustrative", { exact: true })).toBeVisible();
     await expectPopup(
       page,
       () => page.locator("footer").getByRole("link", { name: "GitHub ↗" }).click(),

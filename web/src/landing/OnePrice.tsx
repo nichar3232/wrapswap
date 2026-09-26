@@ -46,7 +46,6 @@ export function OnePrice() {
           </p>
         </div>
         <div className="op-controls">
-          <span className="op-tag">Illustrative</span>
           <div className="op-toggle" role="group" aria-label="Pricing">
             <button type="button" aria-pressed={!unison} onClick={() => setUnison(false)}>
               Separate pools
