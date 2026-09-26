@@ -379,6 +379,151 @@ section[id] {
   color: var(--black-ink);
 }
 
+/* ---------- Architecture diagram (always on the black section) ---------- */
+.diagram {
+  --dg-card: #0a0c12;
+  --dg-box: #0f121a;
+  --dg-ink: var(--black-ink);
+  --dg-soft: var(--black-ink-soft);
+  --dg-hair: var(--black-hairline);
+  --dg-edge: rgba(238, 242, 251, 0.3);
+  --dg-accent: #5b8bff;
+  /* Break out of the section padding so the SVG renders near 1:1. */
+  margin: 72px calc(24px - max(24px, 10vw)) 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--dg-hair);
+  border-bottom: 1px solid var(--dg-hair);
+  background: var(--dg-card);
+}
+.diagram-scroll {
+  overflow-x: auto;
+}
+.dg-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.dg-stacked {
+  display: none;
+}
+.dg-zone-label {
+  font: 500 10.5px var(--mono);
+  letter-spacing: 0.14em;
+  fill: var(--dg-soft);
+}
+.dg-divider {
+  stroke: var(--dg-edge);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+.dg-zone-sui {
+  opacity: 0.7;
+  transition: opacity 200ms ease;
+}
+.dg-zone-sui:hover,
+.dg-zone-sui:focus-within {
+  opacity: 1;
+}
+.dg-hit {
+  fill: transparent;
+}
+.dg-group {
+  fill: none;
+  stroke: var(--dg-hair);
+}
+.dg-group-label {
+  font: 500 9px var(--mono);
+  letter-spacing: 0.14em;
+  fill: var(--dg-soft);
+}
+.dg-box {
+  fill: var(--dg-box);
+  stroke: rgba(238, 242, 251, 0.16);
+  stroke-width: 1;
+  transition: stroke 150ms ease;
+}
+.dg-accent {
+  fill: rgba(91, 139, 255, 0.1);
+  stroke: var(--dg-accent);
+  stroke-width: 1.4;
+}
+.dg-pulse {
+  fill: var(--dg-accent);
+  opacity: 0.08;
+  animation: dg-pulse 2.8s ease-in-out infinite;
+}
+@keyframes dg-pulse {
+  50% {
+    opacity: 0.2;
+  }
+}
+.dg-title {
+  font: 500 15px var(--sans);
+  fill: var(--dg-ink);
+}
+.dg-sub {
+  font: 400 10.5px var(--mono);
+  fill: var(--dg-soft);
+}
+.dg-kick {
+  font: 500 9.5px var(--mono);
+  letter-spacing: 0.14em;
+  fill: var(--dg-accent);
+}
+.dg-edge path {
+  fill: none;
+  stroke: var(--dg-edge);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+.dg-arrowhead {
+  fill: var(--dg-edge);
+}
+.dg-dot {
+  fill: var(--dg-accent);
+  filter: drop-shadow(0 0 4px rgba(91, 139, 255, 0.9));
+}
+/* Chips in the card colour keep dashed edges from running through labels. */
+.dg-chip {
+  fill: var(--dg-card);
+}
+.dg-label {
+  font: 500 9.5px var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  fill: var(--dg-soft);
+}
+.dg-link {
+  cursor: pointer;
+}
+.dg-link:hover .dg-box,
+.dg-link:focus-visible .dg-box {
+  stroke: var(--dg-ink);
+}
+.dg-link:focus-visible {
+  outline: none;
+}
+.dg-link:focus-visible .dg-box {
+  stroke-width: 2;
+}
+@media (max-width: 899px) {
+  .dg-wide {
+    display: none;
+  }
+  .dg-stacked {
+    display: block;
+    min-width: 1080px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dg-dot {
+    display: none;
+  }
+  .dg-pulse {
+    animation: none;
+  }
+}
+
 /* ---------- Proof ---------- */
 .proof {
   padding-top: 48px;
