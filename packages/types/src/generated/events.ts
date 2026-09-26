@@ -34,8 +34,6 @@ export const topics = {
   "IIssuerRegistry.IssuerAdded": "0x9a172aaa4b741a5bfd1e350bffba82b575efb6409f5f82dbdd320d139102d3a3",
   "IIssuerRegistry.IssuerPaused": "0x979f4e0374470ec015c3cc6253737d7164d952442b14f03d37e8a07ee29412b2",
   "IIssuerRegistry.IssuerRemoved": "0xdd3d7cebca8ca0e1f9767e76f4d3d7a954e35bb31f69df8b8f078c6f29ed0925",
-  "INyseCalendar.EarlyCloseSet": "0x2d17e58ec72408e3ae8782d6799b572c338706eb2c739bd7ad1f2e256f82ca6d",
-  "INyseCalendar.HolidaySet": "0x9b15843c04fd3c44a6e229cbc7fb2d66a1e6859d73444b1f8224b592fed25379",
 } as const;
 
 export type EventKey = keyof typeof topics;
@@ -75,8 +73,6 @@ export const eventSignatures = {
   "IIssuerRegistry.IssuerAdded": "IssuerAdded(address,address,bytes32)",
   "IIssuerRegistry.IssuerPaused": "IssuerPaused(address,bool)",
   "IIssuerRegistry.IssuerRemoved": "IssuerRemoved(address,address,bytes32)",
-  "INyseCalendar.EarlyCloseSet": "EarlyCloseSet(uint256,uint256)",
-  "INyseCalendar.HolidaySet": "HolidaySet(uint256,bool)",
 } as const satisfies Record<EventKey, string>;
 
 /** Decoded event args (viem decoding: ints of <= 48 bits are number). */
@@ -279,13 +275,5 @@ export type EventArgs = {
     token: `0x${string}`;
     adapter: `0x${string}`;
     underlying: `0x${string}`;
-  };
-  "INyseCalendar.EarlyCloseSet": {
-    day: bigint;
-    secondsAfterMidnight: bigint;
-  };
-  "INyseCalendar.HolidaySet": {
-    day: bigint;
-    closed: boolean;
   };
 };

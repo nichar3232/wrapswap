@@ -18,7 +18,6 @@ On a missing marker, the orchestrator scans Committed logs in 2,000-block window
 A completed pair exits cleanly; a partial/ambiguous pair fails closed without duplicating orders.
 Never delete that marker to force a live reseed. Local reset uses the snapshot.
 
-`SEED_VARIANT=ANVIL|FALL-THROUGH|BLOCKED-PEG|NYSE-CLOSED|BLOCKED-ELIGIBILITY`.
+`SEED_VARIANT=ANVIL|FALL-THROUGH|BLOCKED-PEG|BLOCKED-ELIGIBILITY`.
 BLOCKED-PEG pauses the base mock issuer (the adapter-health branch of §5 routing).
 FALL-THROUGH drains quote inventory; use 1 mcbAAPL for a fill within the LP's peg guard.
-NYSE-CLOSED advances to the following Saturday, preserving forward-only local time.

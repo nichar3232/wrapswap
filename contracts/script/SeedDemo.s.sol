@@ -161,7 +161,7 @@ contract SeedDemo is Script {
             base.setTransfersPaused(true);
         } else if (variant == keccak256("BLOCKED-ELIGIBILITY")) {
             eligibility.setDemoMode(false);
-        } else { require(variant == keccak256("NYSE-CLOSED") || variant == keccak256("ANVIL"), "unknown seed variant"); }
+        } else { require(variant == keccak256("ANVIL"), "unknown seed variant"); }
         vm.stopBroadcast();
     }
 }

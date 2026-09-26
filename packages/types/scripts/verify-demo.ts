@@ -58,7 +58,7 @@ let grossOut1 = 0n;
 for (const v of variants) {
   const seed = seedOf(v);
   const sv = shares(seed);
-  // Per-trade fee (mcbAAPL in = side 0 in, input shares): the off-hours premium applies only if |skew| grows.
+  // Per-trade fee (mcbAAPL in = side 0 in, input shares): the skew fee applies only if |skew| grows.
   const fee = c.tradeFeeBreakdown(sv.mcb, sv.x, true, pf.shares);
   const q = c.parityQuote(mcb, x, pf.amountSpecified, fee.totalPips);
   eq(`${v.network} parityFill.feePips`, fee.totalPips, BigInt(v.parityFill.feePips));
@@ -135,8 +135,6 @@ const anvilTs = DEMO.variants.anvil.warpTimestamp;
 const nyLocal = new Date((anvilTs - 4 * 3600) * 1000); // September: EDT (UTC-4)
 eq("anvil warp weekday is Tuesday", nyLocal.getUTCDay(), 2);
 eq("anvil warp local minutes (10:30)", nyLocal.getUTCHours() * 60 + nyLocal.getUTCMinutes(), 630);
-const nextOpen = new Date((DEMO.variants["unichain-sepolia"].nextOpen - 4 * 3600) * 1000);
-eq("sepolia next open is Monday 09:30 EDT", `${nextOpen.getUTCDay()} ${nextOpen.getUTCHours()}:${nextOpen.getUTCMinutes()}`, "1 9:30");
 
 if (failures.length) {
   console.error(`verify-demo: ${failures.length} mismatch(es)\n  ${failures.join("\n  ")}`);

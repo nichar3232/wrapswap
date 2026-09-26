@@ -46,12 +46,6 @@ for (const [t, spt] of [[mcbT, DEMO.tokens.mcbAAPL.sharesPerTokenX18], [xT, DEMO
   const onchainSpt = await read('sharesPerToken', [], t.adapter, abis.IWrapperAdapter);
   if (onchainSpt !== spt) throw Error(`${t.symbol} sharesPerToken at ${N} is ${onchainSpt}, §10 says ${spt}`);
 }
-// The final fee model has no clock input and the manifest no calendar: marketOpen/nextOpen are carried over from the
-// existing variant (generated from the calendar earlier) and do not enter any figure below.
-const docText = readFileSync('INTERFACES.md', 'utf8');
-const prev = docText.slice(docText.indexOf(`"${network}": {`, docText.indexOf('```json wrapswap:demo')));
-const marketOpen = /"marketOpen": true/.test(prev.slice(0, 400));
-const nextOpen = Number(/"nextOpen": (\d+)/.exec(prev)?.[1] ?? 0);
 
 // 3. On-chain quote for the §10 parity fill (mcbAAPL in, exact in) must equal the canonical mirror.
 const mcb = { spt: DEMO.tokens.mcbAAPL.sharesPerTokenX18, decimals: DEMO.tokens.mcbAAPL.decimals };
@@ -71,7 +65,7 @@ const r = DEMO.dark.residual;
 const fee2 = c.tradeFeeBreakdown(s.mcb, s.x, true, r.shares);
 const q2 = c.parityQuote(mcb, x, -r.amountIn, fee2.totalPips);
 const variant = {
-  network, chainId: d.chainId, warpTimestamp: null, marketOpen, nextOpen,
+  network, chainId: d.chainId, warpTimestamp: null,
   seedBlock: Number(N), label: `Seed state at deploy block ${N}`,
   seedInventory: { mcbAAPL: invMcb.toString(), mAAPLx: invX.toString() },
   parityFill: { feePips: Number(fee1.totalPips), feeBps: c.pipsToBps(fee1.totalPips), feeAmount: q1.feeAmount.toString(), amountOut: q1.amountOut.toString() },

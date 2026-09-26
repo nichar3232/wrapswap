@@ -719,25 +719,6 @@ export async function routes(
     },
     "RouteQuery",
   );
-  get("/nyse", "NyseResponse", async () => {
-    // The final fee model has no market-hours component; deployments without a calendar have no NYSE feed.
-    if (!d.contracts.calendar) throw fault("NOT_FOUND", "No NYSE calendar in this deployment");
-    const b = await block();
-    const [open, nextTransition] = await Promise.all([
-      read("calendar", "isOpen", [b.timestamp], b.number),
-      read("calendar", "nextTransition", [b.timestamp], b.number),
-    ]);
-    return {
-      open,
-      block: b.number,
-      chainTimestamp: b.timestamp,
-      nextTransition,
-      nextState: open ? "CLOSED" : "OPEN",
-      secondsUntilTransition: Number(nextTransition - b.timestamp),
-      closedFeePips: 0, // no off-hours premium in the final fee model
-      source: "chain",
-    };
-  });
   get(
     "/batches/current",
     "CurrentBatchResponse",

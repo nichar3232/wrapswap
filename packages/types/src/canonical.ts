@@ -79,9 +79,8 @@ export function postTradeShares(shares0: bigint, shares1: bigint, zeroForOne: bo
 export function feeBreakdown(
   shares0: bigint,
   shares1: bigint,
-  base: bigint | boolean = BASE_FEE_PIPS, // a boolean (legacy market-open flag) is ignored: the fee has no clock input
+  basePips: bigint = BASE_FEE_PIPS,
 ): FeeBreakdown {
-  const basePips = typeof base === "bigint" ? base : BASE_FEE_PIPS;
   const skew = capSkew(skewPips(shares0, shares1, SKEW_FEE_PIPS));
   const s = skewX18(shares0, shares1);
   return { basePips, skewPips: skew, totalPips: basePips + skew, skewX18: s, postSkewX18: s, reducesImbalance: skew === 0n };

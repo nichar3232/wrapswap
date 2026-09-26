@@ -468,15 +468,10 @@ select.token option {
   font-weight: 400;
   color: var(--muted);
 }
-/* Collapsed: hide the numbers but keep a closed-market premium visible. */
 .fees {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-.premium {
-  font-size: 13px;
-  color: var(--warn);
 }
 
 /* Dark Pool */
@@ -1053,15 +1048,6 @@ dl.quote dd {
   margin-left: auto;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-.fees .premium {
-  margin-top: 4px;
-}
-.off-hours .premium {
-  display: inline-block;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
 .fees .fee-breakdown {
   display: none;

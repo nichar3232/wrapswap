@@ -49,7 +49,6 @@ it("every §5 API route validates, all decisions, errors, pagination and history
       ["/fees", "FeesResponse"],
       ["/quote?" + swap, "QuoteResponse"],
       ["/route?" + swap + "&swapper=" + d.deployer, "RouteResponse"],
-      ["/nyse", "NyseResponse"],
       ["/batches/current", "CurrentBatchResponse"],
       ["/batches", "BatchListResponse"],
       ["/batches/1", "BatchDetailResponse"],

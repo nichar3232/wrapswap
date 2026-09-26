@@ -83,9 +83,6 @@ if [[ $NETWORK == unichain-sepolia ]]; then
   done
   wait
 else
-  timestamp=1790692200
-  [[ ${SEED_VARIANT:-ANVIL} != NYSE-CLOSED ]] || timestamp=1791037800
-  if [[ $timestamp != 1790692200 ]]; then cast rpc --rpc-url "$RPC_URL" evm_setNextBlockTimestamp "$timestamp" >/dev/null; fi
   cast rpc --rpc-url "$RPC_URL" evm_mine >/dev/null
   # Subsequent automined transactions advance a fixed second, independent of host time.
   cast rpc --rpc-url "$RPC_URL" anvil_setBlockTimestampInterval 1 >/dev/null

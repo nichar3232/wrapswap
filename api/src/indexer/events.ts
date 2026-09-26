@@ -92,7 +92,6 @@ export function accepts(log: any, d: Deployment) {
       IPriceOracle: "oracle",
       IMockPriceOracle: "oracle",
       IIssuerRegistry: "registry",
-      INyseCalendar: "calendar",
     } as Record<string, string>
   )[owner];
   const candidates = contract === "darkCrossHook"
