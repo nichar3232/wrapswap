@@ -1095,3 +1095,56 @@ html {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
+
+/* How it works: one compact row of four product cards (overrides the full-height section above). */
+.how {
+  min-height: 0;
+  padding-top: 72px;
+  padding-bottom: 56px;
+}
+.how h2 {
+  margin-bottom: 24px;
+  font-size: clamp(24px, 2.4vw, 32px);
+  letter-spacing: -0.02em;
+}
+.steps4 {
+  list-style: none;
+  margin: 0 0 40px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.steps4 a {
+  display: block;
+  height: 100%;
+  padding: 16px 18px;
+  border: 1px solid var(--black-hairline);
+  border-radius: 12px;
+  color: var(--black-ink-soft);
+  transition: border-color 160ms, background 160ms;
+}
+.steps4 a:hover,
+.steps4 a:focus-visible {
+  border-color: rgba(238, 242, 251, 0.35);
+  background: rgba(238, 242, 251, 0.04);
+}
+.steps4 p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.steps4 strong {
+  color: var(--black-ink);
+  font-weight: 600;
+}
+@media (max-width: 1000px) {
+  .steps4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .steps4 {
+    grid-template-columns: 1fr;
+  }
+}

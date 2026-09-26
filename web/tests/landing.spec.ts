@@ -15,8 +15,19 @@ test("Landing: Unison brand, three products; Developers page lists every contrac
   await expect(page).toHaveTitle("Unison");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unison");
   await expect(page.getByText("WrapSwap", { exact: true })).toHaveCount(0);
-  await expect(page.locator(".steps3 h3")).toHaveText(["Convert", "Dark Cross", "Send"]);
-  await expect(page.locator(".steps3 p")).toHaveCount(3);
+  const how = page.locator("#how-it-works");
+  await expect(how.locator(".steps4 p")).toHaveText([
+    "Convert — Swap one issuer's AAPL wrapper for another's share-for-share, based on what each wrapper represents, not the market price. Fee: 2 bps + skew, to the LP.",
+    "Dark Cross — On-chain dark pool. Orders are sealed until matched, cross at the 30-minute oracle midpoint for a 1 bp venue fee, residual routes through Convert.",
+    "Send — Confidential payment on Sui. Amount hidden by Seal encryption; recipient withdraws into any issuer's wrapper.",
+    "Liquidity — Supply both wrappers, earn every Convert fee. Skew fee rises against imbalance so inventory stays balanced.",
+  ]);
+  await expect(how).not.toContainText(/\b0[1-4]\b|Try it/);
+  expect(await how.locator("h2").evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeLessThanOrEqual(32);
+  expect(await how.locator(".steps4 p").first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(14);
+  // One row of four at desktop width.
+  const tops = await how.locator(".steps4 li").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(new Set(tops).size).toBe(1);
   await expect(page.locator("#proof, #developers")).toHaveCount(0); // moved to /developers
   await page.goto("/developers");
   const contracts = page.locator("#contracts");
@@ -117,9 +128,10 @@ test.describe("Landing controls all navigate or scroll", () => {
       [
         "How it works",
         [
-          ["01 Convert", (p) => expectScrolledTo(p, "how-convert")],
-          ["02 Dark Cross", (p) => expectScrolledTo(p, "how-dark")],
-          ["03 Send", (p) => expectScrolledTo(p, "how-send")],
+          ["Convert", (p) => expectScrolledTo(p, "how-convert")],
+          ["Dark Cross", (p) => expectScrolledTo(p, "how-dark")],
+          ["Send", (p) => expectScrolledTo(p, "how-send")],
+          ["Liquidity", (p) => expectScrolledTo(p, "how-liquidity")],
         ],
       ],
       [
@@ -167,7 +179,7 @@ test.describe("Landing controls all navigate or scroll", () => {
     }
   });
 
-  test("CTAs, Try it links, brand links, theme and footer", async ({
+  test("CTAs, product cards, brand links, theme and footer", async ({
     page,
   }) => {
     for (const [where, name] of [
@@ -181,9 +193,9 @@ test.describe("Landing controls all navigate or scroll", () => {
     await page.goto("/");
     await page.getByRole("link", { name: "See it onchain →" }).click();
     await expectScrolledTo(page, "contracts");
-    for (const [i, tab] of ["Move", "Move", "Send"].entries()) {
+    for (const [i, tab] of ["Move", "Move", "Send", "Liquidity"].entries()) {
       await page.goto("/");
-      await page.getByRole("link", { name: "Try it →" }).nth(i).click();
+      await page.locator("#how-it-works .steps4 a").nth(i).click();
       await expectAppTab(page, tab);
       if (i === 1) await expect(page.getByRole("tab", { name: "Dark Cross" })).toHaveAttribute("aria-selected", "true");
     }
@@ -248,7 +260,7 @@ test.describe("Landing controls all navigate or scroll", () => {
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).not.toBe("none");
     // "y" alone serializes proximity, the default strictness; mandatory would read "y mandatory".
     expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).toMatch(/^y( proximity)?$/);
-    for (const id of ["product", "one-price", "how-it-works"]) {
+    for (const id of ["product", "one-price"]) {
       const box = await page.locator(`#${id}`).evaluate((e) => ({ h: e.getBoundingClientRect().height, snap: getComputedStyle(e).scrollSnapAlign }));
       expect(box.h, id).toBeGreaterThanOrEqual(900);
       expect(box.snap, id).toBe("start");

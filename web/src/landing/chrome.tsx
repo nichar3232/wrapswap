@@ -21,9 +21,10 @@ const NAV: (Link & { key: string; menu: Link[] })[] = [
     label: "How it works",
     href: "#how-it-works",
     menu: [
-      { label: "01 Convert", href: "#how-convert" },
-      { label: "02 Dark Cross", href: "#how-dark" },
-      { label: "03 Send", href: "#how-send" },
+      { label: "Convert", href: "#how-convert" },
+      { label: "Dark Cross", href: "#how-dark" },
+      { label: "Send", href: "#how-send" },
+      { label: "Liquidity", href: "#how-liquidity" },
     ],
   },
   {

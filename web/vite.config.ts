@@ -1,11 +1,12 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { stripRetired } from "./build/strip-retired";
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), ""), ...process.env };
   return {
     root: "web",
     envDir: "..",
-    plugins: [react()],
+    plugins: [stripRetired(), react()],
     preview: {
       host: "127.0.0.1",
       port: Number(env.WEB_PORT || 13005),

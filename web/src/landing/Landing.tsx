@@ -7,25 +7,31 @@ import { OnePrice } from "./OnePrice";
 import "../theme.css";
 import "./landing.css";
 
-/** The three products, one line each. */
+/** The four products, one card each (whole card links into the app). */
 const PRODUCTS = [
   {
     name: "Convert",
     id: "convert",
     href: "/app?tab=move",
-    body: "Move a stock between issuers' wrappers at share parity, instantly, through a Uniswap v4 hook.",
+    body: "Swap one issuer's AAPL wrapper for another's share-for-share, based on what each wrapper represents, not the market price. Fee: 2 bps + skew, to the LP.",
   },
   {
     name: "Dark Cross",
     id: "dark",
     href: "/app?tab=move&mode=dark",
-    body: "Sealed batch orders cross at the 30-min midpoint, hidden until matched.",
+    body: "On-chain dark pool. Orders are sealed until matched, cross at the 30-minute oracle midpoint for a 1 bp venue fee, residual routes through Convert.",
   },
   {
     name: "Send",
     id: "send",
     href: "/app?tab=send",
-    body: "Pay in shares confidentially on Sui; the recipient withdraws into any issuer's wrapper.",
+    body: "Confidential payment on Sui. Amount hidden by Seal encryption; recipient withdraws into any issuer's wrapper.",
+  },
+  {
+    name: "Liquidity",
+    id: "liquidity",
+    href: "/app?tab=liquidity",
+    body: "Supply both wrappers, earn every Convert fee. Skew fee rises against imbalance so inventory stays balanced.",
   },
 ];
 
@@ -63,13 +69,14 @@ function Landing() {
 
       <section className="black how" id="how-it-works">
         <h2>How it works</h2>
-        <ol className="steps3">
-          {PRODUCTS.map((s, i) => (
+        <ol className="steps4">
+          {PRODUCTS.map((s) => (
             <li key={s.id} id={`how-${s.id}`}>
-              <span className="index">0{i + 1}</span>
-              <h3>{s.name}</h3>
-              <p>{s.body}</p>
-              <a href={s.href}>Try it →</a>
+              <a href={s.href}>
+                <p>
+                  <strong>{s.name}</strong> — {s.body}
+                </p>
+              </a>
             </li>
           ))}
         </ol>

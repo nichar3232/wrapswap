@@ -572,7 +572,6 @@ export function mockResponse(name: RouteName, network: Network, search = ""): un
     };
   }
   if (name === "eligibility") return { ...f.eligibility, address: search || f.eligibility.address };
-  if (name === "nyse") throw Error("No mock fixture for nyse: the fee has no clock input");
   if (!(name in f)) throw Error(`No mock fixture for ${name}`);
   return f[name as keyof typeof f];
 }
