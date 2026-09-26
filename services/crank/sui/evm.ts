@@ -35,11 +35,37 @@ export const erc20Abi = parseAbi([
   'function symbol() view returns (string)',
 ]);
 
+/** Load-balanced public RPCs can serve a stale nonce right after a previous tx; retry those writes briefly. */
+export async function withNonceRetry<T>(send: () => Promise<T>, attempts = 6): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await send();
+    } catch (e) {
+      if (i >= attempts || !/nonce too low|nonce provided|replacement transaction underpriced|already known/i.test(String((e as Error)?.message))) throw e;
+      await new Promise((r) => setTimeout(r, 1500 * i));
+    }
+  }
+}
+
 export const publicClient = () => createPublicClient({ chain: unichainSepolia, transport: http(evmRpcUrl()) });
+/** sepolia.unichain.org can report a `pending` nonce below the `latest` one (observed 2026-09-26: pending 0, latest 1),
+ *  which viem uses by default. Every write here waits for its receipt before the next, so `latest` is exact. */
+export function withLatestNonce<W extends { account?: { address: Hex } | undefined; writeContract: any; sendTransaction: any }>(wc: W): W {
+  const pc = publicClient();
+  const nonce = () => pc.getTransactionCount({ address: wc.account!.address, blockTag: 'latest' });
+  return new Proxy(wc, {
+    get(target, key, recv) {
+      if (key === 'writeContract' || key === 'sendTransaction') {
+        return async (args: any) => withNonceRetry(async () => (target as any)[key]({ ...args, nonce: await nonce() }));
+      }
+      return Reflect.get(target, key, recv);
+    },
+  });
+}
 export const keeperWallet = () =>
-  createWalletClient({ chain: unichainSepolia, transport: http(evmRpcUrl()), account: privateKeyToAccount(evmKeeperKey()) });
+  withLatestNonce(createWalletClient({ chain: unichainSepolia, transport: http(evmRpcUrl()), account: privateKeyToAccount(evmKeeperKey()) }));
 export const walletFor = (pk: Hex) =>
-  createWalletClient({ chain: unichainSepolia, transport: http(evmRpcUrl()), account: privateKeyToAccount(pk) });
+  withLatestNonce(createWalletClient({ chain: unichainSepolia, transport: http(evmRpcUrl()), account: privateKeyToAccount(pk) }));
 
 export type DepositEvent = { commitment: Hex; issuerToken: Hex; amount: bigint; shares: bigint; suiRecipientTag: Hex; txHash: Hex; logIndex: number; blockNumber: bigint };
 
@@ -70,12 +96,14 @@ export async function settle(
 ): Promise<SettlementResult> {
   const wc = keeperWallet();
   const pc = publicClient();
-  const txHash = await wc.writeContract({
-    address: vault,
-    abi: shareVaultAbi,
-    functionName: 'settleWithdrawals',
-    args: [ws, `0x${Buffer.from(auth).toString('hex')}`],
-  });
+  const txHash = await withNonceRetry(() =>
+    wc.writeContract({
+      address: vault,
+      abi: shareVaultAbi,
+      functionName: 'settleWithdrawals',
+      args: [ws, `0x${Buffer.from(auth).toString('hex')}`],
+    }),
+  );
   const rcpt = await pc.waitForTransactionReceipt({ hash: txHash });
   if (rcpt.status !== 'success') throw new Error(`settleWithdrawals reverted: ${txHash}`);
   const logs = parseEventLogs({ abi: shareVaultAbi, logs: rcpt.logs });
