@@ -5,7 +5,7 @@ assumed) and the proof transactions into README.md and submission/ethglobal.md, 
 deployments/unichain-sepolia.json shape: {chainId, deployBlock, router, faucet, protocolFeeRecipient,
 assets[{symbol, wrappers[{platform, token, adapter, multiplier}], pool, parityHook, darkCross}]}.
 
-Usage: ETHERSCAN_API_KEY=... python3 scripts/update-testnet-readme.py [--extra 'Name=0xaddr' ...] [--swap 'label=0xtx' ...]
+Usage: ETHERSCAN_API_KEY=... python3 scripts/dev/update-testnet-readme.py [--extra 'Name=0xaddr' ...] [--swap 'label=0xtx' ...]
 """
 import argparse, json, os, pathlib, time, urllib.request
 

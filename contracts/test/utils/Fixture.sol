@@ -20,7 +20,6 @@ import {LiquidityAmounts} from "v4-periphery/src/libraries/LiquidityAmounts.sol"
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {IssuerRegistry} from "../../src/IssuerRegistry.sol";
-import {NyseCalendar} from "../../src/NyseCalendar.sol";
 import {EASEligibility} from "../../src/EASEligibility.sol";
 import {ParityHook} from "../../src/ParityHook.sol";
 import {DarkCrossHook} from "../../src/DarkCrossHook.sol";
@@ -32,7 +31,7 @@ import {IParityHook} from "../../src/interfaces/IParityHook.sol";
 import {MockEAS} from "../mocks/MockEAS.sol";
 import {MockAttestationIndexer} from "../mocks/MockAttestationIndexer.sol";
 
-/// @notice Shared deployment: PoolManager, routers, registry, calendar, eligibility (demoMode on), oracle, the two
+/// @notice Shared deployment: PoolManager, routers, registry, eligibility (demoMode on), oracle, the two
 ///         mock issuer tokens at forced addresses (ordering chosen by mcbIsCurrency0()), adapters, ParityHook at a
 ///         0x20C8 address, the issuer/issuer pool at parity, and DarkCrossHook.
 abstract contract Fixture is Test {
@@ -52,7 +51,6 @@ abstract contract Fixture is Test {
     PoolSwapTest internal swapRouter;
     PoolModifyLiquidityTest internal lpRouter;
     IssuerRegistry internal registry;
-    NyseCalendar internal calendar;
     EASEligibility internal eligibility;
     MockEAS internal eas;
     MockAttestationIndexer internal indexer;
@@ -96,7 +94,6 @@ abstract contract Fixture is Test {
         swapRouter = new PoolSwapTest(manager);
         lpRouter = new PoolModifyLiquidityTest(manager);
         registry = new IssuerRegistry(address(this));
-        calendar = new NyseCalendar(address(this));
         eas = new MockEAS();
         indexer = new MockAttestationIndexer();
         eligibility = new EASEligibility(address(this), address(eas), address(indexer), SCHEMA, ATTESTER, "US");
