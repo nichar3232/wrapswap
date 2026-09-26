@@ -4,9 +4,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { api, webURL, deployment, chain, account, abis, DEMO } from '../support.js';
 import { wallet, network } from '../../scripts/dev/client.js';
 
-// Live Convert on Base Sepolia through the web UI and WrapSwapRouter (INTERFACES.md §13), as demo account index 1.
-// Run against a local stack started with NETWORK=base-sepolia; writes logs/sepolia/live-swap.json.
-test.skip(network !== 'base-sepolia', 'live Base Sepolia only');
+// Live Convert on Unichain Sepolia through the web UI and WrapSwapRouter (INTERFACES.md §13), as demo account index 1.
+// Run against a local stack started with NETWORK=unichain-sepolia; writes logs/sepolia/live-swap.json.
+test.skip(network !== 'unichain-sepolia', 'live Unichain Sepolia only');
 
 test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ page }) => {
   test.setTimeout(180000);
@@ -20,7 +20,10 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
     if (method === 'eth_sendTransaction') {
       const tx = params[0];
       // Network fees are estimated: the demo account holds only a small Sepolia gas top-up.
-      const hash = await wallet(1).sendTransaction({ to: tx.to, data: tx.data, value: BigInt(tx.value || 0), chain: null });
+      // The public Unichain RPC intermittently reports a stale pending nonce (0); use max(latest, pending).
+      const [latest, pending] = await Promise.all((['latest', 'pending'] as const).map((blockTag) =>
+        chain.getTransactionCount({ address: account(1).address, blockTag })));
+      const hash = await wallet(1).sendTransaction({ to: tx.to, data: tx.data, value: BigInt(tx.value || 0), chain: null, nonce: Math.max(latest, pending) });
       hashes.push(hash);
       return hash;
     }
@@ -34,7 +37,7 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
   const [baseBefore, quoteBefore] = [await balance(base.address), await balance(quote.address)];
   const q = await api(`/quote?tokenIn=${base.address}&tokenOut=${quote.address}&amount=${DEMO.parityFill.amountIn}&kind=exactIn`, 'QuoteResponse');
 
-  await page.goto(webURL);
+  await page.goto(webURL+'/app');
   await page.getByRole('button', { name: 'Convert', exact: true }).click();
   await page.getByRole('button', { name: /connect wallet/i }).click();
   await page.getByLabel('Conversion amount').fill(formatUnits(DEMO.parityFill.amountIn, base.decimals));
@@ -49,6 +52,8 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
   const receipt = await chain.getTransactionReceipt({ hash: swapTx as `0x${string}` });
   expect(receipt.status).toBe('success');
   expect(receipt.to?.toLowerCase()).toBe(d.contracts.wrapSwapRouter!.toLowerCase());
+  // Public RPC backends lag each other; poll until the post-swap balance is visible.
+  await expect.poll(async () => baseBefore - (await balance(base.address)), { timeout: 30000 }).toBe(DEMO.parityFill.amountIn);
   const [baseAfter, quoteAfter] = [await balance(base.address), await balance(quote.address)];
   expect(baseBefore - baseAfter).toBe(DEMO.parityFill.amountIn);
   const received = quoteAfter - quoteBefore;

@@ -3,7 +3,9 @@ const port = Number(process.env.WEB_PORT || 13005);
 export default defineConfig({
   testDir: "tests",
   testMatch:
-    process.env.VITE_USE_MOCKS === "false" ? "api.spec.ts" : "smoke.spec.ts",
+    process.env.VITE_USE_MOCKS === "false"
+      ? "api.spec.ts"
+      : /(smoke|landing)\.spec\.ts$/,
   fullyParallel: true,
   use: { baseURL: `http://127.0.0.1:${port}`, headless: true },
   reporter: "list",
@@ -15,7 +17,7 @@ export default defineConfig({
     env: {
       WEB_PORT: String(port),
       VITE_USE_MOCKS: process.env.VITE_USE_MOCKS || "true",
-      VITE_NETWORK: process.env.VITE_NETWORK || "anvil",
+      VITE_NETWORK: process.env.VITE_NETWORK || "unichain-sepolia",
     },
   },
 });

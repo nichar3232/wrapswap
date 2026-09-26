@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Stop the native live stack started by scripts/dev/live-up (the Postgres data is kept; add --reset to drop it).
+tmux kill-session -t wrapswap-live 2>/dev/null || true
+if [[ ${1:-} == --reset ]]; then docker rm -f wrapswap-live-pg >/dev/null 2>&1 || true
+else docker stop wrapswap-live-pg >/dev/null 2>&1 || true; fi

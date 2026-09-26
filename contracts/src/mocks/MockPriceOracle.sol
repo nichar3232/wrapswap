@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IMockPriceOracle} from "../interfaces/IPriceOracle.sol";
 
-/// @notice Settable midpoint oracle for anvil and Base Sepolia. The crank pushes the adapter parity mid.
+/// @notice Settable midpoint oracle for anvil and Unichain Sepolia. The crank pushes the adapter parity mid.
 contract MockPriceOracle is IMockPriceOracle, Ownable {
     struct Mid {
         uint256 midX18;

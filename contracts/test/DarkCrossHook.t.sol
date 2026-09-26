@@ -487,7 +487,7 @@ abstract contract DarkCrossHookBase is Fixture {
         DarkCrossHook other =
             new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(maaplx), key, treasury);
         assertTrue(other.commitHashOf(0, alice, true, 1, 1, true, "s") != h);
-        vm.chainId(84532);
+        vm.chainId(1301);
         assertTrue(dark.commitHashOf(0, alice, true, 1, 1, true, "s") != h);
     }
 

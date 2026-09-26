@@ -1,14 +1,40 @@
 import type { Deployment, Network } from "./generated/schemas.js";
 import { assertDeployment } from "./generated/validators.js";
 
-export const NETWORKS = ["anvil", "base-sepolia"] as const satisfies readonly Network[];
-export const CHAIN_IDS = { anvil: 31337, "base-sepolia": 84532 } as const satisfies Record<Network, number>;
+export const NETWORKS = ["anvil", "unichain-sepolia"] as const satisfies readonly Network[];
+
+/** Chain facts per network. The public RPC is confirmed by eth_chainId (0x515). */
+export const CHAINS = {
+  anvil: { id: 31337, name: "Anvil", rpcUrl: "http://127.0.0.1:8545", explorer: null },
+  "unichain-sepolia": {
+    id: 1301,
+    name: "Unichain Sepolia",
+    rpcUrl: "https://sepolia.unichain.org",
+    explorer: "https://sepolia.uniscan.xyz",
+  },
+} as const satisfies Record<Network, { id: number; name: string; rpcUrl: string; explorer: string | null }>;
+export const CHAIN_IDS = {
+  anvil: CHAINS.anvil.id,
+  "unichain-sepolia": CHAINS["unichain-sepolia"].id,
+} as const satisfies Record<Network, number>;
+
+/** The live network: what web, api and crank resolve when NETWORK is unset. */
+export const DEFAULT_NETWORK = "unichain-sepolia" satisfies Network;
+export const DEFAULT_CHAIN = CHAINS[DEFAULT_NETWORK];
+
+/** Block-explorer link for an address or transaction; null on networks without an explorer (anvil). */
+export function explorerUrl(network: Network, kind: "address" | "tx", value: string): string | null {
+  const base = CHAINS[network].explorer;
+  return base && `${base}/${kind}/${value}`;
+}
 
 /** Repo-relative path of a network's deployment file: deployments/${NETWORK}.json. */
 export const deploymentPath = (network: Network) => `deployments/${network}.json` as const;
 
+/** Validates NETWORK; unset or empty resolves to DEFAULT_NETWORK. */
 export function parseNetwork(value: string | undefined): Network {
-  if (value === "anvil" || value === "base-sepolia") return value;
+  if (value === undefined || value === "") return DEFAULT_NETWORK;
+  if ((NETWORKS as readonly string[]).includes(value)) return value as Network;
   throw new Error(`NETWORK must be one of ${NETWORKS.join(", ")} (got ${JSON.stringify(value)})`);
 }
 

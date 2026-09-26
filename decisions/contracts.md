@@ -11,7 +11,7 @@ Implementation choices for the reframe that are not already in `DECISIONS.md`. S
 - 2026-09-26 **D4 / E3**: `ParityHook.beforeSwap` and `quote` require `registry.active(token)` for both tokens, and revert `AdapterUnhealthy(token)` otherwise. A registry pause therefore stops swaps.
 - 2026-09-26 **D5 / E12**: `beforeInitialize` rejects `tickSpacing != 10` with `UnsupportedPool`. It also rejects an initial price more than `PEG_GUARD_BPS` off parity with `PegGuardTripped(poolId, deviationBps)`, which closes the Sepolia init front-run.
 - 2026-09-26 **D6**: `DarkCrossHook` has no owner. The parity key, tokens, treasury and oracle are fixed in the constructor, which reverts `InvalidConfig()` if hooks != parityHook, the currencies don't match, the fee is not DYNAMIC_FEE_FLAG, base == quote, or any address is zero.
-- 2026-09-26 **D7 (amended)**: `Deploy.s.sol` no longer imports `Addresses.sol`. The lane brief says "never hardcoded", so base-sepolia externals have **no** defaults. `POOL_MANAGER`, `V4_QUOTER`, `EAS`, `EAS_SCHEMA_UID`, `EAS_TRUSTED_ATTESTER`, `DEMO_MODE` and `DEMO_MNEMONIC` are all required on chain 84532. `Addresses.sol` stays in the tree because no lane owns it (E5), and nothing imports it.
+- 2026-09-26 **D7 (amended)**: `Deploy.s.sol` no longer imports `Addresses.sol`. The lane brief says "never hardcoded", so unichain-sepolia externals have **no** defaults. `POOL_MANAGER`, `V4_QUOTER`, `EAS`, `EAS_SCHEMA_UID`, `EAS_TRUSTED_ATTESTER`, `DEMO_MODE` and `DEMO_MNEMONIC` are all required on chain 1301. `Addresses.sol` stays in the tree because no lane owns it (E5), and nothing imports it.
 - 2026-09-26 **D8 / E10**: DarkCross cross fees and forfeits are credited to the treasury's escrow `available` balance, which the treasury withdraws with `withdraw`. Deploy sets the treasury to the deployer (index 0).
 - 2026-09-26 **D9 / E5**: deployment runs in two phases. `run()` broadcasts and writes a schema-valid manifest. That manifest has `startBlock` = the pre-deploy head, which is a safe lower bound, empty `blocks`, and the simulated `batchOrigin`. `manifest()` is read-only: it rebuilds the manifest from chain state, finds each created contract's first block with code by bisecting `eth_getCode`, and finds `poolInitialized` by bisecting `extsload(slot0)`. It sets `startBlock = blocks.registry` and reads `batchOrigin` from the contract.
 
@@ -60,7 +60,7 @@ Implementation choices for the reframe that are not already in `DECISIONS.md`. S
 
 ## Deploy script
 
-- 2026-09-26 Network is derived from `block.chainid` (31337 anvil, 84532 base-sepolia). `NETWORK`, if set, must agree. Any other chain reverts.
+- 2026-09-26 Network is derived from `block.chainid` (31337 anvil, 1301 unichain-sepolia). `NETWORK`, if set, must agree. Any other chain reverts.
 - 2026-09-26 `DEPLOY_COMMIT` is required (40 lowercase hex). `DEPLOYED_AT` defaults to `block.timestamp` formatted ISO-8601 UTC. `DEMO_MODE` defaults to true only on anvil. `DEMO_MNEMONIC` defaults to the anvil mnemonic only on 31337. `DEPLOYER_PK` overrides index 0.
 - 2026-09-26 ParityHook is deployed by an explicit call to the CREATE2 deployer proxy with a salt from the pinned periphery `HookMiner`. The script asserts the proxy has code and that `address & 0x3fff == 0x20c8`. It also asserts that the initial sqrtPriceX96 equals the §10 constant for the realised ordering.
 - 2026-09-26 On anvil, the PoolManager is created with the deployer as owner and no protocol fee.

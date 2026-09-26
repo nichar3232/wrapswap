@@ -9,6 +9,8 @@ x-app: &app
   network_mode: service:anvil
   environment: &env
     NETWORK: anvil
+    # The web's network fallback is the public default (unichain-sepolia); the offline stack must pin anvil.
+    VITE_NETWORK: anvil
     USE_MOCKS: 'false'
     DEMO_MNEMONIC: ${DEMO_MNEMONIC:?source scripts/dev/env}
     RPC_URL: http://127.0.0.1:${ANVIL_PORT:?}

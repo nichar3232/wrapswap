@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+# The compose stack is the offline anvil backup; the public network (unichain-sepolia) is the env default.
+export NETWORK=${NETWORK:-anvil}
 source scripts/dev/env
 for i in {1..40}; do
   if docker compose exec -T api node -e 'const h=await (await fetch(`http://127.0.0.1:${process.env.API_PORT}/health`)).json(); if(!h.ok||h.indexedBlock!==h.headBlock)process.exit(1)' --input-type=module; then exit 0; fi

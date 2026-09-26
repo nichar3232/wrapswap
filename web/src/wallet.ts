@@ -2,55 +2,170 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  decodeEventLog,
+  encodeFunctionData,
+  erc20Abi,
   http,
   type Abi,
   type EIP1193Provider,
+  type Hash,
+  type TransactionReceipt,
 } from "viem";
 import {
+  CHAINS,
+  DEMO,
   IMockIssuerTokenAbi,
   IDarkCrossHookAbi,
+  IParityHookAbi,
   IWrapSwapRouterAbi,
   encodeParityHookData,
   type Address,
   type Deployment,
 } from "@wrapswap/types";
 import { config } from "./config";
+
+type Provider = EIP1193Provider & {
+  on?: (e: string, f: (...a: unknown[]) => void) => void;
+  removeListener?: (e: string, f: (...a: unknown[]) => void) => void;
+};
+export const injected = () =>
+  (window as unknown as { ethereum?: Provider }).ethereum;
 const provider = () => {
-  const p = (window as unknown as { ethereum?: EIP1193Provider }).ethereum;
-  if (!p)
-    throw Error(
-      "No wallet found. Open this app with an Ethereum wallet extension.",
-    );
+  const p = injected();
+  if (!p) throw new WalletError("no-wallet");
   return p;
 };
-export async function connect(d: Deployment): Promise<Address> {
-  if (config.useMocks)
-    return d.demoAccounts.accounts.find((a) => a.role === "demo")!.address;
-  const p = provider();
-  await p.request({
-    method: "wallet_switchEthereumChain",
-    params: [{ chainId: "0x" + d.chainId.toString(16) }],
-  });
-  const accounts = await p.request({ method: "eth_requestAccounts" });
-  if (!accounts[0]) throw Error("Wallet returned no account");
+
+/** Wallet failures the UI can describe; the raw error is kept for the console only. */
+export class WalletError extends Error {
+  constructor(
+    readonly kind: "no-wallet" | "no-account",
+    readonly cause?: unknown,
+  ) {
+    super(kind);
+  }
+}
+
+export const hexChainId = (id: number) => "0x" + id.toString(16);
+export const expectedChain = () => CHAINS[config.network];
+
+/** Mock mode without an injected wallet uses the demo account on the expected chain. */
+export const simulatedWallet = () => config.useMocks && !injected();
+
+export async function requestAccount(d?: Deployment): Promise<Address> {
+  if (simulatedWallet())
+    return (d?.demoAccounts.accounts.find((a) => a.role === "demo")?.address ??
+      DEMO.accounts.demo.anvilAddress) as Address;
+  const accounts = (await provider().request({
+    method: "eth_requestAccounts",
+  })) as Address[] | null;
+  if (!accounts?.[0]) throw new WalletError("no-account");
   return accounts[0];
 }
-export function subscribeWallet(onChange: () => void) {
-  const p = (
-    window as unknown as {
-      ethereum?: {
-        on?: (e: string, f: () => void) => void;
-        removeListener?: (e: string, f: () => void) => void;
-      };
-    }
-  ).ethereum;
-  p?.on?.("accountsChanged", onChange);
-  p?.on?.("chainChanged", onChange);
+
+export async function readChainId(): Promise<number | null> {
+  if (simulatedWallet()) return expectedChain().id;
+  try {
+    const id = await provider().request({ method: "eth_chainId" });
+    return id ? Number(id) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One click: switch to the app's chain, adding it first when the wallet does not know it (EIP-3085, code 4902). */
+export async function switchToExpectedChain() {
+  const chain = expectedChain();
+  const chainId = hexChainId(chain.id);
+  const p = provider();
+  try {
+    await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
+  } catch (e) {
+    const code = (e as { code?: number; data?: { originalError?: { code?: number } } })
+      .code ?? (e as { data?: { originalError?: { code?: number } } }).data?.originalError?.code;
+    if (code !== 4902 || !chain.explorer) throw e;
+    await p.request({
+      method: "wallet_addEthereumChain",
+      params: [
+        {
+          chainId,
+          chainName: chain.name,
+          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+          rpcUrls: [chain.rpcUrl],
+          blockExplorerUrls: [chain.explorer],
+        },
+      ],
+    });
+  }
+}
+
+/** Kept for callers of the original API: account plus a best-effort chain switch. */
+export async function connect(d: Deployment): Promise<Address> {
+  const account = await requestAccount(d);
+  if (!simulatedWallet() && (await readChainId()) !== d.chainId)
+    await switchToExpectedChain();
+  return account;
+}
+
+/** Best effort: MetaMask supports revoking the site's account permission. */
+export async function disconnectWallet() {
+  if (simulatedWallet()) return;
+  try {
+    await injected()?.request({
+      method: "wallet_revokePermissions" as never,
+      params: [{ eth_accounts: {} }] as never,
+    });
+  } catch {
+    /* not supported: the app forgets the account locally */
+  }
+}
+
+export function subscribeWallet(handlers: {
+  accounts: (a: Address[]) => void;
+  chain: (id: number) => void;
+}) {
+  const p = injected();
+  const onAccounts = (a: unknown) => handlers.accounts((a as Address[]) ?? []);
+  const onChain = (id: unknown) => handlers.chain(Number(id));
+  p?.on?.("accountsChanged", onAccounts);
+  p?.on?.("chainChanged", onChain);
   return () => {
-    p?.removeListener?.("accountsChanged", onChange);
-    p?.removeListener?.("chainChanged", onChange);
+    p?.removeListener?.("accountsChanged", onAccounts);
+    p?.removeListener?.("chainChanged", onChain);
   };
 }
+
+const rpc = () =>
+  createPublicClient({
+    transport: http(new URL(config.rpcUrl, location.origin).href),
+  });
+
+export async function tokenBalances(account: Address, tokens: Address[]) {
+  return Promise.all(
+    tokens.map((address) =>
+      rpc().readContract({ address, abi: erc20Abi, functionName: "balanceOf", args: [account] }),
+    ),
+  );
+}
+export async function allowance(token: Address, owner: Address, spender: Address) {
+  return rpc().readContract({
+    address: token,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: [owner, spender],
+  });
+}
+
+export type SendOptions = { onHash?: (hash: Hash) => void };
+export type Sent = { hash: Hash; receipt?: TransactionReceipt; simulated: boolean };
+
+const fakeHash = () =>
+  ("0x" +
+    Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join("")) as Hash;
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function send(
   d: Deployment,
   account: Address,
@@ -58,18 +173,44 @@ export async function send(
   abi: Abi,
   functionName: string,
   args: unknown[],
-) {
-  if (config.useMocks) return;
+  opts: SendOptions = {},
+): Promise<Sent> {
+  if (config.useMocks) {
+    // Mock mode: an injected wallet still signs (so reject/revert paths are real); the chain is simulated.
+    let hash = fakeHash();
+    const p = injected();
+    if (p) {
+      // Mock fixtures carry non-checksummed addresses; lowercase ones encode without a checksum check.
+      const lower = (x: unknown): unknown =>
+        typeof x === "string" && /^0x[0-9a-fA-F]{40}$/.test(x)
+          ? x.toLowerCase()
+          : Array.isArray(x)
+            ? x.map(lower)
+            : x && typeof x === "object" && typeof x !== "bigint"
+              ? Object.fromEntries(Object.entries(x).map(([k, v]) => [k, lower(v)]))
+              : x;
+      hash = (await p.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from: account,
+            to: address.toLowerCase(),
+            data: encodeFunctionData({ abi, functionName, args: lower(args) as unknown[] }),
+          },
+        ],
+      } as never)) as Hash;
+    }
+    opts.onHash?.(hash);
+    await pause(700);
+    return { hash, simulated: true };
+  }
   const wallet = createWalletClient({ account, transport: custom(provider()) });
-  if ((await wallet.getChainId()) !== d.chainId)
-    throw Error(`Switch wallet to ${d.network} (${d.chainId}) and reconnect.`);
-  const rpc = createPublicClient({
-    transport: http(new URL(config.rpcUrl, location.origin).href),
-  });
+  if ((await wallet.getChainId()) !== d.chainId) throw new Error("WrongChain");
+  const client = rpc();
   // Load-balanced public RPCs can serve a backend that has not seen the previous receipt (e.g. the approval),
   // so a failed simulation is retried briefly before it is reported.
   const simulate = () =>
-    rpc.simulateContract({ account, address, abi, functionName, args });
+    client.simulateContract({ account, address, abi, functionName, args });
   let simulation: Awaited<ReturnType<typeof simulate>>;
   for (let attempt = 1; ; attempt++) {
     try {
@@ -77,16 +218,17 @@ export async function send(
       break;
     } catch (e) {
       if (attempt >= 3) throw e;
-      await new Promise((r) => setTimeout(r, 1500));
+      await pause(1500);
     }
   }
   const hash = await wallet.writeContract({
     ...simulation.request,
     chain: null,
   });
-  const receipt = await rpc.waitForTransactionReceipt({ hash });
-  if (receipt.status !== "success")
-    throw Error(`Transaction reverted: ${hash}`);
+  opts.onHash?.(hash);
+  const receipt = await client.waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("Reverted");
+  return { hash, receipt, simulated: false };
 }
 export const approve = (
   d: Deployment,
@@ -94,7 +236,9 @@ export const approve = (
   token: Address,
   spender: Address,
   amount: bigint,
-) => send(d, account, token, IMockIssuerTokenAbi, "approve", [spender, amount]);
+  opts?: SendOptions,
+) => send(d, account, token, IMockIssuerTokenAbi, "approve", [spender, amount], opts);
+
 /** Exact-in swap through WrapSwapRouter (INTERFACES.md §13); approve tokenIn to the router first. */
 export async function convertExactIn(
   d: Deployment,
@@ -103,32 +247,68 @@ export async function convertExactIn(
   amountIn: bigint,
   amountOutMin: bigint,
   attestationUid?: Address,
+  opts?: SendOptions,
 ) {
-  const router = d.contracts.wrapSwapRouter;
-  if (!router) throw Error("This deployment has no WrapSwapRouter.");
-  const rpc = createPublicClient({
-    transport: http(new URL(config.rpcUrl, location.origin).href),
-  });
+  // Mock deployments predate the router: sign the same calldata against the mock swap router address.
+  const router = d.contracts.wrapSwapRouter ?? (config.useMocks ? d.contracts.swapRouter : undefined);
+  if (!router) throw new Error("NoRouter");
   // Deadline from chain time: anvil runs on a warped clock, not host time.
-  const { timestamp } = await rpc.getBlock();
-  return send(d, account, router, IWrapSwapRouterAbi, "swapExactIn", [
-    {
-      key: d.pool.key,
-      zeroForOne: tokenIn.toLowerCase() === d.pool.key.currency0.toLowerCase(),
-      amountIn,
-      amountOutMin,
-      recipient: account,
-      deadline: timestamp + 600n,
-      hookData: encodeParityHookData({ swapper: account, attestationUid }),
-    },
-  ]);
+  const timestamp = config.useMocks
+    ? BigInt(Math.floor(Date.now() / 1000))
+    : (await rpc().getBlock()).timestamp;
+  return send(
+    d,
+    account,
+    router,
+    IWrapSwapRouterAbi,
+    "swapExactIn",
+    [
+      {
+        key: d.pool.key,
+        zeroForOne: tokenIn.toLowerCase() === d.pool.key.currency0.toLowerCase(),
+        amountIn,
+        amountOutMin,
+        recipient: account,
+        deadline: timestamp + 600n,
+        hookData: encodeParityHookData({ swapper: account, attestationUid }),
+      },
+    ],
+    opts,
+  );
 }
+
+/** What a swap receipt says about its path through ParityHook, and the tokens the recipient received. */
+export function swapOutcome(receipt: TransactionReceipt, tokenOut: Address, recipient: Address) {
+  let path: "inventory" | "fall-through" | undefined;
+  let amountOut: bigint | undefined;
+  for (const log of receipt.logs) {
+    try {
+      const e = decodeEventLog({ abi: IParityHookAbi, data: log.data, topics: log.topics });
+      if (e.eventName === "InventoryFill") path = "inventory";
+      if (e.eventName === "FallThrough") path ??= "fall-through";
+    } catch {
+      /* not a ParityHook event */
+    }
+    if (log.address.toLowerCase() === tokenOut.toLowerCase())
+      try {
+        const e = decodeEventLog({ abi: erc20Abi, data: log.data, topics: log.topics });
+        if (e.eventName === "Transfer" && e.args.to.toLowerCase() === recipient.toLowerCase())
+          amountOut = (amountOut ?? 0n) + e.args.value;
+      } catch {
+        /* not a Transfer */
+      }
+  }
+  return { path, amountOut };
+}
+
 export const darkSend = (
   d: Deployment,
   account: Address,
   name: string,
   args: unknown[],
-) => send(d, account, d.contracts.darkCrossHook, IDarkCrossHookAbi, name, args);
+  opts?: SendOptions,
+) => send(d, account, d.contracts.darkCrossHook, IDarkCrossHookAbi, name, args, opts);
+
 export async function verifyOrder(
   d: Deployment,
   account: Address,
@@ -136,23 +316,12 @@ export async function verifyOrder(
   expectedHash?: Address,
 ) {
   if (config.useMocks) return;
-  const rpc = createPublicClient({
-    transport: http(new URL(config.rpcUrl, location.origin).href),
-  });
-  const order = await rpc.readContract({
+  const order = await rpc().readContract({
     address: d.contracts.darkCrossHook,
     abi: IDarkCrossHookAbi,
     functionName: "order",
     args: [BigInt(batchId), account],
   });
-  if (
-    expectedHash
-      ? order.commitHash !== expectedHash
-      : !order.revealed || !order.valid
-  )
-    throw Error(
-      expectedHash
-        ? "Commit was not accepted. Check eligibility; funded tokens remain in escrow."
-        : "Reveal was not accepted as valid. Inspect the batch before settlement.",
-    );
+  if (expectedHash ? order.commitHash !== expectedHash : !order.revealed || !order.valid)
+    throw new Error(expectedHash ? "CommitNotAccepted" : "RevealNotValid");
 }

@@ -27,7 +27,7 @@ Environment (dotenv `.env` is loaded; explicit environment wins):
 
 | Variable | Requirement / default |
 | --- | --- |
-| `NETWORK` | Required: `anvil` or `base-sepolia`; selects the validated deployment JSON. |
+| `NETWORK` | Optional, default `unichain-sepolia`; `anvil` for the local stack. Selects the validated deployment JSON. |
 | `RPC_URL` | Required for API/crank; archive-capable JSON RPC for pinned reads and indexer backfill. Set explicitly for standalone indexer too. |
 | `DATABASE_URL` | Required for API, migration, indexer, and integration tests; PostgreSQL connection URL. |
 | `API_PORT` | Required API listening port; lane value `18004`. |

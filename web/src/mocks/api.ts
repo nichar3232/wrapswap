@@ -96,7 +96,7 @@ export function fixtures(network: Network) {
       block: "100",
       chainTimestamp: timestamp,
       nextTransition: String(
-        v.marketOpen ? 1790712000 : DEMO.variants["base-sepolia"].nextOpen,
+        v.marketOpen ? 1790712000 : DEMO.variants["unichain-sepolia"].nextOpen,
       ),
       nextState: v.marketOpen ? "CLOSED" : "OPEN",
       secondsUntilTransition: v.marketOpen ? 19800 : 178200,

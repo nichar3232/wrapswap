@@ -11,7 +11,7 @@ The working submission is the Base-fork conversion and dark-crossing application
 | `pnpm test:smoke` on main | Five passed: tab navigation, parity conversion, vault mint/redeem, escrow deposit/withdraw, commit/auto-reveal |
 | `make fresh-clone-check` | Passed from `/tmp/wrapswap-fresh.fAJ8iB`, commit `61f3c9a`, fresh deployer and isolated Postgres database; all five browser tests passed in 44.3 seconds |
 | Gas snapshot | Committed `.gas-snapshot`, including 1000-run fuzz configurations |
-| Base Sepolia | Attempted; stopped before broadcast because deployer balance was zero. No deployment/verification addresses claimed |
+| Unichain Sepolia | Attempted; stopped before broadcast because deployer balance was zero. No deployment/verification addresses claimed |
 | Intent bridge | Not shipped, honoring the requested §7-before-§5 gate |
 
 Core tests cover 1000-run backing, cross/pro-rata escrow, and routed-escrow fuzz cases. Native B20 is explicitly mocked because generic Anvil cannot execute its native opcode; the PoolManager, PositionManager, StateView, V4Quoter, Permit2, native USDC and Chainlink feed are real Base contracts on the fork. Issuer 2 is also explicitly mocked.
