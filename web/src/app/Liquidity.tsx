@@ -1,10 +1,9 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { PoolAssetResponse } from "@wrapswap/types";
 import type { Feed } from "../hooks/useApi";
 import { amount, fmtShares } from "../lib/format";
 import { issuerLabel, type Asset } from "./assets";
 import { keeperSetInventory, skewPct } from "./fees";
-import { Tip } from "../components";
 import { Skeleton, Val } from "./ui";
 
 type Wrapper = PoolAssetResponse["wrappers"][number];
@@ -53,8 +52,6 @@ function Balance({ wrappers, skewX18 }: { wrappers: Wrapper[]; skewX18: string }
   );
 }
 
-const KEEPER_WHY =
-  "Keeper only in v1: one inventory supplier keeps the multiplier attestations and wrapper whitelisting simple. Permissionless deposits come in v2.";
 
 /**
  * Liquidity for the selected asset, from GET /pool/:asset: inventory per wrapper, skew, the fee each direction pays
@@ -71,6 +68,8 @@ export function Liquidity({
   onMove: (fromToken: string) => void;
   picker?: ReactNode;
 }) {
+  // The direction picked in the fee card ("ASSET:fromSymbol"); the cheap direction until one is picked for this asset.
+  const [pick, setPick] = useState<string>();
   const p = pool.data && asset && pool.data.asset === asset.symbol ? pool.data : undefined;
   if (!asset || !p)
     return (
@@ -91,20 +90,29 @@ export function Liquidity({
   const tokenOf = (sym: string) => asset.platforms.find((x) => x.token.symbol === sym)?.token.address;
   const cheap = p.directions.find((x) => x.from === p.cheapDirection.from && x.to === p.cheapDirection.to) ?? p.directions[0];
   const baseBps = (x: Direction) => ((x.totalPips - x.skewFeePips) / 100).toFixed(2);
+  const sel = p.directions.find((x) => pick === `${asset.symbol}:${x.from}`) ?? cheap;
   return (
     <div className="page liquidity">
       <div className="page-head">
-        <h1 className="page-title">Pool inventory &amp; LP economics</h1>
+        <h1 className="page-title">Pool inventory</h1>
         {picker}
       </div>
       <div className="liq-top">
         <section className="card liq-hero" aria-label={`${asset.symbol} fee by direction`}>
           <span className="tile-k">{asset.symbol} · fee by direction now</span>
-          <div className="dir-fees">
+          <div className="dir-fees" role="radiogroup" aria-label="Direction">
             {p.directions.map((x) => (
-              <div key={x.from} className={`dir${x === cheap ? " cheap" : ""}`}>
+              <button
+                key={x.from}
+                type="button"
+                role="radio"
+                aria-checked={x === sel}
+                className={`dir${x === cheap ? " cheap" : ""}`}
+                onClick={() => setPick(`${asset.symbol}:${x.from}`)}
+              >
                 <span className="dir-name">
                   {name(x.from)} → {name(x.to)}
+                  {x === cheap && <span className="dir-tag">cheapest</span>}
                 </span>
                 <span className="dir-v">
                   {x.totalBps} <small>bps</small>
@@ -114,11 +122,11 @@ export function Liquidity({
                     ? `${baseBps(x)} base · skew 0 — rebalances the pool`
                     : `${baseBps(x)} base + ${(x.skewFeePips / 100).toFixed(2)} skew · to LP`}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
-          <button className="primary" disabled={!tokenOf(cheap.from)} onClick={() => onMove(tokenOf(cheap.from)!)}>
-            Cheap direction now: {name(cheap.from)} → {name(cheap.to)}
+          <button className="primary" disabled={!tokenOf(sel.from)} onClick={() => onMove(tokenOf(sel.from)!)}>
+            Convert {name(sel.from)} → {name(sel.to)} · {sel.totalBps} bps
           </button>
         </section>
         <section className="card" aria-label={`${asset.symbol} inventory`}>
@@ -149,50 +157,6 @@ export function Liquidity({
           )}
         </section>
       </div>
-      <section className="card keeper" aria-label="Who supplies inventory">
-        <p className="lp-line">
-          <strong>Who supplies inventory:</strong> in v1 a single pool keeper (a market maker) seeds and rebalances both wrappers and earns 100% of
-          Convert fees. Permissionless LP deposits are v2.
-        </p>
-        <div className="keeper-act">
-          <button type="button" className="ghost-btn" disabled aria-describedby="keeper-why">
-            Add inventory <small>keeper only in v1</small>
-          </button>
-          <Tip text={KEEPER_WHY} />
-          <span id="keeper-why" className="sr-only">
-            {KEEPER_WHY}
-          </span>
-        </div>
-      </section>
-      <section className="card lp" aria-label="LP economics">
-        <h2 className="card-title">LP economics</h2>
-        <div className="tiles">
-          <div className="tile">
-            <span className="tile-k">LP fees earned</span>
-            <span className="tile-v">
-              {fmtShares(p.lpFees.totalShares, 4)} <small>sh</small>
-            </span>
-            <span className="tile-s">
-              {p.lpFees.fills} conversion{p.lpFees.fills === 1 ? "" : "s"}
-            </span>
-          </div>
-          <div className="tile">
-            <span className="tile-k">Base fees</span>
-            <span className="tile-v">
-              {fmtShares(p.lpFees.baseShares, 4)} <small>sh</small>
-            </span>
-          </div>
-          <div className="tile">
-            <span className="tile-k">Skew fees</span>
-            <span className="tile-v">
-              {fmtShares(p.lpFees.skewShares, 4)} <small>sh</small>
-            </span>
-          </div>
-        </div>
-        <p className="lp-line">All Convert fees (base + skew) go to the LP. The protocol takes 0 on Convert.</p>
-        <p className="lp-line">Both sides are the same share — no impermanent loss from price divergence. Risk is inventory getting stuck lopsided.</p>
-        <p className="muted small">Inventory is added and removed by the pool keeper (keeper-only on ParityHook).</p>
-      </section>
     </div>
   );
 }

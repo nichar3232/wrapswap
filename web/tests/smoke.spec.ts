@@ -182,52 +182,51 @@ test("Dark Cross: side + size → sealed commit; commit → reveal → settle; 3
   await expect(history).toContainText("50.63 sh"); // 50.625, half-up
 });
 
-test("Liquidity: inventory, skew, fee each direction, cheap-direction CTA prefills Move, LP economics", async ({ page }) => {
+test("Liquidity: pool inventory, skew, the two directions toggle and drive the Convert button; no keeper block or LP economics", async ({ page }) => {
   await demo(page, "/app?tab=liquidity&asset=AAPL");
   const l = panel(page, "liquidity");
+  await expect(l.getByRole("heading", { level: 1 })).toHaveText("Pool inventory");
+  await expect(tab(page, "Liquidity")).toHaveText("Liquidity");
   await expect(l.getByTestId("skew")).toHaveText("skew +20.00%");
   await expect(l.getByRole("img", { name: /^Inventory: Coinbase \(mock\) 8,100\.00 shares, xStocks \(mock\) 12,150\.00 shares/ })).toBeVisible();
-  await expect(l.locator(".dir.cheap")).toContainText("Coinbase (mock) → xStocks (mock)2.00 bps2.00 base · skew 0 — rebalances the pool");
-  await expect(l.locator(".dir:not(.cheap)")).toContainText(/xStocks \(mock\) → Coinbase \(mock\)\d\.\d\d bps2\.00 base \+ \d\.\d\d skew · to LP/);
-  await expect(l).toContainText("All Convert fees (base + skew) go to the LP. The protocol takes 0 on Convert.");
-  await expect(l).toContainText("Both sides are the same share — no impermanent loss from price divergence. Risk is inventory getting stuck lopsided.");
-  await expect(l.getByRole("region", { name: "LP economics" })).toContainText("0.0223 sh"); // 0.022275, half-up
-  // A 4,050 sh gap from 2 fills worth 0.0223 sh of base fees: the keeper set it, not conversions.
   await expect(l.getByRole("region", { name: "AAPL inventory" }).getByTestId("keeper-set")).toHaveText("Inventory set by pool keeper");
-  await expect(l.getByRole("button", { name: /deposit|withdraw|add liquidity/i })).toHaveCount(0); // keeper-only
-  await expect(l.getByRole("heading", { level: 1 })).toHaveText("Pool inventory & LP economics");
-  await expect(tab(page, "Liquidity")).toHaveText("Liquidity");
-  const keeper = l.getByRole("region", { name: "Who supplies inventory" });
-  await expect(keeper).toContainText(
-    "Who supplies inventory: in v1 a single pool keeper (a market maker) seeds and rebalances both wrappers and earns 100% of Convert fees. Permissionless LP deposits are v2.",
-  );
-  const add = keeper.getByRole("button", { name: /^Add inventory/ });
-  await expect(add).toBeDisabled();
-  await expect(add).toContainText("keeper only in v1");
-  await expect(add).toHaveAccessibleDescription(/one inventory supplier keeps the multiplier attestations and wrapper whitelisting simple/);
-  await expect(keeper.locator(".tip")).toHaveAttribute("data-tip", /one inventory supplier keeps the multiplier attestations and wrapper whitelisting simple/);
-  // The keeper block sits above LP economics.
-  const [kY, lpY] = await Promise.all([keeper, l.getByRole("region", { name: "LP economics" })].map((x) => x.evaluate((e) => e.getBoundingClientRect().top)));
-  expect(kY).toBeLessThan(lpY);
-  await l.getByRole("button", { name: "Cheap direction now: Coinbase (mock) → xStocks (mock)" }).click();
+  await expect(l.getByRole("region", { name: /LP economics|Who supplies inventory/ })).toHaveCount(0);
+  await expect(l).not.toContainText("LP fees earned");
+  const dirs = l.getByRole("radiogroup", { name: "Direction" }).getByRole("radio");
+  const cb = dirs.filter({ hasText: /^Coinbase \(mock\) → xStocks \(mock\)/ }),
+    xs = dirs.filter({ hasText: /^xStocks \(mock\) → Coinbase \(mock\)/ });
+  await expect(cb).toContainText("Coinbase (mock) → xStocks (mock)cheapest2.00 bps2.00 base · skew 0 — rebalances the pool");
+  await expect(xs).toContainText(/\d\.\d\d bps2\.00 base \+ \d\.\d\d skew · to LP/);
+  // Starts on the cheap direction; clicking the other selects it and re-labels the button.
+  await expect(cb).toHaveAttribute("aria-checked", "true");
+  await xs.click();
+  await expect(xs).toHaveAttribute("aria-checked", "true");
+  await expect(cb).toHaveAttribute("aria-checked", "false");
+  const go = l.getByRole("button", { name: /^Convert xStocks \(mock\) → Coinbase \(mock\) · \d\.\d\d bps$/ });
+  await expect(go).toBeVisible();
+  await cb.click();
+  await expect(cb).toHaveAttribute("aria-checked", "true");
+  await xs.click();
+  await go.click();
   await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
-  await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toHaveAttribute("aria-checked", "true");
+  await expect(convert(page).getByRole("radio", { name: /xStocks/ })).toHaveAttribute("aria-checked", "true");
 });
 
-test("Send: three steps, who-sees-what table, labels, use cases, ladder line", async ({ page }) => {
+test("Send: the form and the three steps side by side, same width and height; no tracker, who-sees-what or use cases", async ({ page }) => {
   await demo(page, "/app?tab=send");
   const s = panel(page, "send");
   await expect(s.locator(".send-steps li")).toHaveCount(3);
   await expect(s).toContainText("Confidential, not anonymous. Operator-blind enclave on roadmap.");
-  const table = s.getByRole("table");
-  await expect(table.getByRole("row")).toHaveCount(4);
-  await expect(table.getByRole("row", { name: /Keeper/ })).toContainText("VisibleVisibleVisible");
-  await expect(s).toContainText("Private compensation");
-  await expect(s).toContainText("Private settlement");
-  await expect(s).toContainText("Dark Cross protects the order before the trade. Send protects the amount after it.");
-  // The sui lane's panel is mounted in the slot (deposit → pay → withdraw; reserves from /pay/reserves).
-  await expect(s.locator(".send-tracker, .send-panel, [class*=send-]").first()).toBeVisible();
   await expect(s).toContainText("Reserves");
+  await expect(s.getByRole("table")).toHaveCount(0);
+  await expect(s.locator(".send-tracker")).toHaveCount(0);
+  for (const gone of ["Who sees what", "Private compensation", "Private settlement", "Keeper credits shares"]) await expect(s).not.toContainText(gone);
+  const [form, side] = await Promise.all(
+    [s.locator(".send-main .card").first(), s.locator(".send-side .card")].map((l) => l.evaluate((e) => e.getBoundingClientRect().toJSON())),
+  );
+  expect(Math.abs(form.top - side.top)).toBeLessThanOrEqual(1);
+  expect(Math.abs(form.bottom - side.bottom)).toBeLessThanOrEqual(1);
+  expect(Math.abs(form.width - side.width)).toBeLessThanOrEqual(1);
 });
 
 test("real (injected) wallet: wrong chain → add + switch; rejection and decoded reverts show the real reason", async ({ page }) => {
@@ -311,7 +310,7 @@ test("key numbers ≥ 28px, labels ≥ 13px; content reaches the fold at 1440×9
     await demo(page, `/app?tab=${id}`);
     await expect(panel(page, id).locator(sel).first()).toBeVisible();
     const bottom = await panel(page, id).evaluate((p) => Math.max(...[...p.querySelectorAll(".card")].map((c) => c.getBoundingClientRect().bottom)));
-    expect(bottom, `${id}: content bottom`).toBeGreaterThan(900 * 0.6);
+    expect(bottom, `${id}: content bottom`).toBeGreaterThan(900 * 0.5); // Liquidity is two cards now (keeper + LP economics removed)
     expect(await panel(page, id).locator(sel).first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize)), `${id}: key number`).toBeGreaterThanOrEqual(28);
     const labels = await panel(page, id)
       .locator(".field-label, .tile-k, .card-title, .choice-sub")

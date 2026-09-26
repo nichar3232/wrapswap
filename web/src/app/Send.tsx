@@ -210,36 +210,6 @@ function useAssets(d: Deployment | undefined, given: PanelAsset[] | undefined): 
   }, [given, api.data, api.status, d]);
 }
 
-// ---------------------------------------------------------------- tracker
-
-type LegState = "done" | "active" | "next";
-type Leg = { key: string; label: string; chain: "Unichain" | "Sui"; state: LegState; detail?: ReactNode; simulated?: boolean };
-
-function Tracker({ legs }: { legs: Leg[] }) {
-  if (!legs.some((l) => l.state !== "next")) return null;
-  return (
-    <section className="card send-tracker" aria-label="Send tracker">
-      <ol>
-        {legs.map((l) => (
-          <li key={l.key} className={`leg leg-${l.state}`}>
-            <span className="leg-dot" aria-hidden="true">
-              {l.state === "active" ? <Spinner /> : null}
-            </span>
-            <div className="leg-body">
-              <div className="leg-head">
-                <span className="leg-label">{l.label}</span>
-                <span className="chip">{l.chain}</span>
-                {l.simulated && l.state !== "next" && <span className="chip">simulated</span>}
-              </div>
-              {l.detail && l.state !== "next" && <div className="leg-detail">{l.detail}</div>}
-            </div>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
 // ---------------------------------------------------------------- panel
 
 type Flow = {
@@ -592,69 +562,8 @@ function SendPanel({ d, given, demo }: { d: Deployment | undefined; given: Panel
     </button>
   );
 
-  // ---- tracker legs
   const dep = flow.deposit,
     pay = flow.pay;
-  const legs: Leg[] = [
-    {
-      key: "deposit",
-      label: dep ? `Deposited ${amount(dep.raw, tokens?.find((t) => t.symbol === dep.token)?.decimals ?? 18, 4)} ${dep.token}` : "Deposit into ShareVault",
-      chain: "Unichain",
-      state: dep ? "done" : stage === "Deposit" ? "active" : "next",
-      simulated: dep?.simulated,
-      detail: dep && <Hex value={dep.hash} kind="tx" simulated={dep.simulated} />,
-    },
-    {
-      key: "credit",
-      label: dep ? `Credited ${sharesWord(dep.shares)}` : "Keeper credits shares",
-      chain: "Sui",
-      state: dep?.credited ? "done" : dep ? "active" : "next",
-      simulated: dep?.simulated,
-      detail: dep?.credited && !dep.simulated && <SuiRef value={sd.sui.poolId} kind="object" />,
-    },
-    {
-      key: "pay",
-      label: pay ? `Sent ${sharesWord(pay.shares)} to ${shortHex(pay.payee)}, sealed` : "Sealed send",
-      chain: "Sui",
-      state: pay ? "done" : dep?.credited && stage === "Send" ? "active" : "next",
-      simulated: pay?.simulated,
-      detail: pay && <SuiRef value={pay.digest} kind="tx" simulated={pay.simulated} />,
-    },
-    {
-      key: "batch",
-      label: pay?.applied ? `Batch ${pay.seq ?? ""} applied · total unchanged` : "Batch closes and applies",
-      chain: "Sui",
-      state: pay?.applied ? "done" : pay ? "active" : "next",
-      simulated: pay?.simulated,
-    },
-    {
-      key: "withdraw",
-      label: wd ? `Recipient withdrew ${sharesWord(wd.shares)} as ${wd.target}` : "Recipient withdraws",
-      chain: "Sui",
-      state: wd ? "done" : stage === "Withdraw" && pay?.applied ? "active" : "next",
-      simulated: wd?.simulated,
-      detail: wd && <SuiRef value={wd.digest} kind="tx" simulated={wd.simulated} />,
-    },
-    {
-      key: "settle",
-      label: wd?.settled
-        ? `Delivered ${amount(wd.settled.amountOut, tokens?.find((t) => t.symbol === wd.target)?.decimals ?? 18, 6)} ${wd.target}`
-        : wd?.skipped
-          ? "Skipped · credit restored on Sui"
-          : "Delivered through the router",
-      chain: "Unichain",
-      state: wd?.settled || wd?.skipped ? "done" : wd ? "active" : "next",
-      simulated: wd?.simulated,
-      detail: (wd?.settled || wd?.skipped) && <Hex value={(wd.settled?.hash ?? wd.skipped)!} kind="tx" simulated={wd.simulated} />,
-    },
-    {
-      key: "debit",
-      label: wd?.settled ? `Debited ${sharesWord(wd.settled.sharesDebited, 6)}` : "Keeper debits Sui",
-      chain: "Sui",
-      state: wd?.debited ? "done" : wd?.settled ? "active" : "next",
-      simulated: wd?.simulated,
-    },
-  ];
 
   const stageDone: Record<Stage, boolean> = { Deposit: !!dep?.credited, Send: !!pay?.applied, Withdraw: !!wd?.debited };
   const walletSui = demo ? (viewer === "recipient" ? normalizeSuiAddress(payee) : sd.demoAccounts.suiPayer) : sui?.address;
@@ -857,7 +766,6 @@ function SendPanel({ d, given, demo }: { d: Deployment | undefined; given: Panel
         {/* The tracker below is the receipt; the tx panel covers signing, pending and failure. */}
         {tx.state.step !== "confirmed" && <TxPanel tx={tx.state} onRetry={tx.retry} />}
       </section>
-      <Tracker legs={legs} />
     </div>
   );
 }
