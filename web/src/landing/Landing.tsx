@@ -1,4 +1,4 @@
-import { StrictMode, useRef, useState } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Mark, ThemeToggle } from "../brand";
 import { Halftone } from "./Halftone";
@@ -14,12 +14,47 @@ import "../theme.css";
 import "./landing.css";
 
 const GITHUB = "https://github.com/nichar3232/wrapswap";
-const NAV = [
-  ["Product", "#product"],
-  ["How it works", "#how"],
-  ["Proof", "#proof"],
-  ["Developers", "#developers"],
-] as const;
+type Link = { label: string; href: string; external?: boolean };
+/** Each label scrolls to its section; its chevron opens a dropdown whose items navigate. */
+const NAV: (Link & { menu: Link[] })[] = [
+  {
+    label: "Product",
+    href: "#product",
+    menu: [
+      { label: "Convert", href: "/app?tab=convert" },
+      { label: "Pool", href: "/app?tab=pool" },
+      { label: "Dark Cross", href: "/app?tab=dark" },
+    ],
+  },
+  {
+    label: "How it works",
+    href: "#how-it-works",
+    menu: [
+      { label: "01 Convert", href: "#how-convert" },
+      { label: "02 Pool", href: "#how-pool" },
+      { label: "03 Dark Cross", href: "#how-dark" },
+    ],
+  },
+  {
+    label: "Proof",
+    href: "#proof",
+    menu: [
+      { label: "Deployed contracts", href: "#proof-contracts" },
+      ...(PROOF_SWAP_TX ? [{ label: "Router swap", href: "#proof-swap" }] : []),
+      { label: "Uniscan ↗", href: EXPLORER, external: true },
+    ],
+  },
+  {
+    label: "Developers",
+    href: "#developers",
+    menu: [
+      { label: "GitHub ↗", href: GITHUB, external: true },
+      { label: "Deployed contracts", href: "#proof-contracts" },
+    ],
+  },
+];
+const ext = (l: Link) =>
+  l.external ? { target: "_blank", rel: "noreferrer" } : {};
 const STEPS = [
   {
     name: "Convert",
@@ -64,8 +99,26 @@ function Grain() {
 
 function Nav() {
   const [open, setOpen] = useState(false);
+  const [menu, setMenu] = useState<string | null>(null);
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const outside = (e: PointerEvent) =>
+      ref.current?.contains(e.target as Node) || setMenu(null);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setMenu(null);
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [menu]);
+  const close = () => {
+    setOpen(false);
+    setMenu(null);
+  };
   return (
-    <header className="lnav">
+    <header className="lnav" ref={ref}>
       <a className="logo-cell" href="/" aria-label="Unison home">
         <Mark size={24} />
       </a>
@@ -73,12 +126,36 @@ function Nav() {
         unison
       </a>
       <nav className={`lnav-items${open ? " open" : ""}`} aria-label="Sections">
-        {NAV.map(([label, href]) => (
-          <a key={href} href={href} onClick={() => setOpen(false)}>
-            {label}
-            <Chevron />
-          </a>
-        ))}
+        {NAV.map((item) => {
+          const id = `menu-${item.href.slice(1)}`;
+          const shown = menu === item.href;
+          return (
+            <div className="nav-item" key={item.href}>
+              <a href={item.href} onClick={close}>
+                {item.label}
+              </a>
+              <button
+                type="button"
+                className="chev-btn"
+                aria-label={`${item.label} menu`}
+                aria-expanded={shown}
+                aria-controls={id}
+                onClick={() => setMenu(shown ? null : item.href)}
+              >
+                <Chevron />
+              </button>
+              {shown && (
+                <div className="dropdown" id={id}>
+                  {item.menu.map((l) => (
+                    <a key={l.href} href={l.href} onClick={close} {...ext(l)}>
+                      {l.label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
       <div className="lnav-end">
         <button
@@ -129,11 +206,11 @@ function Landing() {
         </div>
       </section>
 
-      <section className="black how" id="how">
+      <section className="black how" id="how-it-works">
         <h2>How it works</h2>
         <ol className="steps3">
           {STEPS.map((s, i) => (
-            <li key={s.tab}>
+            <li key={s.tab} id={`how-${s.tab}`}>
               <span className="index">0{i + 1}</span>
               <h3>{s.name}</h3>
               <p>
@@ -152,6 +229,7 @@ function Landing() {
             <span className="chain">chain {deployment.chainId}</span>
           )}
         </h2>
+        <div id="proof-contracts">
         {rows.length === 0 && (
           <p className="pending">Deployment addresses are being published.</p>
         )}
@@ -183,8 +261,10 @@ function Landing() {
             </tbody>
           </table>
         </div>
+        </div>
         {PROOF_SWAP_TX && (
           <a
+            id="proof-swap"
             className="tx-card"
             href={`${EXPLORER}/tx/${PROOF_SWAP_TX}`}
             target="_blank"
