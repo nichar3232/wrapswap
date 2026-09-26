@@ -253,6 +253,18 @@ How it was driven: headless Chromium can't operate the Slush or MetaMask extensi
 
 After the run, `GET /pay/reserves` returned `suiTotalShares == vaultShares == 31.0548993375` with `invariant: true`.
 
+### Send panel click-through (`/app?tab=send`)
+
+The same flow through the app's **Send** panel on live Sui testnet + Unichain Sepolia, on the Unison component kit. Nine screenshots are in `~/wrapswap-run/status/sui-shots/send-live/`; a demo-mode run (no wallet, simulated states, live numbers) is in `send-demo/`.
+
+| Step | Evidence |
+| --- | --- |
+| 01 Deposit 5 mAAPLx (xStocks) on Unichain | [`0x6b744bbf…`](https://sepolia.uniscan.xyz/tx/0x6b744bbf916b2eaa740b8e85a61d818cd485588c7aed7a2a70edba507fde9834) → `credit_deposit` [`49MXj6PF…`](https://suiscan.xyz/testnet/tx/49MXj6PFmuuQ7izX8xkuzddRvH5hRVAocBefmcATpuHc) |
+| 02 Send 3 shares, sealed for 90 s; batch 13 applied with the total unchanged | `apply_batch` [`EbtLjHm5…`](https://suiscan.xyz/testnet/tx/EbtLjHm5vdY5iKkvbjqGf2h9dyobgayzQJAEJBNy66bL) |
+| 03 Recipient withdraws 5 shares to Coinbase (mcbAAPL): 4.938271 delivered through the router | `apply_batch` [`E9w6vjh6…`](https://suiscan.xyz/testnet/tx/E9w6vjh6F6vw1ZZkzhsVmwfsGiJZUKg3HgdJz7JYpgtd), `settleWithdrawals` [`0xcb9c50d2…`](https://sepolia.uniscan.xyz/tx/0xcb9c50d20d43dfe3d748c41b9ef9093d3aefb9a152b9b87af59f50dfac5f66f5), `debit_withdrawal` [`2hKb11aW…`](https://suiscan.xyz/testnet/tx/2hKb11aWaJkLErqDKLFAQpgAwVQt8pCDmPryZsgZLwix) |
+
+Reserves afterwards: `31.0407853` shares on both chains, `invariant: true`.
+
 ## Tests
 
 - Move: `cd sui/unison_pay && sui move test`, 22/22. Covers window gating, sequence ordering, total unchanged on internal batches, u128 above u64, single-use receipts, pause/resume, foreign cap, and allow/deny for both Seal policies.
