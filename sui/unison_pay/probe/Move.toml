@@ -1,0 +1,6 @@
+[package]
+name = "seal_probe"
+edition = "2024"
+
+[addresses]
+seal_probe = "0x0"
