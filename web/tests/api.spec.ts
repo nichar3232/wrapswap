@@ -69,6 +69,20 @@ test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on
   expect(errors).toEqual([]);
 });
 
+test("wallet button: Connect until clicked, Connecting… only in flight, back to Connect after 5 s", async ({ page }) => {
+  await api(page, (_, v) => v, { wallet: false });
+  await page.route(/\/api\/demo\/status/, () => undefined); // the relay probe never answers
+  await page.goto("/app?tab=liquidity");
+  const btn = page.getByRole("button", { name: "Connect wallet" });
+  await expect(btn).toHaveText("Connect");
+  await page.waitForTimeout(1500);
+  await expect(btn).toHaveText("Connect");
+  await btn.click();
+  await expect(btn).toHaveText("Connecting…");
+  await expect(btn).toHaveText("Connect", { timeout: 7000 });
+  await expect(btn).toBeEnabled();
+});
+
 test("degraded names only the failing feeds; everything else stays live", async ({ page }) => {
   await api(page, (name, v) => (["crankStatus", "poolAsset"].includes(name) ? "ERROR" : v));
   await page.goto("/app?asset=AAPL");

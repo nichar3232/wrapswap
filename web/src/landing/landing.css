@@ -1151,3 +1151,35 @@ html {
   margin-top: 6px;
   font-size: 13px;
 }
+
+/* ---------- Landing deck: each top-level section is one full-viewport slide ---------- */
+/* Mandatory here only (html.deck, set by Landing.tsx); Developers keeps proximity above. A section taller than the
+   viewport still scrolls natively inside itself: browsers let a snap area larger than the snapport scroll freely. */
+html.deck {
+  scroll-snap-type: y mandatory;
+}
+html.deck .hero,
+html.deck .one-price,
+html.deck .how,
+html.deck .flow-sec,
+html.deck .lfoot {
+  min-height: 100vh;
+  scroll-snap-align: start;
+}
+html.deck .how,
+html.deck .flow-sec {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+html.deck .flow-sec .convert-flow {
+  width: 100%;
+}
+html.deck .lfoot {
+  align-content: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.deck {
+    scroll-snap-type: none;
+  }
+}

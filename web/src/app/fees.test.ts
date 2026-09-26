@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canonical, DEMO, type QuoteResponse } from "@wrapswap/types";
-import { quoteBreakdown, skewPct } from "./fees";
+import { keeperSetInventory, quoteBreakdown, skewPct } from "./fees";
 import { mockResponse } from "../mocks/api";
 
 // The final fee model: base 2 bps always; skew fee min(ceil(1500·|post skew|), 5000) pips only when |skew| grows.
@@ -48,5 +48,31 @@ describe("You keep pinned to one quote", () => {
   it("formats signed skew", () => {
     expect(skewPct(DEMO.skewX18.initial)).toBe("−20.00%");
     expect(skewPct(0n)).toBe("0.00%");
+  });
+});
+
+describe("keeperSetInventory: skew larger than the indexed conversions could produce", () => {
+  const pool = (l: bigint, r: bigint, baseShares: bigint) => ({
+    wrappers: [{ inventoryShares: String(l) }, { inventoryShares: String(r) }],
+    directions: [
+      { totalPips: 200, skewFeePips: 0 },
+      { totalPips: 900, skewFeePips: 700 },
+    ],
+    lpFees: { baseShares: String(baseShares) },
+  });
+  const ONE = canonical.ONE;
+  // 0.02 sh of base fees at 2 bps = 100 sh of volume → at most a 200 sh gap.
+  it("a gap conversions can explain shows nothing", () => {
+    expect(keeperSetInventory(pool(1000n * ONE, 1200n * ONE, ONE / 50n))).toBe(false);
+  });
+  it("a wider gap is flagged", () => {
+    expect(keeperSetInventory(pool(1000n * ONE, 1201n * ONE, ONE / 50n))).toBe(true);
+  });
+  it("any gap with no conversions is flagged; a balanced pool is not", () => {
+    expect(keeperSetInventory(pool(1000n * ONE, 1001n * ONE, 0n))).toBe(true);
+    expect(keeperSetInventory(pool(1000n * ONE, 1000n * ONE, 0n))).toBe(false);
+  });
+  it("the mock AAPL pool (−20% skew, 2 fills) is flagged", () => {
+    expect(keeperSetInventory(mockResponse("poolAsset", "unichain-sepolia", "AAPL") as never)).toBe(true);
   });
 });

@@ -23,8 +23,19 @@ import {
   subscribeWallet,
   switchToExpectedChain,
   tokenBalances,
+  WalletError,
 } from "../wallet";
 import { humanize } from "./tx";
+
+/** A connect attempt that hasn't answered in this long fails, so the button never sits on "Connecting…". */
+export const CONNECT_TIMEOUT_MS = 5000;
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new WalletError("timeout")), ms))),
+  ]).finally(() => clearTimeout(timer));
+}
 
 type Balances = { status: "loading" | "ok" | "unavailable"; values: Record<string, bigint> };
 
@@ -53,16 +64,17 @@ function useWalletState(d: Deployment | undefined, tokens: Token[] | undefined) 
 
   const connect = useCallback(
     async (quiet = false) => {
-      setBusy("connect");
+      // A quiet (automatic) attempt leaves the button on "Connect": only a click shows "Connecting…".
+      if (!quiet) setBusy("connect");
       setNotice("");
       try {
-        const account = await requestAccount(d);
+        const account = await withTimeout(requestAccount(d), CONNECT_TIMEOUT_MS);
         setAddress(account);
-        setChainId(await readChainId());
+        setChainId(await withTimeout(readChainId(), CONNECT_TIMEOUT_MS).catch(() => null));
       } catch (e) {
         if (!quiet) setNotice(humanize(e));
       } finally {
-        setBusy(null);
+        if (!quiet) setBusy(null);
       }
     },
     [d],

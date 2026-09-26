@@ -35,6 +35,9 @@ const PRODUCTS = [
   },
 ];
 
+// The landing page is a slide deck: every top-level section snaps (landing.css, html.deck). Developers is not.
+document.documentElement.classList.add("deck");
+
 function Landing() {
   const hero = useRef<HTMLElement>(null);
   return (
@@ -80,6 +83,9 @@ function Landing() {
             </li>
           ))}
         </ol>
+      </section>
+
+      <section className="black flow-sec" id="flow" aria-label="Convert flow">
         <ConvertFlow />
       </section>
 

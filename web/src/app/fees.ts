@@ -56,3 +56,22 @@ export function quoteBreakdown(q: QuoteResponse, tokenOut: { sharesPerTokenX18: 
     postSkewX18: BigInt(q.postSkewX18 ?? q.fee.postSkewX18),
   };
 }
+
+/**
+ * True when the inventory gap is larger than every indexed Convert together could have opened: each conversion pays
+ * the base fee on its input, so volume = baseShares × 1e6 / basePips, and a conversion of v shares widens
+ * |L − R| by at most 2v. A larger gap was set by the pool keeper (depositInventory / withdrawInventory).
+ */
+export function keeperSetInventory(p: {
+  wrappers: { inventoryShares: string }[];
+  directions: { totalPips: number; skewFeePips: number }[];
+  lpFees: { baseShares: string };
+}): boolean {
+  const [l, r] = p.wrappers.map((x) => BigInt(x.inventoryShares));
+  if (l === undefined || r === undefined) return false;
+  const gap = l > r ? l - r : r - l;
+  const basePips = Math.min(...p.directions.map((x) => x.totalPips - x.skewFeePips));
+  if (!(basePips > 0)) return false;
+  const volume = (BigInt(p.lpFees.baseShares) * 1_000_000n) / BigInt(basePips);
+  return gap > 2n * volume;
+}

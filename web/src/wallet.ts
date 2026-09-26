@@ -42,7 +42,7 @@ const provider = () => {
 /** Wallet failures the UI can describe; the raw error is kept for the console only. */
 export class WalletError extends Error {
   constructor(
-    readonly kind: "no-wallet" | "no-account",
+    readonly kind: "no-wallet" | "no-account" | "timeout",
     readonly cause?: unknown,
   ) {
     super(kind);

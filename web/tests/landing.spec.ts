@@ -64,7 +64,10 @@ test("Landing: Unison brand, three products; Developers page lists every contrac
   await expect(page.getByText(/Inventory · skew/)).toBeVisible();
 });
 
-/** The target is scrolled to the top of the viewport, or the page is scrolled to its end. */
+/**
+ * The target is scrolled to the top of the viewport, or the page is scrolled to its end. On the landing deck a target
+ * inside a slide (a How it works card) snaps to its slide: that slide is at the top and the target is fully in view.
+ */
 async function expectScrolledTo(page: Page, id: string) {
   await expect(page).toHaveURL(new RegExp(`#${id}$`));
   await expect
@@ -76,7 +79,10 @@ async function expectScrolledTo(page: Page, id: string) {
         const atEnd =
           Math.ceil(scrollY + innerHeight) >=
           document.documentElement.scrollHeight - 1;
-        return r.top < innerHeight && (Math.abs(r.top) < 2 || atEnd);
+        const slide = el.closest("section");
+        const inSlide =
+          !!slide && slide !== el && Math.abs(slide.getBoundingClientRect().top) < 2 && r.top >= 0 && r.bottom <= innerHeight;
+        return r.top < innerHeight && (Math.abs(r.top) < 2 || atEnd || inSlide);
       }, id),
     )
     .toBe(true);
@@ -233,7 +239,7 @@ test.describe("Landing controls all navigate or scroll", () => {
     const file = new URL("../../deployments/unichain-sepolia.resolved.json", import.meta.url);
     const d = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : undefined;
     await page.goto("/");
-    const flow = page.locator("#how-it-works .convert-flow");
+    const flow = page.locator("#flow .convert-flow");
     const nodes = [
       ["Oracle · peg guard", "Stops trade if gap > 50 bps"],
       ["User sends", "100 mcbAAPL, issuer A"],
@@ -269,21 +275,57 @@ test.describe("Landing controls all navigate or scroll", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 
-  test("landing sections are full height and snap (proximity)", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.emulateMedia({ reducedMotion: "no-preference" });
-    await page.goto("/");
-    // Styles are injected by the module graph in dev; wait for the rendered landing before reading them.
-    await expect(page.locator(".hero h1")).toHaveText("Unison");
-    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).not.toBe("none");
-    // "y" alone serializes proximity, the default strictness; mandatory would read "y mandatory".
-    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).toMatch(/^y( proximity)?$/);
-    for (const id of ["product", "one-price"]) {
-      const box = await page.locator(`#${id}`).evaluate((e) => ({ h: e.getBoundingClientRect().height, snap: getComputedStyle(e).scrollSnapAlign }));
-      expect(box.h, id).toBeGreaterThanOrEqual(900);
-      expect(box.snap, id).toBe("start");
-    }
-  });
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+  ]) {
+    const mobile = width < 600;
+    test.describe(`${width}×${height}`, () => {
+      test.use({ viewport: { width, height }, hasTouch: mobile, isMobile: mobile });
+      test("landing is a snap deck: full-height sections, hero fits, one scroll lands on the next", async ({ page }) => {
+        await page.emulateMedia({ reducedMotion: "no-preference" });
+        await page.goto("/");
+        // Styles are injected by the module graph in dev; wait for the rendered landing before reading them.
+        await expect(page.locator(".hero h1")).toHaveText("Unison");
+        await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).toBe("y mandatory");
+        const ids = ["product", "one-price", "how-it-works", "flow"];
+        const boxes = await page.evaluate(
+          (ids) =>
+            [...ids.map((id) => document.getElementById(id)!), document.querySelector("footer.lfoot")!].map((e) => ({
+              h: e.getBoundingClientRect().height,
+              snap: getComputedStyle(e).scrollSnapAlign,
+            })),
+          ids,
+        );
+        for (const [i, b] of boxes.entries()) {
+          expect(b.h, ids[i] ?? "footer").toBeGreaterThanOrEqual(height);
+          expect(b.snap, ids[i] ?? "footer").toBe("start");
+        }
+        expect(boxes[0].h, "hero fits in one viewport").toBe(height);
+        // One scroll from the top lands the second section flush with the viewport top: a single arrow step (~40 px,
+        // directional snap) on desktop; on mobile one touch swipe across 60% of the screen, with no fling so the
+        // result is deterministic (a fling's distance varies run to run). Synthetic pixel wheel events snap to the
+        // nearest section, unlike a notched wheel, so they can't stand in for one.
+        if (mobile) {
+          const cdp = await page.context().newCDPSession(page);
+          await cdp.send("Input.synthesizeScrollGesture", {
+            x: width / 2,
+            y: height * 0.8,
+            yDistance: -Math.round(height * 0.6),
+            speed: 1500,
+            gestureSourceType: "touch",
+            preventFling: true,
+          });
+        } else {
+          await page.locator(".hero h1").click();
+          await page.keyboard.press("ArrowDown");
+        }
+        await expect
+          .poll(() => page.evaluate(() => Math.round(document.getElementById("one-price")!.getBoundingClientRect().top)), { timeout: 5000 })
+          .toBe(0);
+      });
+    });
+  }
 
   test("mobile menu opens without chevrons and its items scroll", async ({
     page,

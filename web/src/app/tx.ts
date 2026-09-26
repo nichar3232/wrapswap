@@ -128,7 +128,9 @@ export function humanize(e: unknown): string {
   if (e instanceof WalletError)
     return e.kind === "no-wallet"
       ? "No browser wallet found. Install MetaMask (or another injected wallet) to sign."
-      : "Your wallet didn't return an account. Unlock it and retry.";
+      : e.kind === "timeout"
+        ? "Your wallet didn't respond. Retry."
+        : "Your wallet didn't return an account. Unlock it and retry.";
   const code = (e as { code?: unknown })?.code;
   if (
     code === 4001 ||
