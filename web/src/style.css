@@ -2286,9 +2286,21 @@ dl.review {
   border-radius: 14px;
   border: 1px solid var(--line);
 }
+.dir {
+  width: 100%;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
 .dir.cheap {
   border-color: var(--good);
   box-shadow: 0 0 0 1px var(--good) inset;
+}
+.dir[aria-checked="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent) inset;
 }
 .dir-name {
   font-size: 16px;

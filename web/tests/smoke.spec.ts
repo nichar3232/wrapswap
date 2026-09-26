@@ -209,6 +209,17 @@ test("Liquidity: inventory, skew, fee each direction, cheap-direction CTA prefil
   // The keeper block sits above LP economics.
   const [kY, lpY] = await Promise.all([keeper, l.getByRole("region", { name: "LP economics" })].map((x) => x.evaluate((e) => e.getBoundingClientRect().top)));
   expect(kY).toBeLessThan(lpY);
+  // The two directions toggle; the button follows the selection (cheap first).
+  const dirs = l.getByRole("radiogroup", { name: "Direction" });
+  await expect(dirs.getByRole("radio", { name: /^Coinbase \(mock\) → xStocks/ })).toHaveAttribute("aria-checked", "true");
+  await dirs.getByRole("radio", { name: /^xStocks \(mock\) → Coinbase/ }).click();
+  await expect(dirs.getByRole("radio", { name: /^xStocks \(mock\) → Coinbase/ })).toHaveAttribute("aria-checked", "true");
+  await expect(dirs.getByRole("radio", { name: /^Coinbase \(mock\) → xStocks/ })).toHaveAttribute("aria-checked", "false");
+  await l.getByRole("button", { name: "Convert: xStocks (mock) → Coinbase (mock)" }).click();
+  await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
+  await expect(convert(page).getByRole("radio", { name: /xStocks/ })).toHaveAttribute("aria-checked", "true");
+  await tab(page, "Liquidity").click();
+  await l.getByRole("radiogroup", { name: "Direction" }).getByRole("radio", { name: /^Coinbase \(mock\) → xStocks/ }).click();
   await l.getByRole("button", { name: "Cheap direction now: Coinbase (mock) → xStocks (mock)" }).click();
   await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
   await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toHaveAttribute("aria-checked", "true");

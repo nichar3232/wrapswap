@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { PoolAssetResponse } from "@wrapswap/types";
 import type { Feed } from "../hooks/useApi";
 import { amount, fmtShares } from "../lib/format";
@@ -58,7 +58,8 @@ const KEEPER_WHY =
 
 /**
  * Liquidity for the selected asset, from GET /pool/:asset: inventory per wrapper, skew, the fee each direction pays
- * now, and what the LP has earned. Display-only: depositInventory / withdrawInventory are keeper-only.
+ * now, and what the LP has earned. The two directions toggle; the button opens Move → Convert in the selected one
+ * (the cheap direction until another is picked). Display-only: depositInventory / withdrawInventory are keeper-only.
  */
 export function Liquidity({
   asset,
@@ -71,6 +72,7 @@ export function Liquidity({
   onMove: (fromToken: string) => void;
   picker?: ReactNode;
 }) {
+  const [picked, setPicked] = useState<string>();
   const p = pool.data && asset && pool.data.asset === asset.symbol ? pool.data : undefined;
   if (!asset || !p)
     return (
@@ -90,6 +92,8 @@ export function Liquidity({
   };
   const tokenOf = (sym: string) => asset.platforms.find((x) => x.token.symbol === sym)?.token.address;
   const cheap = p.directions.find((x) => x.from === p.cheapDirection.from && x.to === p.cheapDirection.to) ?? p.directions[0];
+  // Another asset's pick matches no direction here, so it falls back to the cheap one.
+  const sel = p.directions.find((x) => x.from === picked) ?? cheap;
   const baseBps = (x: Direction) => ((x.totalPips - x.skewFeePips) / 100).toFixed(2);
   return (
     <div className="page liquidity">
@@ -100,9 +104,16 @@ export function Liquidity({
       <div className="liq-top">
         <section className="card liq-hero" aria-label={`${asset.symbol} fee by direction`}>
           <span className="tile-k">{asset.symbol} · fee by direction now</span>
-          <div className="dir-fees">
+          <div className="dir-fees" role="radiogroup" aria-label="Direction">
             {p.directions.map((x) => (
-              <div key={x.from} className={`dir${x === cheap ? " cheap" : ""}`}>
+              <button
+                key={x.from}
+                type="button"
+                role="radio"
+                aria-checked={x === sel}
+                className={`dir${x === cheap ? " cheap" : ""}`}
+                onClick={() => setPicked(x.from)}
+              >
                 <span className="dir-name">
                   {name(x.from)} → {name(x.to)}
                 </span>
@@ -114,11 +125,11 @@ export function Liquidity({
                     ? `${baseBps(x)} base · skew 0 — rebalances the pool`
                     : `${baseBps(x)} base + ${(x.skewFeePips / 100).toFixed(2)} skew · to LP`}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
-          <button className="primary" disabled={!tokenOf(cheap.from)} onClick={() => onMove(tokenOf(cheap.from)!)}>
-            Cheap direction now: {name(cheap.from)} → {name(cheap.to)}
+          <button className="primary" disabled={!tokenOf(sel.from)} onClick={() => onMove(tokenOf(sel.from)!)}>
+            {sel === cheap ? "Cheap direction now" : "Convert"}: {name(sel.from)} → {name(sel.to)}
           </button>
         </section>
         <section className="card" aria-label={`${asset.symbol} inventory`}>
