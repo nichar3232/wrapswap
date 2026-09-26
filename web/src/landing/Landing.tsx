@@ -58,8 +58,8 @@ function Landing() {
         <div className="hero-copy">
           <h1>Unison</h1>
           <p>
-            One price for every tokenized stock. Unison converts across issuers
-            at NAV parity, natively on Uniswap v4 hooks.
+            One share is one share. Unison converts tokenized stocks across
+            issuers at NAV parity, as a Uniswap v4 hook.
           </p>
           <div className="ctas">
             <a className="launch" href="/app">
