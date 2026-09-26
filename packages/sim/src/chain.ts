@@ -84,6 +84,7 @@ export const abi = {
     "function inventoryShares(address) view returns (uint256)",
     "function baseFeePips() view returns (uint24)",
     "function depositInventory(address currency, uint256 amount)",
+    "function withdrawInventory(address currency, uint256 amount, address to)",
     "function isKeeper(address) view returns (bool)",
     "function setKeeper(address,bool)",
     "event Converted(bytes32 indexed asset, address indexed from, address indexed to, address sender, address recipient, uint256 amountIn, uint256 sharesOut, uint256 baseFee, uint256 skewFee, int256 postSkew)",
