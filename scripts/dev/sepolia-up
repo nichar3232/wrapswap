@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Native Base Sepolia stack (USE_MOCKS=false): its own Postgres container plus indexer, API, crank and web
+# in the detached tmux session "wrapswap-sepolia" (one window each). Secrets come from SEPOLIA_ENV.
+# Ports: web 13010, API 18010, crank 18110, Postgres 15410. Stop with scripts/dev/sepolia-down.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+SEPOLIA_ENV=${SEPOLIA_ENV:-$HOME/wrapswap-run/env/lane6.env}
+[[ -f $SEPOLIA_ENV ]] || { echo "Missing $SEPOLIA_ENV (DEMO_MNEMONIC, CRANK_PRIVATE_KEY)" >&2; exit 1; }
+set -a; source "$SEPOLIA_ENV"; source scripts/dev/base-sepolia.env; set +a
+export NETWORK=base-sepolia USE_MOCKS=false DEPLOYMENT_FILE=deployments/base-sepolia.json
+export WEB_PORT=13010 API_PORT=18010 CRANK_HEALTH_PORT=18110 CRANK_PORT=18110 PG_PORT=15410
+export RPC_URL=${BASE_SEPOLIA_RPC_URL:-$RPC_URL} CRANK_PK=${CRANK_PK:-${CRANK_PRIVATE_KEY:-}}
+export DATABASE_URL=postgresql://wrapswap:wrapswap@127.0.0.1:$PG_PORT/wrapswap
+export VITE_NETWORK=base-sepolia VITE_RPC_URL=https://base-sepolia-rpc.publicnode.com
+export INDEXER_CONFIRMATIONS=${INDEXER_CONFIRMATIONS:-2}
+docker start wrapswap-sepolia-pg >/dev/null 2>&1 || docker run -d --name wrapswap-sepolia-pg \
+  -e POSTGRES_USER=wrapswap -e POSTGRES_PASSWORD=wrapswap -e POSTGRES_DB=wrapswap \
+  -p 127.0.0.1:$PG_PORT:5432 postgres:16 >/dev/null
+until docker exec wrapswap-sepolia-pg pg_isready -U wrapswap -d wrapswap >/dev/null 2>&1; do sleep 1; done
+sleep 2
+pnpm db:migrate
+S=wrapswap-sepolia
+tmux kill-session -t $S 2>/dev/null || true
+envfile=$(mktemp); chmod 600 "$envfile"; export -p > "$envfile"
+start() { tmux new-window -d -t $S -n "$1" "source '$envfile'; cd '$PWD'; $2 2>&1 | tee -a logs/sepolia-$1.log"; }
+tmux new-session -d -s $S -n shell
+start indexer 'pnpm exec tsx scripts/dev/indexer.mjs'
+sleep 5
+start api 'pnpm dev:api'
+start crank 'pnpm dev:crank'
+start web 'pnpm dev:web'
+sleep 3; rm -f "$envfile"
+for kind in api crank web; do
+  for i in $(seq 60); do node scripts/dev/health.mjs $kind 2>/dev/null && break; sleep 2; done
+  node scripts/dev/health.mjs $kind && echo "$kind healthy"
+done
+echo "Web http://127.0.0.1:$WEB_PORT  API http://127.0.0.1:$API_PORT  (tmux attach -t $S)"
