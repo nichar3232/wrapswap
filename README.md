@@ -127,7 +127,7 @@ nor the contracts show USD prices.
 ## Agents (MCP)
 
 The Unison MCP server gives an agent the same surface as the app:
-- **Read:** `list_assets`, `get_pool`, `quote_convert`, `get_batch`.
+- **Read:** `list_assets`, `get_pool`, `quote_convert`, `get_batch`, `get_portfolio`.
 - **Execute:** `convert`, `commit_dark_order` and `send_confidential`. They go through the demo relay and are capped at
   100 shares per action.
 

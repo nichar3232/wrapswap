@@ -181,6 +181,74 @@ export const schemas = {
       }
     }
   },
+  "BalancesResponse": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "address",
+      "block",
+      "assets"
+    ],
+    "properties": {
+      "address": {
+        "$ref": "Address"
+      },
+      "block": {
+        "$ref": "UInt"
+      },
+      "assets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "asset",
+            "wrappers"
+          ],
+          "properties": {
+            "asset": {
+              "type": "string"
+            },
+            "wrappers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "platform",
+                  "symbol",
+                  "address",
+                  "decimals",
+                  "balance",
+                  "shares"
+                ],
+                "properties": {
+                  "platform": {
+                    "type": "string"
+                  },
+                  "symbol": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "$ref": "Address"
+                  },
+                  "decimals": {
+                    "type": "integer"
+                  },
+                  "balance": {
+                    "$ref": "UInt"
+                  },
+                  "shares": {
+                    "$ref": "UInt"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "BatchDetailResponse": {
     "type": "object",
     "additionalProperties": false,
@@ -2746,6 +2814,22 @@ export type AssetsResponse = {
   }>;
 };
 
+export type BalancesResponse = {
+  "address": Address;
+  "block": UInt;
+  "assets": Array<{
+    "asset": string;
+    "wrappers": Array<{
+      "platform": string;
+      "symbol": string;
+      "address": Address;
+      "decimals": number;
+      "balance": UInt;
+      "shares": UInt;
+    }>;
+  }>;
+};
+
 export type BatchDetailResponse = {
   "batch": BatchSummary;
   "orders": Array<OrderView>;
@@ -3475,6 +3559,14 @@ export const routes = [
     "backing": "chain: TestShareFaucet.tokens, amountOf, nextClaimAt; table: faucet_claims"
   },
   {
+    "name": "balances",
+    "method": "GET",
+    "path": "/balances/:address",
+    "query": null,
+    "response": "BalancesResponse",
+    "backing": "chain: IERC20.balanceOf, IWrapperAdapter.ratio (every manifest wrapper)"
+  },
+  {
     "name": "stats",
     "method": "GET",
     "path": "/stats",
@@ -3511,6 +3603,7 @@ export type RouteResponses = {
   "assets": AssetsResponse;
   "poolAsset": PoolAssetResponse;
   "faucet": FaucetResponse;
+  "balances": BalancesResponse;
   "stats": StatsResponse;
   "crankStatus": CrankStatusResponse;
 };
@@ -3532,6 +3625,7 @@ export type RouteQueries = {
   "assets": Record<string, never>;
   "poolAsset": Record<string, never>;
   "faucet": Record<string, never>;
+  "balances": Record<string, never>;
   "stats": StatsQuery;
   "crankStatus": Record<string, never>;
 };

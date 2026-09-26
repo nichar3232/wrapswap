@@ -7,6 +7,7 @@ import {
   type Deployment,
 } from "@wrapswap/types";
 import {
+  erc20Abi,
   getAddress,
   stringToHex,
   parseAbi,
@@ -904,6 +905,32 @@ export async function routes(
       directions,
       cheapDirection: { from: cheap.from, to: cheap.to },
       lpFees: lp,
+    };
+  });
+  get("/balances/:address", "BalancesResponse", async (req) => {
+    checked("Address", req.params.address);
+    const b = await block();
+    return {
+      address: req.params.address,
+      block: b.number,
+      assets: await Promise.all(
+        assetList.map(async (a) => ({
+          asset: a.symbol,
+          wrappers: await Promise.all(
+            a.wrappers.map(async (w: any) => {
+              const balance = await client.readContract({ address: w.token, abi: erc20Abi, functionName: "balanceOf", args: [req.params.address], blockNumber: b.number });
+              return {
+                platform: w.platform,
+                symbol: w.symbol,
+                address: getAddress(w.token),
+                decimals: allTokens.find((t) => eq(t.address, w.token))!.decimals,
+                balance,
+                shares: await sharesOfToken(w.token, balance, b),
+              };
+            }),
+          ),
+        })),
+      ),
     };
   });
   get("/faucet/:address", "FaucetResponse", async (req) => {

@@ -291,6 +291,72 @@ export const getBatch: ToolDef<{ asset: typeof asset }> = {
   },
 };
 
+const address = z
+  .string()
+  .regex(/^0x[0-9a-fA-F]{40}$/)
+  .optional()
+  .describe("EVM address to read. Defaults to the demo relay's account (the one convert and commit_dark_order trade from).");
+
+export const getPortfolio: ToolDef<{ address: typeof address }> = {
+  name: "get_portfolio",
+  title: "Wallet balances and recent fills",
+  description:
+    "Read one wallet's holdings on Unichain Sepolia: for every asset, its balance of each issuer wrapper in tokens and in canonical " +
+    "shares of the stock (at the adapter's live multiplier), the total shares per asset, and the wallet's 10 most recent fills from " +
+    "the indexer (Convert, Dark Cross, residual) with shares, fee and a Uniscan link. Omit `address` to read the demo relay's account, " +
+    "which is where convert and commit_dark_order output lands by default. Read-only; shares only, never USD.",
+  inputSchema: { address },
+  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+  async run({ address: addr }, api) {
+    const who = addr ?? (await api.get<any>("/demo/status")).address;
+    const [bal, fills] = await Promise.all([
+      api.get<any>(`/balances/${who}`),
+      api.get<any>("/fills", { account: who, limit: 10 }),
+    ]);
+    const tokens = new Map<string, { symbol: string; decimals: number; asset: string }>();
+    for (const a of bal.assets) for (const w of a.wrappers) tokens.set(w.address.toLowerCase(), { symbol: w.symbol, decimals: w.decimals, asset: a.asset });
+    const amount = (token: string, raw: string) => {
+      const t = tokens.get(token.toLowerCase());
+      return t ? `${formatUnits(raw, t.decimals, 6)} ${t.symbol}` : raw;
+    };
+    const data = {
+      address: bal.address,
+      block: bal.block,
+      assets: bal.assets.map((a: any) => ({
+        asset: a.asset,
+        totalShares: shares(a.wrappers.reduce((s: bigint, w: any) => s + BigInt(w.shares), 0n)),
+        wrappers: a.wrappers.map((w: any) => ({
+          platform: w.platform,
+          symbol: w.symbol,
+          address: w.address,
+          tokens: formatUnits(w.balance, w.decimals),
+          shares: shares(w.shares),
+        })),
+      })),
+      recentFills: (fills.items ?? []).map((f: any) => ({
+        kind: f.kind,
+        asset: tokens.get(f.tokenIn.toLowerCase())?.asset,
+        from: tokens.get(f.tokenIn.toLowerCase())?.symbol ?? f.tokenIn,
+        to: tokens.get(f.tokenOut.toLowerCase())?.symbol ?? f.tokenOut,
+        amountIn: amount(f.tokenIn, f.amountIn),
+        amountOut: amount(f.tokenOut, f.amountOut),
+        shares: shares(f.shares),
+        fee: bps(f.feePips),
+        timestamp: new Date(Number(f.timestamp) * 1000).toISOString(),
+        txHash: f.txHash,
+        explorer: txLink(f.txHash),
+      })),
+    };
+    return {
+      summary:
+        `${data.address} at block ${data.block}: ` +
+        data.assets.map((a: any) => `${a.asset} ${a.totalShares} sh (${a.wrappers.map((w: any) => `${w.tokens} ${w.symbol}`).join(" + ")})`).join("; ") +
+        `; ${data.recentFills.length} recent fill${data.recentFills.length === 1 ? "" : "s"}`,
+      data,
+    };
+  },
+};
+
 // ---------------------------------------------------------------- execution (demo relay)
 
 function capCheck(sharesRaw: bigint) {
@@ -444,7 +510,7 @@ export function suiGo(path = process.env.UNISON_SUI_STATUS || join(homedir(), "w
   }
 }
 
-export const readTools: ToolDef<any>[] = [listAssets, getPool, quoteConvert, getBatch];
+export const readTools: ToolDef<any>[] = [listAssets, getPool, quoteConvert, getBatch, getPortfolio];
 export const executionTools: ToolDef<any>[] = [convert, commitDarkOrder];
 
 export function allTools(extra: ToolDef<any>[] = []): ToolDef<any>[] {

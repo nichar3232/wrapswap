@@ -55,6 +55,7 @@ it("every §5 API route validates, all decisions, errors, pagination and history
       ["/orders/" + d.tokens[0].address, "OrderListResponse"],
       ["/fills", "FillListResponse"],
       ["/eligibility/" + d.deployer, "EligibilityResponse"],
+      ["/balances/" + d.deployer, "BalancesResponse"],
       ["/status", "CrankStatusResponse"],
     ];
     for (const [url, schema] of list) {
@@ -63,6 +64,10 @@ it("every §5 API route validates, all decisions, errors, pagination and history
       expect(validators[schema].is(r.json()), url).toBe(true);
     }
     fetchMock.mockRestore();
+    // 100 mcbAAPL (6 decimals) at 1.0125 shares per token.
+    const bal = (await app.inject("/balances/" + d.deployer)).json();
+    const w0 = bal.assets.flatMap((a: any) => a.wrappers).find((w: any) => w.address === d.tokens[0].address);
+    expect([w0.balance, w0.shares]).toEqual(["100000000", "101250000000000000000"]);
     const first = (await app.inject("/fills?limit=1")).json();
     expect(first.items).toHaveLength(1);
     expect(first.nextCursor).toBeTruthy();

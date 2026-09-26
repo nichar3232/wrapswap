@@ -44,3 +44,25 @@ describe.runIf(process.env.UNISON_LIVE === "1")("live API", () => {
     await client.close();
   }, 60_000);
 });
+
+describe.runIf(process.env.UNISON_LIVE === "1")("live get_portfolio", () => {
+  it("lists get_portfolio and reads the relay account's balances and fills over MCP", async () => {
+    const api = new UnisonApi();
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await createUnisonServer(api, toolsFor()).connect(a);
+    const client = new Client({ name: "live", version: "0" });
+    await client.connect(b);
+    expect((await client.listTools()).tools.map((t) => t.name)).toContain("get_portfolio");
+    const r: any = await client.callTool({ name: "get_portfolio", arguments: {} });
+    expect(r.isError).toBeFalsy();
+    const p = JSON.parse(r.content[0].text.split("\n\n")[1]);
+    const relay = (await api.get<any>("/demo/status")).address;
+    expect(p.address).toBe(relay);
+    expect(p.assets.map((x: any) => x.asset)).toEqual(expect.arrayContaining(["AAPL", "NVDA", "TSLA"]));
+    for (const x of p.assets) expect(x.wrappers).toHaveLength(2);
+    expect(Number(p.assets.find((x: any) => x.asset === "AAPL").totalShares)).toBeGreaterThan(0);
+    expect(p.recentFills.length).toBeGreaterThan(0);
+    expect(p.recentFills[0].explorer).toMatch(/^https:\/\/sepolia\.uniscan\.xyz\/tx\/0x/);
+    await client.close();
+  }, 60_000);
+});

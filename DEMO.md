@@ -182,7 +182,7 @@ NETWORK=unichain-sepolia RPC_URL=https://sepolia.unichain.org pnpm exec tsx scri
 ### 4.7 Agents (MCP)
 
 - Remote endpoint: `https://nichars-mac-mini.tail43cacc.ts.net/mcp` (Streamable HTTP). Run `claude mcp add --transport http unison <url>`, then ask for a quote or a convert.
-- Tools: `list_assets`, `get_pool`, `quote_convert`, `get_batch`, `convert`, `commit_dark_order`. Execution goes through the relay with the MCP budget (20 actions per 10 minutes, 100 shares per action). See [packages/mcp/README.md](packages/mcp/README.md).
+- Tools: `list_assets`, `get_pool`, `quote_convert`, `get_batch`, `get_portfolio`, `convert`, `commit_dark_order`. Execution goes through the relay with the MCP budget (20 actions per 10 minutes, 100 shares per action). See [packages/mcp/README.md](packages/mcp/README.md).
 
 ### 4.8 Market simulation (simulated, not live)
 

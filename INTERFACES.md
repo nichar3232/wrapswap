@@ -1166,6 +1166,7 @@ that cannot be read is an error, never a default. Chain-read values carry the `b
   { "name": "assets", "method": "GET", "path": "/assets", "query": null, "response": "AssetsResponse", "backing": "file: deployments/${NETWORK}.json (tokens, pool/pools, dark); chain: IWrapperAdapter.ratio, IssuerRegistry.active" },
   { "name": "poolAsset", "method": "GET", "path": "/pool/:asset", "query": null, "response": "PoolAssetResponse", "backing": "chain: ParityHook.inventory, inventoryShares, quote (both directions); table: parity_conversions" },
   { "name": "faucet", "method": "GET", "path": "/faucet/:address", "query": null, "response": "FaucetResponse", "backing": "chain: TestShareFaucet.tokens, amountOf, nextClaimAt; table: faucet_claims" },
+  { "name": "balances", "method": "GET", "path": "/balances/:address", "query": null, "response": "BalancesResponse", "backing": "chain: IERC20.balanceOf, IWrapperAdapter.ratio (every manifest wrapper)" },
   { "name": "stats", "method": "GET", "path": "/stats", "query": "StatsQuery", "response": "StatsResponse", "backing": "view: v_fills; table: faucet_claims; chain: IWrapperAdapter.sharesPerToken, TestShareFaucet.nextClaimAt" },
   { "name": "crankStatus", "method": "GET", "path": "/status", "query": null, "response": "CrankStatusResponse", "backing": "crank process on CRANK_HEALTH_PORT (§7), not the API" }
 ]
@@ -2068,6 +2069,48 @@ account, repeated per token).
 }
 ```
 
+
+`GET /balances/:address`: the address's balance of every wrapper in the manifest, grouped by asset, read at `block`.
+`shares` is `balance` in canonical shares (1e18 = one share) at the adapter's live ratio, rounded down.
+
+```json wrapswap:schema BalancesResponse
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["address", "block", "assets"],
+  "properties": {
+    "address": { "$ref": "Address" },
+    "block": { "$ref": "UInt" },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset", "wrappers"],
+        "properties": {
+          "asset": { "type": "string" },
+          "wrappers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["platform", "symbol", "address", "decimals", "balance", "shares"],
+              "properties": {
+                "platform": { "type": "string" },
+                "symbol": { "type": "string" },
+                "address": { "$ref": "Address" },
+                "decimals": { "type": "integer" },
+                "balance": { "$ref": "UInt" },
+                "shares": { "$ref": "UInt" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
 A batch that has commits but no `BatchSettled` yet is listed with `settled: false` and zero crossed/residual amounts.
 `/batches/:batchId` for an id with no commits and no settlement ⇒ 404. `FillView.account` is the trader/swapper
 (resolved, not the router). A dark residual appears once, as `DARK-RESIDUAL`; its ParityHook `InventoryFill` or

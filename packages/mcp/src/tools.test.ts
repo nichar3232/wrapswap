@@ -14,6 +14,7 @@ import {
   executionTools,
   getBatch,
   getPool,
+  getPortfolio,
   listAssets,
   quoteConvert,
   readTools,
@@ -98,7 +99,7 @@ const text = (r: any) => r.content[0].text as string;
 
 describe("tool schemas", () => {
   it("registers exactly the documented tools, read-only ones annotated", () => {
-    expect(readTools.map((t) => t.name)).toEqual(["list_assets", "get_pool", "quote_convert", "get_batch"]);
+    expect(readTools.map((t) => t.name)).toEqual(["list_assets", "get_pool", "quote_convert", "get_batch", "get_portfolio"]);
     expect(executionTools.map((t) => t.name)).toEqual(["convert", "commit_dark_order"]);
     for (const t of readTools) expect(t.annotations.readOnlyHint).toBe(true);
     for (const t of executionTools) expect(t.annotations.readOnlyHint).toBe(false);
@@ -130,7 +131,7 @@ describe("tool schemas", () => {
     const client = new Client({ name: "t", version: "0" });
     await client.connect(b);
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["commit_dark_order", "convert", "get_batch", "get_pool", "list_assets", "quote_convert"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["commit_dark_order", "convert", "get_batch", "get_pool", "get_portfolio", "list_assets", "quote_convert"]);
     const q = tools.find((t) => t.name === "quote_convert")!;
     expect(q.inputSchema.required).toEqual(["asset", "fromWrapper", "toWrapper", "amount"]);
     const r: any = await client.callTool({ name: "get_pool", arguments: { asset: "aapl" } });
@@ -162,6 +163,31 @@ describe("read tools", () => {
     expect(resolveWrapper(a, "MAAPLX").symbol).toBe("mAAPLx");
     expect(resolveWrapper(a, "0x433daff77ad96b9319957d83d9d422e70c996c45").symbol).toBe("mAAPLx");
     expect(() => resolveWrapper(a, "mcbNVDA")).toThrow(/not a AAPL wrapper/);
+  });
+
+  it("get_portfolio defaults to the relay account and reads balances and fills from the public API", async () => {
+    const relay = "0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C";
+    const [cb, x] = ASSETS.assets[0].platforms;
+    const { api, calls } = fakeApi({
+      "GET /demo/status": () => ({ body: { ok: true, address: relay } }),
+      [`GET /balances/${relay}`]: () => ({
+        body: { address: relay, block: "9", assets: [{ asset: "AAPL", wrappers: [
+          { platform: "Coinbase", symbol: "mcbAAPL", address: cb.address, decimals: 6, balance: "100000000", shares: "101250000000000000000" },
+          { platform: "xStocks", symbol: "mAAPLx", address: x.address, decimals: 18, balance: "2500000000000000000", shares: "2500000000000000000" },
+        ] }] },
+      }),
+      "GET /fills": () => ({ body: { items: [{ kind: "PARITY", account: relay, tokenIn: cb.address, tokenOut: x.address, amountIn: "10000",
+        amountOut: "10122975000000000", feeAmount: "2025000000000", feePips: 200, shares: "10125000000000000", batchId: null, poolId: "0x1",
+        blockNumber: "8", timestamp: "1790447022", txHash: "0xca3d", logIndex: 3 }], nextCursor: null } }),
+    });
+    const r: any = await getPortfolio.run({}, api);
+    expect(calls.find((c) => c.url.pathname.endsWith("/fills"))!.url.searchParams.get("account")).toBe(relay);
+    expect(r.data.assets[0]).toMatchObject({ asset: "AAPL", totalShares: "103.75" });
+    expect(r.data.assets[0].wrappers.map((w: any) => [w.tokens, w.shares])).toEqual([["100", "101.25"], ["2.5", "2.5"]]);
+    expect(r.data.recentFills[0]).toMatchObject({ from: "mcbAAPL", to: "mAAPLx", amountIn: "0.01 mcbAAPL", shares: "0.010125", fee: "2.00 bps" });
+    expect(r.summary).toBe(`${relay} at block 9: AAPL 103.75 sh (100 mcbAAPL + 2.5 mAAPLx); 1 recent fill`);
+    await getPortfolio.run({ address: cb.address }, api).catch(() => undefined);
+    expect(calls.filter((c) => c.url.pathname.endsWith("/demo/status"))).toHaveLength(1);
   });
 
   it("list_assets reports multipliers", async () => {

@@ -195,6 +195,15 @@ const fakeHash = () =>
     ).join("")) as Hash;
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** Last nonce this page sent per account: backends lag each other, so next = max(latest, pending, last sent + 1). */
+const nonces = new Map<string, number>();
+async function nextNonce(client: ReturnType<typeof rpc>, account: Address) {
+  const [latest, pending] = await Promise.all(
+    (["latest", "pending"] as const).map((blockTag) => client.getTransactionCount({ address: account, blockTag })),
+  );
+  return Math.max(latest, pending, (nonces.get(account.toLowerCase()) ?? -1) + 1);
+}
+
 export async function send(
   d: Deployment,
   account: Address,
@@ -240,7 +249,7 @@ export async function send(
   const wallet = createWalletClient({ account, transport: custom(provider()) });
   if ((await wallet.getChainId()) !== d.chainId) throw new Error("WrongChain");
   // Load-balanced public RPCs can serve a backend that has not seen the previous receipt (e.g. the approval),
-  // so a failed simulation is retried briefly before it is reported.
+  // so a failed simulation is retried before it is reported: briefly, or up to ~15 s while it reads a stale allowance.
   const simulate = () =>
     client.simulateContract({ account, address, abi, functionName, args });
   let simulation: Awaited<ReturnType<typeof simulate>>;
@@ -249,14 +258,24 @@ export async function send(
       simulation = await simulate();
       break;
     } catch (e) {
-      if (attempt >= 3) throw e;
+      if (attempt >= (/allowance/i.test(String((e as Error)?.message)) ? 10 : 3)) throw e;
       await pause(1500);
     }
   }
-  const hash = await wallet.writeContract({
-    ...simulation.request,
-    chain: null,
-  });
+  // The wallet's own nonce cache can lag the chain (e.g. after the faucet claim): pass the chain's nonce explicitly,
+  // and on "nonce too low" retry once with the nonce the node reports as next.
+  const write = (nonce: number) => wallet.writeContract({ ...simulation.request, chain: null, nonce });
+  let nonce = await nextNonce(client, account);
+  let hash: Hash;
+  try {
+    hash = await write(nonce);
+  } catch (e) {
+    const m = /nonce too low(?:: next nonce (\d+))?/i.exec(String((e as Error)?.message));
+    if (!m) throw e;
+    nonce = Math.max(Number(m[1] ?? 0), await nextNonce(client, account));
+    hash = await write(nonce);
+  }
+  nonces.set(account.toLowerCase(), nonce);
   opts.onHash?.(hash);
   const receipt = await client.waitForTransactionReceipt({ hash });
   if (receipt.status !== "success") throw new Error("The transaction reverted onchain.");

@@ -105,6 +105,7 @@ export function chainMock() {
           ? 1012500000000000000n
           : 10n ** 18n;
       if (fn === "active") return true;
+      if (fn === "balanceOf") return 100000000n;
       if (fn === "check") return [true, 0];
       if (fn === "demoMode") return true;
       if (fn === "feeBreakdown") return f;
