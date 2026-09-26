@@ -5,6 +5,7 @@ import {
   http,
   type Abi,
   type EIP1193Provider,
+  type AddEthereumChainParameter,
 } from "viem";
 import {
   IMockIssuerTokenAbi,
@@ -23,14 +24,28 @@ const provider = () => {
     );
   return p;
 };
+// https://developers.uniswap.org/docs/unichain/technical-information/network-information
+const ADDABLE_CHAINS: Record<number, Omit<AddEthereumChainParameter, "chainId">> = {
+  1301: {
+    chainName: "Unichain Sepolia",
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+    rpcUrls: ["https://sepolia.unichain.org"],
+    blockExplorerUrls: ["https://sepolia.uniscan.xyz"],
+  },
+};
 export async function connect(d: Deployment): Promise<Address> {
   if (config.useMocks)
     return d.demoAccounts.accounts.find((a) => a.role === "demo")!.address;
   const p = provider();
-  await p.request({
-    method: "wallet_switchEthereumChain",
-    params: [{ chainId: "0x" + d.chainId.toString(16) }],
-  });
+  const chainId = "0x" + d.chainId.toString(16);
+  try {
+    await p.request({ method: "wallet_switchEthereumChain", params: [{ chainId }] });
+  } catch (e) {
+    // 4902: the wallet does not know the chain yet. Add Unichain Sepolia with its public RPC and explorer.
+    const add = ADDABLE_CHAINS[d.chainId];
+    if ((e as { code?: number }).code !== 4902 || !add) throw e;
+    await p.request({ method: "wallet_addEthereumChain", params: [{ chainId, ...add }] });
+  }
   const accounts = await p.request({ method: "eth_requestAccounts" });
   if (!accounts[0]) throw Error("Wallet returned no account");
   return accounts[0];
