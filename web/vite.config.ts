@@ -1,22 +1,36 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
-export default defineConfig({
-  root: "web",
-  plugins: [react()],
-  server: {
-    host: "127.0.0.1",
-    port: Number(process.env.WEB_PORT || 5173),
-    strictPort: true,
-    proxy: {
-      "/api": {
-        target: `http://127.0.0.1:${process.env.API_PORT || 4000}`,
-        rewrite: (p) => p.replace(/^\/api/, ""),
-      },
-      "/rpc": {
-        target: process.env.LOCAL_RPC || "http://127.0.0.1:8545",
-        rewrite: () => "",
+export default defineConfig(({ mode }) => {
+  const env = { ...loadEnv(mode, process.cwd(), ""), ...process.env };
+  return {
+    root: "web",
+    envDir: "..",
+    plugins: [react()],
+    preview: {
+      host: "127.0.0.1",
+      port: Number(env.WEB_PORT || 13005),
+      strictPort: true,
+    },
+    server: {
+      host: "127.0.0.1",
+      port: Number(env.WEB_PORT || 13005),
+      strictPort: true,
+      proxy: {
+        "/api": {
+          target: `http://127.0.0.1:${env.API_PORT || 18005}`,
+          rewrite: (p) => p.replace(/^\/api/, ""),
+        },
+        "/crank": {
+          target: `http://127.0.0.1:${env.CRANK_HEALTH_PORT || 18105}`,
+          rewrite: (p) => p.replace(/^\/crank/, ""),
+        },
+        "/rpc": {
+          target:
+            env.VITE_RPC_URL || `http://127.0.0.1:${env.ANVIL_PORT || 18505}`,
+          rewrite: () => "",
+        },
       },
     },
-  },
-  build: { outDir: "../dist/web", emptyOutDir: true },
+    build: { outDir: "../dist/web", emptyOutDir: true },
+  };
 });
