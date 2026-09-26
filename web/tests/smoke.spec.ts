@@ -120,6 +120,28 @@ test("Convert: quote card (shares in · base · skew · You keep), parity line, 
   await expect(c.getByRole("button", { name: "Copy transaction hash" })).toBeVisible();
 });
 
+test("Convert: clicking a direction row selects it, sets from → to, and re-quotes", async ({ page }) => {
+  await demo(page, "/app?tab=move&asset=AAPL");
+  const c = convert(page);
+  const card = c.getByRole("region", { name: "Quote" });
+  const coinbase = c.getByRole("radio", { name: /Coinbase/ }),
+    xstocks = c.getByRole("radio", { name: /xStocks/ });
+  await expect(coinbase).toHaveAttribute("aria-checked", "true");
+  await expect(card.getByTestId("fee-breakdown")).toContainText("0 — this trade rebalances the pool");
+  await xstocks.click();
+  await expect(xstocks).toHaveAttribute("aria-checked", "true");
+  await expect(coinbase).toHaveAttribute("aria-checked", "false");
+  await expect(c.locator(".pair-line")).toHaveText("xStocks → Coinbase");
+  await expect(c.locator(".unit")).toHaveText("mAAPLx");
+  await expect(card.getByTestId("fee-breakdown")).toContainText(/Skew fee \d+\.\d\d bps · to LP/);
+  await expect(c.getByTestId("you-keep")).toContainText("100.00 → ");
+  await coinbase.click();
+  await expect(coinbase).toHaveAttribute("aria-checked", "true");
+  await expect(c.locator(".pair-line")).toHaveText("Coinbase → xStocks");
+  await expect(c.locator(".unit")).toHaveText("mcbAAPL");
+  await expect(c.getByTestId("you-keep")).toContainText("101.25 → 101.22 AAPL shares");
+});
+
 test("Dark Cross: side + size → sealed commit; commit → reveal → settle; 3-row result; privacy line; history", async ({ page }) => {
   test.setTimeout(60000);
   const k = 5000;
@@ -163,7 +185,23 @@ test("Liquidity: inventory, skew, fee each direction, cheap-direction CTA prefil
   await expect(l).toContainText("All Convert fees (base + skew) go to the LP. The protocol takes 0 on Convert.");
   await expect(l).toContainText("Both sides are the same share — no impermanent loss from price divergence. Risk is inventory getting stuck lopsided.");
   await expect(l.getByRole("region", { name: "LP economics" })).toContainText("0.0222 sh");
+  // A 4,050 sh gap from 2 fills worth 0.0223 sh of base fees: the keeper set it, not conversions.
+  await expect(l.getByRole("region", { name: "AAPL inventory" }).getByTestId("keeper-set")).toHaveText("Inventory set by pool keeper");
   await expect(l.getByRole("button", { name: /deposit|withdraw|add liquidity/i })).toHaveCount(0); // keeper-only
+  await expect(l.getByRole("heading", { level: 1 })).toHaveText("Pool inventory & LP economics");
+  await expect(tab(page, "Liquidity")).toHaveText("Liquidity");
+  const keeper = l.getByRole("region", { name: "Who supplies inventory" });
+  await expect(keeper).toContainText(
+    "Who supplies inventory: in v1 a single pool keeper (a market maker) seeds and rebalances both wrappers and earns 100% of Convert fees. Permissionless LP deposits are v2.",
+  );
+  const add = keeper.getByRole("button", { name: /^Add inventory/ });
+  await expect(add).toBeDisabled();
+  await expect(add).toContainText("keeper only in v1");
+  await expect(add).toHaveAccessibleDescription(/one inventory supplier keeps the multiplier attestations and wrapper whitelisting simple/);
+  await expect(keeper.locator(".tip")).toHaveAttribute("data-tip", /one inventory supplier keeps the multiplier attestations and wrapper whitelisting simple/);
+  // The keeper block sits above LP economics.
+  const [kY, lpY] = await Promise.all([keeper, l.getByRole("region", { name: "LP economics" })].map((x) => x.evaluate((e) => e.getBoundingClientRect().top)));
+  expect(kY).toBeLessThan(lpY);
   await l.getByRole("button", { name: "Cheap direction now: Coinbase → xStocks" }).click();
   await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
   await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toHaveAttribute("aria-checked", "true");

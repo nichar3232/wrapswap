@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Mark, ThemeToggle } from "../brand";
 
-export const GITHUB = "https://github.com/nichar3232/wrapswap";
 type Link = { label: string; href: string; external?: boolean };
-/** Each label scrolls to its section (or opens the Developers page); its chevron opens a dropdown whose items navigate. */
+/** Each label scrolls to its section; its chevron opens a dropdown whose items navigate. */
 const NAV: (Link & { key: string; menu: Link[] })[] = [
   {
     key: "product",
@@ -21,19 +20,10 @@ const NAV: (Link & { key: string; menu: Link[] })[] = [
     label: "How it works",
     href: "#how-it-works",
     menu: [
-      { label: "01 Convert", href: "#how-convert" },
-      { label: "02 Dark Cross", href: "#how-dark" },
-      { label: "03 Send", href: "#how-send" },
-    ],
-  },
-  {
-    key: "developers",
-    label: "Developers",
-    href: "/developers",
-    menu: [
-      { label: "Architecture", href: "/developers#architecture" },
-      { label: "Contracts", href: "/developers#contracts" },
-      { label: "GitHub ↗", href: GITHUB, external: true },
+      { label: "Convert", href: "#how-convert" },
+      { label: "Dark Cross", href: "#how-dark" },
+      { label: "Send", href: "#how-send" },
+      { label: "Liquidity", href: "#how-liquidity" },
     ],
   },
 ];
@@ -138,21 +128,5 @@ export function Nav({ home = true }: { home?: boolean }) {
         </a>
       </div>
     </header>
-  );
-}
-
-
-export function Footer() {
-  return (
-    <footer className="lfoot">
-      <span className="brand">
-        <Mark size={20} />
-        unison
-      </span>
-      <span>Built at ETHGlobal Tokyo 2026 · Uniswap v4</span>
-      <a href={GITHUB} target="_blank" rel="noreferrer">
-        GitHub ↗
-      </a>
-    </footer>
   );
 }

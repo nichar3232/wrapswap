@@ -70,22 +70,41 @@ function Faucet({ d, assets, faucetAddr }: { d: Deployment | undefined; assets: 
 }
 
 /** Home: what you hold, per asset per wrapper in shares, the faucet, and your recent fills. */
-export function Portfolio({ d, assets, onMove }: { d: Deployment | undefined; assets: Asset[]; onMove: (fromToken: string) => void }) {
+export function Portfolio({
+  d,
+  assets,
+  onMove,
+  onTry,
+}: {
+  d: Deployment | undefined;
+  assets: Asset[];
+  onMove: (fromToken: string) => void;
+  onTry: () => void;
+}) {
   const w = useWallet();
   const stats = useApi("stats", w.address ? `address=${w.address}` : null, 15000);
   const recent = stats.data?.wallet?.recent ?? [];
   const mocks = import.meta.env.VITE_USE_MOCKS === "true";
 
-  return (
-    <div className="page portfolio">
-      {!w.address && (
-        <section className="card">
+  // Disconnected: one card, not three asset cards of dashes.
+  if (!w.address)
+    return (
+      <div className="page portfolio">
+        <section className="card connect-card" aria-label="Connect a wallet">
+          <h2 className="card-title">Connect a wallet to see your shares</h2>
           <button className="primary wide" disabled={!!w.busy} onClick={() => void w.connect()}>
-            {w.busy === "connect" ? "Connecting…" : "Connect to see your shares"}
+            {w.busy === "connect" ? "Connecting…" : "Connect"}
           </button>
           {w.notice && <p className="block-reason">{w.notice}</p>}
+          <button type="button" className="link-btn" onClick={onTry}>
+            or try a conversion without a wallet →
+          </button>
         </section>
-      )}
+      </div>
+    );
+
+  return (
+    <div className="page portfolio">
       <Faucet d={d} assets={assets} faucetAddr={d?.faucet} />
       {assets.length === 0 && (
         <section className="card">
@@ -104,13 +123,9 @@ export function Portfolio({ d, assets, onMove }: { d: Deployment | undefined; as
               <div className="asset-head">
                 <span className="tile-k">{asset.symbol}</span>
                 <span className="tile-v">
-                  {w.address ? (
-                    <Val status={w.balances.status} w="4em" h="1em">
-                      {fmtShares(total)} <small>shares</small>
-                    </Val>
-                  ) : (
-                    "—"
-                  )}
+                  <Val status={w.balances.status} w="4em" h="1em">
+                    {fmtShares(total)} <small>shares</small>
+                  </Val>
                 </span>
               </div>
               <ul className="holdings">
@@ -137,35 +152,33 @@ export function Portfolio({ d, assets, onMove }: { d: Deployment | undefined; as
           );
         })}
       </div>
-      {w.address && (
-        <section className="card recent" aria-label="Recent fills">
-          <h2 className="card-title">Recent fills</h2>
-          {recent.length ? (
-            <ul>
-              {recent.slice(0, 8).map((f) => {
-                const ti = findToken(assets, f.tokenIn)?.token,
-                  to = findToken(assets, f.tokenOut)?.token;
-                return (
-                  <li key={f.txHash + f.logIndex}>
-                    <span>
-                      {ti && to ? `${fmtShares(toShares(BigInt(f.amountIn), ti))} → ${fmtShares(toShares(BigInt(f.amountOut), to))} ${ti.underlying} sh · ${ti.symbol} → ${to.symbol}` : f.kind}
-                    </span>
-                    <span className="muted">
-                      {KIND[f.kind]}
-                      {f.feePips === null ? "" : ` · ${(f.feePips / 100).toFixed(2)} bps`}
-                    </span>
-                    <Hex value={f.txHash} kind="tx" simulated={mocks} />
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <Val status={stats.status} w="100%" h="2em">
-              <p className="muted">No fills from this wallet yet.</p>
-            </Val>
-          )}
-        </section>
-      )}
+      <section className="card recent" aria-label="Recent fills">
+        <h2 className="card-title">Recent fills</h2>
+        {recent.length ? (
+          <ul>
+            {recent.slice(0, 8).map((f) => {
+              const ti = findToken(assets, f.tokenIn)?.token,
+                to = findToken(assets, f.tokenOut)?.token;
+              return (
+                <li key={f.txHash + f.logIndex}>
+                  <span>
+                    {ti && to ? `${fmtShares(toShares(BigInt(f.amountIn), ti))} → ${fmtShares(toShares(BigInt(f.amountOut), to))} ${ti.underlying} sh · ${ti.symbol} → ${to.symbol}` : f.kind}
+                  </span>
+                  <span className="muted">
+                    {KIND[f.kind]}
+                    {f.feePips === null ? "" : ` · ${(f.feePips / 100).toFixed(2)} bps`}
+                  </span>
+                  <Hex value={f.txHash} kind="tx" simulated={mocks} />
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+          <Val status={stats.status} w="100%" h="2em">
+            <p className="muted">No fills from this wallet yet.</p>
+          </Val>
+        )}
+      </section>
     </div>
   );
 }

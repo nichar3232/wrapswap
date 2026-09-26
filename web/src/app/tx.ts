@@ -119,7 +119,7 @@ export function humanize(e: unknown): string {
     return e.status === 429
       ? `Demo limit reached: ${e.message}. Next action in ${duration(e.retryAfter ?? 600)}.`
       : e.code === "BUSY"
-        ? "A Sui send is already in progress on the demo relay. Retry in a few minutes."
+        ? "One send at a time: the demo relay is already running a Sui send. Retry in a few minutes."
         : e.code === "OVER_LIMIT"
           ? "The demo relay moves at most 100 shares per action."
           : e.code === "UNAVAILABLE"
@@ -128,7 +128,9 @@ export function humanize(e: unknown): string {
   if (e instanceof WalletError)
     return e.kind === "no-wallet"
       ? "No browser wallet found. Install MetaMask (or another injected wallet) to sign."
-      : "Your wallet didn't return an account. Unlock it and retry.";
+      : e.kind === "timeout"
+        ? "Your wallet didn't respond. Retry."
+        : "Your wallet didn't return an account. Unlock it and retry.";
   const code = (e as { code?: unknown })?.code;
   if (
     code === 4001 ||

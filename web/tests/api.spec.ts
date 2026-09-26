@@ -58,7 +58,7 @@ test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on
     ["Liquidity", "unavailable"],
     ["Move", "Same share, converted at parity"], // platforms from the committed manifest
     ["Send", "Confidential, not anonymous"],
-    ["Portfolio", "AAPL"],
+    ["Portfolio", "Connect a wallet to see your shares"],
   ]) {
     await tab(page, t).click();
     await expect(page.locator(`[data-panel="${t.toLowerCase()}"]`).getByText(text, { exact: false }).first()).toBeVisible();
@@ -67,6 +67,43 @@ test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on
   await pill.click();
   await expect(page.locator("#feed-status")).toContainText("unavailable · retrying");
   expect(errors).toEqual([]);
+});
+
+test("wallet button: Connect until clicked, Connecting… only in flight, back to Connect after 5 s", async ({ page }) => {
+  await api(page, (_, v) => v, { wallet: false });
+  await page.route(/\/api\/demo\/status/, () => undefined); // the relay probe never answers
+  await page.goto("/app?tab=liquidity");
+  const btn = page.getByRole("button", { name: "Connect wallet" });
+  await expect(btn).toHaveText("Connect");
+  await page.waitForTimeout(1500);
+  await expect(btn).toHaveText("Connect");
+  await btn.click();
+  await expect(btn).toHaveText("Connecting…");
+  await expect(btn).toHaveText("Connect", { timeout: 7000 });
+  await expect(btn).toBeEnabled();
+});
+
+test("no wallet: /app opens Move → Convert; Portfolio shows one Connect card with a way to try a conversion", async ({ page }) => {
+  await api(page, (_, v) => v, { wallet: false });
+  await page.goto("/app");
+  await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/tab=move/);
+  await expect(page.getByRole("tab", { name: "Convert" })).toHaveAttribute("aria-selected", "true");
+  await tab(page, "Portfolio").click();
+  const p = page.locator('[data-panel="portfolio"]');
+  await expect(p.locator(".card")).toHaveCount(1);
+  await expect(p.getByRole("heading", { name: "Connect a wallet to see your shares" })).toBeVisible();
+  await expect(p.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await expect(p.locator(".asset")).toHaveCount(0);
+  await expect(p).not.toContainText("—");
+  await p.getByRole("button", { name: "or try a conversion without a wallet →" }).click();
+  await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
+});
+
+test("with a browser wallet, /app still opens Portfolio", async ({ page }) => {
+  await api(page);
+  await page.goto("/app");
+  await expect(tab(page, "Portfolio")).toHaveAttribute("aria-current", "page");
 });
 
 test("degraded names only the failing feeds; everything else stays live", async ({ page }) => {
@@ -119,7 +156,7 @@ test("slow and malformed responses never produce blank screens or raw errors", a
   await page.getByRole("tab", { name: "Dark Cross" }).click();
   await expect(page.getByText("No settled batches for AAPL yet.")).toBeVisible();
   await tab(page, "Liquidity").click();
-  await expect(page.getByText("LP economics")).toBeVisible();
+  await expect(page.getByText("LP economics", { exact: true })).toBeVisible();
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
 });
 
@@ -159,7 +196,7 @@ test("no wallet: the demo relay connects itself; a 429 shows a live countdown an
   await expect(page.locator("#pane-dark").getByTestId("relay-cooldown")).toBeVisible(); // one limit for every action
 });
 
-test("no wallet: Send runs POST /api/demo/send and lists the real Unichain and Sui transactions", async ({ page }) => {
+test("no wallet: Send returns the deposit at once, then reveals Sui pay, Sui withdraw and Unichain settle as they arrive", async ({ page }) => {
   await api(page, undefined, { wallet: false });
   const step = (n: number, chain: "unichain" | "sui", label: string) => ({
     step: label,
@@ -168,25 +205,58 @@ test("no wallet: Send runs POST /api/demo/send and lists the real Unichain and S
     tx: chain === "sui" ? `Dig${n}estSuiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX` : tx(n),
     url: chain === "sui" ? `https://suiscan.xyz/testnet/tx/Dig${n}` : `https://sepolia.uniscan.xyz/tx/${tx(n)}`,
   });
-  const job = { id: "send-1", status: "deposited", asset: "AAPL", from: "mcbAAPL", to: "mAAPLx", amountIn: "10000000", shares: "10125000000000000000", recipient: RELAY, depositTx: tx(1), steps: [step(1, "unichain", "deposit mcbAAPL into ShareVault")] };
+  const all = [
+    step(1, "unichain", "deposit mcbAAPL into ShareVault"),
+    step(2, "sui", "sealed pay A → B"),
+    step(3, "sui", "sealed withdraw into mAAPLx"),
+    step(4, "unichain", "settled: mAAPLx delivered"),
+  ];
+  const statuses = ["deposited", "paid", "withdraw-submitted", "settled"];
+  const job = (k: number) => ({ id: "send-1", status: statuses[k - 1], asset: "AAPL", from: "mcbAAPL", to: "mAAPLx", amountIn: "10000000", shares: "10125000000000000000", recipient: RELAY, depositTx: tx(1), steps: all.slice(0, k) });
   let body: any;
+  let polls = 0;
+  let release = 1; // how many legs the relay has reported so far
   await relay(page, {
     "/send": async (r) => {
       body = r.request().postDataJSON();
-      await r.fulfill({ json: { ...job, txHash: job.depositTx, path: "sui-confidential", track: "/demo/send/send-1" } });
+      await r.fulfill({ json: { ...job(1), txHash: tx(1), path: "sui-confidential", track: "/demo/send/send-1" } });
     },
-    "/send/:id": (r) =>
-      r.fulfill({ json: { ...job, status: "settled", steps: [...job.steps, step(2, "sui", "sealed pay A → B"), step(3, "sui", "sealed withdraw into mAAPLx"), step(4, "unichain", "settled through the router")] } }),
+    "/send/:id": (r) => (polls++, r.fulfill({ json: job(release) })),
   });
-  await page.goto("/app?tab=send");
+  await page.goto("/app?tab=send&asset=NVDA"); // Send stays AAPL whatever the global asset
   const s = page.locator('[data-panel="send"]');
+  await expect(s).toContainText("Send moves AAPL wrappers only");
   await s.getByLabel("Send amount").fill("10");
   await s.getByRole("button", { name: "Send confidentially" }).click();
   expect(body).toMatchObject({ asset: "AAPL", from: "mcbAAPL", to: "mAAPLx", amount: "10", recipient: RELAY });
-  const steps = s.getByRole("list", { name: "Send transactions" }).getByRole("listitem");
-  await expect(steps).toHaveCount(4, { timeout: 10000 });
+  const leg = (k: string) => s.locator(`[data-leg="${k}"]`);
+  // Only the deposit is known at first; the other three legs wait.
+  await expect(leg("deposit").getByRole("link")).toHaveAttribute("href", `https://sepolia.uniscan.xyz/tx/${tx(1)}`);
+  for (const k of ["pay", "withdraw", "settle"]) await expect(leg(k)).toContainText("waiting");
+  for (const [k, n, href] of [
+    ["pay", 2, "https://suiscan.xyz/testnet/tx/Dig2"],
+    ["withdraw", 3, "https://suiscan.xyz/testnet/tx/Dig3"],
+    ["settle", 4, `https://sepolia.uniscan.xyz/tx/${tx(4)}`],
+  ] as const) {
+    release = n;
+    await expect(leg(k).getByRole("link")).toHaveAttribute("href", href, { timeout: 10000 });
+  }
   await expect(s.getByTestId("relay-send-status")).toContainText("Settled");
-  await expect(steps.nth(0).getByRole("link")).toHaveAttribute("href", `https://sepolia.uniscan.xyz/tx/${tx(1)}`);
-  await expect(steps.nth(1).getByRole("link")).toHaveAttribute("href", "https://suiscan.xyz/testnet/tx/Dig2");
+  const settledAt = polls;
+  await page.waitForTimeout(5000);
+  expect(polls).toBe(settledAt); // polling stops once settled
   await expect(s).not.toContainText(/simulated/i);
+});
+
+test("no wallet: a 409 from /api/demo/send shows the one-send-at-a-time notice", async ({ page }) => {
+  await api(page, undefined, { wallet: false });
+  await relay(page, {
+    "/send": (r) => r.fulfill({ status: 409, json: { error: { code: "BUSY", message: "a Sui send is in progress (send-x, paid); retry in a few minutes" } } }),
+  });
+  await page.goto("/app?tab=send");
+  const s = page.locator('[data-panel="send"]');
+  await s.getByLabel("Send amount").fill("2");
+  await s.getByRole("button", { name: "Send confidentially" }).click();
+  await expect(s.getByTestId("relay-one-at-a-time")).toContainText("One send at a time");
+  await expect(s.getByText(/One send at a time: the demo relay is already running a Sui send\. Retry/)).toBeVisible();
 });

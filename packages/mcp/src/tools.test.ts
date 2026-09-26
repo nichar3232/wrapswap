@@ -5,6 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { UnisonApi, errorMessage } from "./api.js";
 import { createUnisonServer } from "./server.js";
 import { toolsFor } from "./registry.js";
+import { sendConfidential } from "./send.js";
 import {
   RELAY_CAP_SHARES,
   allTools,
@@ -258,9 +259,38 @@ describe("execution tools", () => {
   });
 });
 
-describe("send_confidential gating", () => {
-  it("is off unless the Sui status starts with GO and the relay route exists", () => {
+describe("send_confidential", () => {
+  it("is registered only when the Sui status starts with GO", () => {
     expect(suiGo("/nonexistent")).toBe(false);
     expect(toolsFor(false).some((t) => t.name === "send_confidential")).toBe(false);
+    expect(toolsFor(true).map((t) => t.name)).toContain("send_confidential");
+    expect(z.object(sendConfidential.inputSchema).safeParse({ asset: "AAPL", amount: "5", recipient: "0x" + "ab".repeat(20), withdrawWrapper: "xStocks" }).success).toBe(true);
+    expect(z.object(sendConfidential.inputSchema).safeParse({ asset: "AAPL", amount: "5", withdrawWrapper: "xStocks" }).success).toBe(false);
+  });
+
+  it("deposits the other issuer's wrapper via /demo/send and follows the job", async () => {
+    const to = "0x" + "12".repeat(20);
+    let polls = 0;
+    const job = { id: "s1", asset: "AAPL", from: "mcbAAPL", to: "mAAPLx", amountIn: "4938271", shares: "5", recipient: to, depositTx: "0xd0", track: "/demo/send/s1" };
+    const { api, calls } = fakeApi({
+      "POST /demo/send": () => ({ body: { ...job, status: "deposited", steps: [{ step: "deposit", chain: "unichain", tx: "0xd0", url: "u0" }], txHash: "0xd0", path: "sui-confidential" } }),
+      "GET /demo/send/s1": () => ({
+        body: ++polls < 2
+          ? { ...job, status: "paid", steps: [{ step: "deposit", chain: "unichain", tx: "0xd0" }, { step: "sealed pay A → B", chain: "sui", tx: "DIG" }] }
+          : { ...job, status: "settled", settledAmountOut: "4990000000000000000", steps: [{ step: "deposit", chain: "unichain", tx: "0xd0" }, { step: "sealed pay A → B", chain: "sui", tx: "DIG" }, { step: "settled", chain: "unichain", tx: "0xe0" }] },
+      }),
+    });
+    const r: any = await sendConfidential.run({ asset: "AAPL", amount: "5", recipient: to, withdrawWrapper: "xStocks", waitSeconds: 10 } as any, api);
+    expect(calls.find((c) => c.method === "POST")!.body).toEqual({ asset: "AAPL", from: "mcbAAPL", to: "mAAPLx", amount: "4.938271", recipient: to });
+    expect(r.data.status).toBe("settled");
+    expect(r.data.steps).toHaveLength(3);
+    expect(r.data.settledAmountOut).toBe("4.99 mAAPLx");
+    expect(r.data.track).toBe("https://unison.test/api/demo/send/s1");
+  }, 20_000);
+
+  it("surfaces BUSY and the cap", async () => {
+    const { api } = fakeApi({ "POST /demo/send": () => ({ status: 409, body: { error: { code: "BUSY", message: "a Sui send is in progress (s0, paid); retry in a few minutes" } } }) });
+    await expect(sendConfidential.run({ asset: "AAPL", amount: "1", recipient: "0x" + "12".repeat(20), withdrawWrapper: "mAAPLx" } as any, api)).rejects.toThrow(/BUSY: a Sui send is in progress/);
+    await expect(sendConfidential.run({ asset: "AAPL", amount: "101", recipient: "0x" + "12".repeat(20), withdrawWrapper: "mAAPLx" } as any, api)).rejects.toThrow(/at most 100/);
   });
 });
