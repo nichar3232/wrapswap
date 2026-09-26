@@ -66,13 +66,20 @@ export async function send(
   const rpc = createPublicClient({
     transport: http(new URL(config.rpcUrl, location.origin).href),
   });
-  const simulation = await rpc.simulateContract({
-    account,
-    address,
-    abi,
-    functionName,
-    args,
-  });
+  // Load-balanced public RPCs can serve a backend that has not seen the previous receipt (e.g. the approval),
+  // so a failed simulation is retried briefly before it is reported.
+  const simulate = () =>
+    rpc.simulateContract({ account, address, abi, functionName, args });
+  let simulation: Awaited<ReturnType<typeof simulate>>;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      simulation = await simulate();
+      break;
+    } catch (e) {
+      if (attempt >= 3) throw e;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
   const hash = await wallet.writeContract({
     ...simulation.request,
     chain: null,
