@@ -3,6 +3,7 @@ import type { Deployment } from "@wrapswap/types";
 import { db } from "../db/index.js";
 import { publicClient, loadDeployment, json } from "../chain/client.js";
 import { decode, projection, accepts } from "./events.js";
+const LOG_ADDRESS_CHUNK = 8;
 export { projection } from "./events.js";
 export class Indexer {
   busy = false;
@@ -148,11 +149,31 @@ export class Indexer {
             ],
           );
         }
-        const logs = await this.client.getLogs({
-          address: addresses,
-          fromBlock: from,
-          toBlock: to,
-        });
+        // Public RPCs cap eth_getLogs address lists (publicnode: 8); query in chunks and restore chain order.
+        const logs = (
+          await Promise.all(
+            Array.from(
+              { length: Math.ceil(addresses.length / LOG_ADDRESS_CHUNK) },
+              (_, i) =>
+                this.client.getLogs({
+                  address: addresses.slice(
+                    i * LOG_ADDRESS_CHUNK,
+                    (i + 1) * LOG_ADDRESS_CHUNK,
+                  ),
+                  fromBlock: from,
+                  toBlock: to,
+                }),
+            ),
+          )
+        )
+          .flat()
+          .sort((x, y) =>
+            x.blockNumber === y.blockNumber
+              ? x.logIndex - y.logIndex
+              : x.blockNumber < y.blockNumber
+                ? -1
+                : 1,
+          );
         for (const log of logs) {
           if (log.removed) continue;
           if (!accepts(log, d)) continue;
