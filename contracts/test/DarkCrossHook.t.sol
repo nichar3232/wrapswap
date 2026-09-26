@@ -3,6 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Vm} from "forge-std/Vm.sol";
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
+import {StateLibrary} from "v4-core/src/libraries/StateLibrary.sol";
 import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
@@ -17,6 +18,9 @@ import {IDarkCrossHook} from "../src/interfaces/IDarkCrossHook.sol";
 import {IParityHook} from "../src/interfaces/IParityHook.sol";
 import {IEligibility} from "../src/interfaces/IEligibility.sol";
 import {MockIssuerToken} from "../src/mocks/MockIssuerToken.sol";
+import {StaticAdapter} from "../src/adapters/StaticAdapter.sol";
+import {CanonicalShares} from "../src/libraries/CanonicalShares.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @notice ERC20 that re-enters a DarkCrossHook from transferFrom and records the revert selector.
 contract ReentrantToken is ERC20 {
@@ -45,6 +49,8 @@ contract ReentrantToken is ERC20 {
 }
 
 abstract contract DarkCrossHookBase is Fixture {
+    using StateLibrary for IPoolManager;
+
     uint256 internal constant MID = 1.0125e18;
     uint256 internal ONE_MCB;
     uint256 internal ONE_MAAPLX;
@@ -74,7 +80,7 @@ abstract contract DarkCrossHookBase is Fixture {
         dark.fund(token, amount);
     }
 
-    function _commit(address who, bool sellBase, uint256 amountIn, uint256 limit, bool route, uint256 lock)
+    function _commit(address who, bool sellBase, uint256 amountIn, uint256 limit, address to, uint256 lock)
         internal
         returns (uint256 batchId)
     {
@@ -82,14 +88,14 @@ abstract contract DarkCrossHookBase is Fixture {
         address lockToken = sellBase ? address(mcb) : address(maaplx);
         (uint256 avail,) = dark.balances(who, lockToken);
         if (avail < lock) _fundEscrow(who, lockToken, lock - avail);
-        bytes32 h = dark.commitHashOf(batchId, who, sellBase, amountIn, limit, route, _salt(who));
+        bytes32 h = dark.commitHashOf(batchId, who, sellBase, amountIn, limit, to, _salt(who));
         vm.prank(who);
         assertTrue(dark.commit(h, lockToken, lock, 0));
     }
 
-    function _reveal(address who, bool sellBase, uint256 amountIn, uint256 limit, bool route) internal {
+    function _reveal(address who, bool sellBase, uint256 amountIn, uint256 limit, address to) internal {
         vm.prank(who);
-        dark.reveal(sellBase, amountIn, limit, route, _salt(who));
+        dark.reveal(sellBase, amountIn, limit, to, _salt(who));
     }
 
     function _toReveal(uint256 batchId) internal {
@@ -157,16 +163,18 @@ abstract contract DarkCrossHookBase is Fixture {
         assertEq(dark.COMMIT_BLOCKS(), 12);
         assertEq(dark.REVEAL_BLOCKS(), 6);
         assertEq(dark.MAX_PARTICIPANTS(), 64);
-        assertEq(dark.CROSS_FEE_PIPS(), 500);
+        assertEq(dark.CROSS_FEE_PIPS(), 100);
         assertEq(dark.FORFEIT_BPS(), 10);
-        assertEq(dark.ORACLE_MAX_AGE(), 900);
+        assertEq(dark.ORACLE_MAX_AGE(), 1800);
         assertEq(address(dark.poolManager()), address(manager));
         assertEq(address(dark.parityHook()), address(hook));
         assertEq(address(dark.oracle()), address(oracle));
         assertEq(address(dark.eligibility()), address(eligibility));
         assertEq(dark.baseToken(), address(mcb));
         assertEq(dark.quoteToken(), address(maaplx));
-        assertEq(dark.treasury(), treasury);
+        assertEq(dark.protocolFeeRecipient(), treasury);
+        assertEq(dark.asset(), AAPL);
+        assertEq(dark.owner(), address(this));
         PoolKey memory k = dark.parityPoolKey();
         assertEq(Currency.unwrap(k.currency0), Currency.unwrap(key.currency0));
         assertEq(address(k.hooks), address(hook));
@@ -186,23 +194,23 @@ abstract contract DarkCrossHookBase is Fixture {
         PoolKey memory bad = key;
         bad.fee = 3000;
         vm.expectRevert(DarkCrossHook.InvalidConfig.selector);
-        new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(maaplx), bad, treasury);
+        new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(maaplx), bad, treasury, address(this));
         vm.expectRevert(DarkCrossHook.InvalidConfig.selector);
-        new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(mcb), key, treasury);
+        new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(mcb), key, treasury, address(this));
         vm.expectRevert(DarkCrossHook.InvalidConfig.selector);
-        new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(maaplx), key, address(0));
+        new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(maaplx), key, address(0), address(this));
         bad = key;
         bad.hooks = IHooks(address(0xdead));
         vm.expectRevert(DarkCrossHook.InvalidConfig.selector);
-        new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(maaplx), bad, treasury);
+        new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(maaplx), bad, treasury, address(this));
     }
 
     function test_crossAndResidualIntoParityPoolSameTx() public {
-        uint256 id = _commit(alice, true, 60 * ONE_MCB, 1.01e18, true, 60 * ONE_MCB);
-        _commit(bob, false, 50.625e18, 1.015e18, false, 50.625e18);
+        uint256 id = _commit(alice, true, 60 * ONE_MCB, 1.01e18, address(0), 60 * ONE_MCB);
+        _commit(bob, false, 50.625e18, 1.015e18, address(0), 50.625e18);
         _toReveal(id);
-        _reveal(alice, true, 60 * ONE_MCB, 1.01e18, true);
-        _reveal(bob, false, 50.625e18, 1.015e18, false);
+        _reveal(alice, true, 60 * ONE_MCB, 1.01e18, address(0));
+        _reveal(bob, false, 50.625e18, 1.015e18, address(0));
         _toSettle(id);
         uint256 invMcbBefore = hook.inventory(cur(mcb));
         vm.recordLogs();
@@ -216,7 +224,7 @@ abstract contract DarkCrossHookBase is Fixture {
                 assertEq(address(uint160(uint256(logs[i].topics[2]))), alice, "swapper is the trader");
                 assertEq(address(uint160(uint256(logs[i].topics[3]))), address(dark), "sender is dark");
             }
-            if (logs[i].emitter == address(dark) && logs[i].topics[0] == IDarkCrossHook.ResidualRouted.selector) {
+            if (logs[i].emitter == address(dark) && logs[i].topics[0] == IDarkCrossHook.ResidualFilled.selector) {
                 routed = true;
             }
         }
@@ -228,11 +236,11 @@ abstract contract DarkCrossHookBase is Fixture {
     }
 
     function test_quoteSellerResidualRouted() public {
-        uint256 id = _commit(alice, true, 20 * ONE_MCB, 1.0e18, false, 20 * ONE_MCB);
-        _commit(bob, false, 50 * ONE_MAAPLX, 1.02e18, true, 50 * ONE_MAAPLX);
+        uint256 id = _commit(alice, true, 20 * ONE_MCB, 1.0e18, address(0), 20 * ONE_MCB);
+        _commit(bob, false, 50 * ONE_MAAPLX, 1.02e18, address(0), 50 * ONE_MAAPLX);
         _toReveal(id);
-        _reveal(alice, true, 20 * ONE_MCB, 1.0e18, false);
-        _reveal(bob, false, 50 * ONE_MAAPLX, 1.02e18, true);
+        _reveal(alice, true, 20 * ONE_MCB, 1.0e18, address(0));
+        _reveal(bob, false, 50 * ONE_MAAPLX, 1.02e18, address(0));
         _toSettle(id);
         dark.settle(id);
         IDarkCrossHook.Order memory ob = dark.order(id, bob);
@@ -250,33 +258,101 @@ abstract contract DarkCrossHookBase is Fixture {
         _assertConservation();
     }
 
-    function test_residualSkippedOnPegGuard() public {
-        // No mAAPLx inventory and thin liquidity: a large residual falls through and trips the guard.
-        uint256 inv = hook.inventory(cur(maaplx));
-        hook.withdrawInventory(cur(maaplx), inv, address(this));
-        uint256 id = _commit(alice, true, 900 * ONE_MCB, 1.0e18, true, 900 * ONE_MCB);
+    function test_residualBeyondInventoryPartiallyFilledRestRefunded() public {
+        // Only 100 mAAPLx of inventory: a 900 mcbAAPL residual fills what 100 mAAPLx of shares allows, the rest is
+        // returned to the committer. Never the AMM: the pool price does not move.
+        seedLiquidity(1000 * ONE_MCB, 1012 * ONE_MAAPLX, 120);
+        hook.withdrawInventory(cur(maaplx), hook.inventory(cur(maaplx)) - 100 * ONE_MAAPLX, address(this));
+        (uint160 sqrtBefore,,,) = manager.getSlot0(poolId);
+        uint256 id = _commit(alice, true, 900 * ONE_MCB, 1.0e18, address(0), 900 * ONE_MCB);
         _toReveal(id);
-        _reveal(alice, true, 900 * ONE_MCB, 1.0e18, true);
+        _reveal(alice, true, 900 * ONE_MCB, 1.0e18, address(0));
         _toSettle(id);
-        vm.recordLogs();
+        uint256 fillIn = CanonicalShares.fromSharesDown(100e18, mcb.multiplier(), 6); // 98.765432 mcbAAPL
+        uint256 refund = 900 * ONE_MCB - fillIn;
+        vm.expectEmit(true, true, true, false, address(dark));
+        emit IDarkCrossHook.ResidualFilled(id, alice, 0, 0, 0);
+        vm.expectEmit(true, true, true, true, address(dark));
+        emit IDarkCrossHook.Unfilled(id, alice, CanonicalShares.toSharesDown(refund, mcb.multiplier(), 6));
         dark.settle(id);
-        bytes[] memory reasons = _skippedReasons();
-        assertEq(reasons.length, 1);
-        (bytes4 outer,, bytes4 hookSel, bytes memory inner) = RevertDecoder.unwrap(reasons[0]);
-        assertEq(outer, CustomRevert.WrappedError.selector);
-        assertEq(hookSel, IHooks.afterSwap.selector);
-        assertEq(RevertDecoder.selectorOf(inner), IParityHook.PegGuardTripped.selector);
+        (uint160 sqrtAfter,,,) = manager.getSlot0(poolId);
+        assertEq(sqrtAfter, sqrtBefore, "no AMM fill");
+        (uint256 mcbAvail, uint256 mcbLocked) = dark.balances(alice, address(mcb));
+        assertEq(mcbLocked, 0);
+        assertEq(mcbAvail, refund, "unfilled part refunded to the committer");
+        (uint256 got,) = dark.balances(alice, address(maaplx));
+        assertGt(got, 0);
+        assertLe(got, 100 * ONE_MAAPLX);
+        _assertConservation();
+    }
+
+    function test_residualWithNoInventoryFullyRefunded() public {
+        hook.withdrawInventory(cur(maaplx), hook.inventory(cur(maaplx)), address(this));
+        uint256 id = _commit(alice, true, 50 * ONE_MCB, 1.0e18, address(0), 50 * ONE_MCB);
+        _toReveal(id);
+        _reveal(alice, true, 50 * ONE_MCB, 1.0e18, address(0));
+        _toSettle(id);
+        vm.expectEmit(true, true, true, true, address(dark));
+        emit IDarkCrossHook.Unfilled(id, alice, CanonicalShares.toSharesDown(50 * ONE_MCB, mcb.multiplier(), 6));
+        dark.settle(id);
         (uint256 avail, uint256 locked) = dark.balances(alice, address(mcb));
         assertEq(locked, 0);
-        assertEq(avail, 900 * ONE_MCB, "residual stays in escrow");
+        assertEq(avail, 50 * ONE_MCB);
         _assertConservation();
+    }
+
+    function test_crossedFeeOneBpToProtocolRecipient() public {
+        address protocol = makeAddr("protocol");
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        dark.setProtocolFeeRecipient(protocol);
+        vm.expectEmit(true, true, true, true, address(dark));
+        emit IDarkCrossHook.ProtocolFeeRecipientSet(protocol);
+        dark.setProtocolFeeRecipient(protocol);
+        uint256 id = _commit(alice, true, 100 * ONE_MCB, 1.0e18, address(0), 100 * ONE_MCB);
+        _commit(bob, false, 101.25e18, 1.1e18, address(0), 101.25e18);
+        _toReveal(id);
+        _reveal(alice, true, 100 * ONE_MCB, 1.0e18, address(0));
+        _reveal(bob, false, 101.25e18, 1.1e18, address(0));
+        _toSettle(id);
+        oracle.setMid(address(mcb), address(maaplx), 1.0125e18);
+        vm.expectEmit(true, true, true, true, address(dark));
+        // matched 100 mcbAAPL = 101.25 shares; fees 1 bp each side: 0.010125 mAAPLx + 0.01 mcbAAPL (= 0.010125 shares).
+        emit IDarkCrossHook.Crossed(id, AAPL, 101.25e18, 1.0125e18, 0.02025e18);
+        dark.settle(id);
+        (uint256 feeQ,) = dark.balances(protocol, address(maaplx));
+        (uint256 feeB,) = dark.balances(protocol, address(mcb));
+        assertEq(feeQ, 0.010125e18);
+        assertEq(feeB, 0.01e6);
+        (uint256 aOut,) = dark.balances(alice, address(maaplx));
+        assertEq(aOut, 101.25e18 - 0.010125e18, "no skew on crossed volume");
+    }
+
+    function test_settlementDeliversToRecipient() public {
+        address payeeA = makeAddr("payeeA");
+        address payeeB = makeAddr("payeeB");
+        uint256 id = _commit(alice, true, 60 * ONE_MCB, 1.0e18, payeeA, 60 * ONE_MCB);
+        _commit(bob, false, 50.625e18, 1.1e18, payeeB, 50.625e18);
+        _toReveal(id);
+        _reveal(alice, true, 60 * ONE_MCB, 1.0e18, payeeA);
+        _reveal(bob, false, 50.625e18, 1.1e18, payeeB);
+        _toSettle(id);
+        oracle.setMid(address(mcb), address(maaplx), 1.0125e18);
+        dark.settle(id);
+        // Crossed proceeds and alice's 10 mcbAAPL residual fill are transferred to the recipients, not the committers.
+        assertEq(mcb.balanceOf(payeeB), 50 * ONE_MCB - 0.005e6);
+        assertGt(maaplx.balanceOf(payeeA), 50.625e18);
+        (uint256 aQ,) = dark.balances(alice, address(maaplx));
+        (uint256 bB,) = dark.balances(bob, address(mcb));
+        assertEq(aQ + bB, 0);
+        assertEq(dark.order(id, alice).recipient, payeeA);
     }
 
     function test_residualSkippedOnMinOut() public {
         // Limit 1.05 > mid: excluded from the cross; parity output (1.0125 less fee) is below minOut.
-        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1.05e18, true, 10 * ONE_MCB);
+        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1.05e18, address(0), 10 * ONE_MCB);
         _toReveal(id);
-        _reveal(alice, true, 10 * ONE_MCB, 1.05e18, true);
+        _reveal(alice, true, 10 * ONE_MCB, 1.05e18, address(0));
         _toSettle(id);
         vm.recordLogs();
         dark.settle(id);
@@ -293,11 +369,11 @@ abstract contract DarkCrossHookBase is Fixture {
         bytes32 uid = _attest(alice, "FR");
         _fundEscrow(alice, address(mcb), 10 * ONE_MCB);
         (uint256 id,,) = dark.currentBatch();
-        bytes32 h = dark.commitHashOf(id, alice, true, 10 * ONE_MCB, 1.0e18, true, _salt(alice));
+        bytes32 h = dark.commitHashOf(id, alice, true, 10 * ONE_MCB, 1.0e18, address(0), _salt(alice));
         vm.prank(alice);
         assertTrue(dark.commit(h, address(mcb), 10 * ONE_MCB, uid));
         _toReveal(id);
-        _reveal(alice, true, 10 * ONE_MCB, 1.0e18, true);
+        _reveal(alice, true, 10 * ONE_MCB, 1.0e18, address(0));
         // Attestation re-issued as US before settlement: the parity pool rejects the residual.
         eas.set(
             Attestation({
@@ -325,11 +401,11 @@ abstract contract DarkCrossHookBase is Fixture {
     }
 
     function test_limitExclusionBothSides() public {
-        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1.02e18, false, 10 * ONE_MCB); // wants >= 1.02: excluded
-        _commit(bob, false, 10 * ONE_MAAPLX, 1.0e18, false, 10 * ONE_MAAPLX); // pays <= 1.00: excluded
+        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1.02e18, address(0), 10 * ONE_MCB); // wants >= 1.02: excluded
+        _commit(bob, false, 10 * ONE_MAAPLX, 1.0e18, address(0), 10 * ONE_MAAPLX); // pays <= 1.00: excluded
         _toReveal(id);
-        _reveal(alice, true, 10 * ONE_MCB, 1.02e18, false);
-        _reveal(bob, false, 10 * ONE_MAAPLX, 1.0e18, false);
+        _reveal(alice, true, 10 * ONE_MCB, 1.02e18, address(0));
+        _reveal(bob, false, 10 * ONE_MAAPLX, 1.0e18, address(0));
         _toSettle(id);
         vm.recordLogs();
         dark.settle(id);
@@ -347,18 +423,18 @@ abstract contract DarkCrossHookBase is Fixture {
     }
 
     function test_zeroSideNoDivision() public {
-        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1.0e18, false, 10 * ONE_MCB);
+        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1.0e18, address(0), 10 * ONE_MCB);
         _toReveal(id);
-        _reveal(alice, true, 10 * ONE_MCB, 1.0e18, false);
+        _reveal(alice, true, 10 * ONE_MCB, 1.0e18, address(0));
         _toSettle(id);
         dark.settle(id);
         assertEq(dark.batchResult(id).crossedBase, 0);
         // Quote side only.
         uint256 id2 = id + 1;
         vm.roll(dark.batchOrigin() + id2 * 20);
-        _commit(bob, false, 10 * ONE_MAAPLX, 1.02e18, false, 10 * ONE_MAAPLX);
+        _commit(bob, false, 10 * ONE_MAAPLX, 1.02e18, address(0), 10 * ONE_MAAPLX);
         _toReveal(id2);
-        _reveal(bob, false, 10 * ONE_MAAPLX, 1.02e18, false);
+        _reveal(bob, false, 10 * ONE_MAAPLX, 1.02e18, address(0));
         _toSettle(id2);
         dark.settle(id2);
         assertEq(dark.batchResult(id2).crossedQuote, 0);
@@ -381,28 +457,28 @@ abstract contract DarkCrossHookBase is Fixture {
         (uint256 id,,) = dark.currentBatch();
         // 1 WRONG_LOCK_TOKEN: commits to sellBase but locks the quote token.
         _fundEscrow(alice, address(maaplx), 1 * ONE_MAAPLX);
-        bytes32 hA = dark.commitHashOf(id, alice, true, 1 * ONE_MCB, 1e18, false, _salt(alice));
+        bytes32 hA = dark.commitHashOf(id, alice, true, 1 * ONE_MCB, 1e18, address(0), _salt(alice));
         vm.prank(alice);
         assertTrue(dark.commit(hA, address(maaplx), 1 * ONE_MAAPLX, 0));
         // 2 INSUFFICIENT_LOCK
-        _commit(bob, true, 10 * ONE_MCB, 1e18, false, 1 * ONE_MCB);
+        _commit(bob, true, 10 * ONE_MCB, 1e18, address(0), 1 * ONE_MCB);
         // 3 ZERO_AMOUNT
-        _commit(carol, true, 0, 1e18, false, 1 * ONE_MCB);
+        _commit(carol, true, 0, 1e18, address(0), 1 * ONE_MCB);
         // 4 ZERO_LIMIT
-        _commit(dave, true, 1 * ONE_MCB, 0, false, 1 * ONE_MCB);
+        _commit(dave, true, 1 * ONE_MCB, 0, address(0), 1 * ONE_MCB);
         _toReveal(id);
         vm.expectEmit(true, true, true, true, address(dark));
         emit IDarkCrossHook.RevealRejected(id, alice, 1);
-        _reveal(alice, true, 1 * ONE_MCB, 1e18, false);
+        _reveal(alice, true, 1 * ONE_MCB, 1e18, address(0));
         vm.expectEmit(true, true, true, true, address(dark));
         emit IDarkCrossHook.RevealRejected(id, bob, 2);
-        _reveal(bob, true, 10 * ONE_MCB, 1e18, false);
+        _reveal(bob, true, 10 * ONE_MCB, 1e18, address(0));
         vm.expectEmit(true, true, true, true, address(dark));
         emit IDarkCrossHook.RevealRejected(id, carol, 3);
-        _reveal(carol, true, 0, 1e18, false);
+        _reveal(carol, true, 0, 1e18, address(0));
         vm.expectEmit(true, true, true, true, address(dark));
         emit IDarkCrossHook.RevealRejected(id, dave, 4);
-        _reveal(dave, true, 1 * ONE_MCB, 0, false);
+        _reveal(dave, true, 1 * ONE_MCB, 0, address(0));
         _toSettle(id);
         vm.recordLogs();
         dark.settle(id);
@@ -421,13 +497,13 @@ abstract contract DarkCrossHookBase is Fixture {
     function test_commitRevealPhasesAndErrors() public {
         _fundEscrow(alice, address(mcb), 100 * ONE_MCB);
         (uint256 id,,) = dark.currentBatch();
-        bytes32 h = dark.commitHashOf(id, alice, true, 10 * ONE_MCB, 1e18, false, _salt(alice));
+        bytes32 h = dark.commitHashOf(id, alice, true, 10 * ONE_MCB, 1e18, address(0), _salt(alice));
         // Reveal during COMMIT.
         vm.prank(alice);
         vm.expectRevert(
             abi.encodeWithSelector(IDarkCrossHook.WrongPhase.selector, IDarkCrossHook.Phase.REVEAL, IDarkCrossHook.Phase.COMMIT)
         );
-        dark.reveal(true, 10 * ONE_MCB, 1e18, false, _salt(alice));
+        dark.reveal(true, 10 * ONE_MCB, 1e18, address(0), _salt(alice));
         // Unsupported lock token.
         MockIssuerToken stray = new MockIssuerToken("S", "S", 18, 1e18);
         vm.prank(alice);
@@ -453,23 +529,23 @@ abstract contract DarkCrossHookBase is Fixture {
         dark.commit(h, address(mcb), 10 * ONE_MCB, 0);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IDarkCrossHook.UnknownCommit.selector, id, bob));
-        dark.reveal(true, 10 * ONE_MCB, 1e18, false, _salt(bob));
+        dark.reveal(true, 10 * ONE_MCB, 1e18, address(0), _salt(bob));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IDarkCrossHook.CommitMismatch.selector, id, alice));
-        dark.reveal(true, 11 * ONE_MCB, 1e18, false, _salt(alice));
+        dark.reveal(true, 11 * ONE_MCB, 1e18, address(0), _salt(alice));
         vm.expectEmit(true, true, true, true, address(dark));
-        emit IDarkCrossHook.Revealed(id, alice, true, 10 * ONE_MCB, 1e18, false);
-        _reveal(alice, true, 10 * ONE_MCB, 1e18, false);
+        emit IDarkCrossHook.Revealed(id, alice, true, 10 * ONE_MCB, 1e18, alice);
+        _reveal(alice, true, 10 * ONE_MCB, 1e18, address(0));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IDarkCrossHook.AlreadyRevealed.selector, id, alice));
-        dark.reveal(true, 10 * ONE_MCB, 1e18, false, _salt(alice));
+        dark.reveal(true, 10 * ONE_MCB, 1e18, address(0), _salt(alice));
         // Reveal during SETTLE.
         _toSettle(id);
         vm.prank(alice);
         vm.expectRevert(
             abi.encodeWithSelector(IDarkCrossHook.WrongPhase.selector, IDarkCrossHook.Phase.REVEAL, IDarkCrossHook.Phase.SETTLE)
         );
-        dark.reveal(true, 10 * ONE_MCB, 1e18, false, _salt(alice));
+        dark.reveal(true, 10 * ONE_MCB, 1e18, address(0), _salt(alice));
         IDarkCrossHook.Order memory o = dark.order(id, alice);
         assertEq(o.commitHash, h);
         assertEq(o.lockToken, address(mcb));
@@ -479,23 +555,25 @@ abstract contract DarkCrossHookBase is Fixture {
     }
 
     function test_commitHashBindsChainAndContract() public {
-        bytes32 h = dark.commitHashOf(0, alice, true, 1, 1, true, "s");
+        bytes32 h = dark.commitHashOf(0, alice, true, 1, 1, address(0), "s");
         assertEq(
             h,
-            keccak256(abi.encode(block.chainid, address(dark), uint256(0), alice, true, uint256(1), uint256(1), true, bytes32("s")))
+            keccak256(
+                abi.encode(block.chainid, address(dark), uint256(0), alice, true, uint256(1), uint256(1), address(0), bytes32("s"))
+            )
         );
         DarkCrossHook other =
-            new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(maaplx), key, treasury);
-        assertTrue(other.commitHashOf(0, alice, true, 1, 1, true, "s") != h);
+            new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(maaplx), key, treasury, address(this));
+        assertTrue(other.commitHashOf(0, alice, true, 1, 1, address(0), "s") != h);
         vm.chainId(1301);
-        assertTrue(dark.commitHashOf(0, alice, true, 1, 1, true, "s") != h);
+        assertTrue(dark.commitHashOf(0, alice, true, 1, 1, address(0), "s") != h);
     }
 
     function test_commitDeniedReturnsFalseNoState() public {
         eligibility.setDemoMode(false);
         _fundEscrow(alice, address(mcb), 10 * ONE_MCB);
         (uint256 id,,) = dark.currentBatch();
-        bytes32 h = dark.commitHashOf(id, alice, true, 10 * ONE_MCB, 1e18, false, _salt(alice));
+        bytes32 h = dark.commitHashOf(id, alice, true, 10 * ONE_MCB, 1e18, address(0), _salt(alice));
         vm.expectEmit(true, true, true, true, address(eligibility));
         emit IEligibility.EligibilityDenied(alice, address(dark), 1, bytes32(0));
         vm.prank(alice);
@@ -537,7 +615,7 @@ abstract contract DarkCrossHookBase is Fixture {
 
     function test_unrevealedForfeitToTreasuryNonZero() public {
         uint256 lock = dark.MIN_LOCK();
-        uint256 id = _commit(alice, true, lock, 1e18, false, lock);
+        uint256 id = _commit(alice, true, lock, 1e18, address(0), lock);
         _toSettle(id);
         vm.expectEmit(true, true, true, true, address(dark));
         emit IDarkCrossHook.Forfeited(id, alice, address(mcb), 10);
@@ -572,14 +650,14 @@ abstract contract DarkCrossHookBase is Fixture {
             uint256 amt = sellBase ? (i + 1) * ONE_MCB : (i + 1) * ONE_MAAPLX;
             fund(who[i], sellBase ? amt : 0, sellBase ? 0 : amt);
             traders.push(who[i]);
-            _commit(who[i], sellBase, amt, sellBase ? 1.0e18 : 1.03e18, true, amt);
+            _commit(who[i], sellBase, amt, sellBase ? 1.0e18 : 1.03e18, address(0), amt);
         }
         if (reveal) {
             _toReveal(id);
             for (uint256 i; i < n; i++) {
                 bool sellBase = i % 2 == 0;
                 uint256 amt = sellBase ? (i + 1) * ONE_MCB : (i + 1) * ONE_MAAPLX;
-                _reveal(who[i], sellBase, amt, sellBase ? 1.0e18 : 1.03e18, true);
+                _reveal(who[i], sellBase, amt, sellBase ? 1.0e18 : 1.03e18, address(0));
             }
         }
     }
@@ -607,44 +685,47 @@ abstract contract DarkCrossHookBase is Fixture {
     // ---------------------------------------------------------------- settlement timing and oracle
 
     function test_settleRevertsOracleStale() public {
-        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1e18, false, 10 * ONE_MCB);
+        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1e18, address(0), 10 * ONE_MCB);
         _toSettle(id);
         (, uint64 updatedAt) = oracle.getMid(address(mcb), address(maaplx));
-        vm.warp(uint256(updatedAt) + 901);
-        vm.expectRevert(abi.encodeWithSelector(IDarkCrossHook.OracleStale.selector, updatedAt, uint64(updatedAt + 901)));
+        vm.warp(uint256(updatedAt) + 1801);
+        vm.expectRevert(abi.encodeWithSelector(IDarkCrossHook.OracleStale.selector, updatedAt, uint64(updatedAt + 1801)));
         dark.settle(id);
-        vm.warp(uint256(updatedAt) + 900);
+        vm.warp(uint256(updatedAt) + 1800);
         dark.settle(id);
         // No price at all bubbles the oracle error.
         DarkCrossHook fresh =
-            new DarkCrossHook(manager, hook, oracle, eligibility, address(maaplx), address(mcb), key, treasury);
+            new DarkCrossHook(manager, hook, oracle, eligibility, address(maaplx), address(mcb), key, treasury, address(this));
         oracle.setMid(address(mcb), address(maaplx), MID); // inverse exists, so (maaplx, mcb) resolves
         vm.roll(fresh.batchOrigin() + 18);
         fresh.settle(0);
     }
 
     function test_midMovedAfterRevealRespectsLimits() public {
-        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1.01e18, false, 10 * ONE_MCB);
-        _commit(bob, false, 10 * ONE_MAAPLX, 1.02e18, false, 10 * ONE_MAAPLX);
+        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1.01e18, address(0), 10 * ONE_MCB);
+        _commit(bob, false, 10 * ONE_MAAPLX, 1.02e18, address(0), 10 * ONE_MAAPLX);
         _toReveal(id);
-        _reveal(alice, true, 10 * ONE_MCB, 1.01e18, false);
-        _reveal(bob, false, 10 * ONE_MAAPLX, 1.02e18, false);
+        _reveal(alice, true, 10 * ONE_MCB, 1.01e18, address(0));
+        _reveal(bob, false, 10 * ONE_MAAPLX, 1.02e18, address(0));
         // Pusher moves the mid below alice's limit after seeing the reveals: alice is protected.
         oracle.setMid(address(mcb), address(maaplx), 1.005e18);
         _toSettle(id);
         dark.settle(id);
         assertEq(dark.batchResult(id).crossedBase, 0);
+        // Nothing crosses; each order's residual falls through to ParityHook inventory at its own limit instead.
         (uint256 aMcb,) = dark.balances(alice, address(mcb));
-        assertEq(aMcb, 10 * ONE_MCB);
+        (uint256 aMaaplx,) = dark.balances(alice, address(maaplx));
+        assertEq(aMcb, 0);
+        assertGe(aMaaplx, 10.1e18, "residual filled no worse than alice's 1.01 limit");
         // Next batch: a mid inside both limits crosses, and each side's price is within its limit.
         uint256 id2 = id + 1;
         vm.roll(dark.batchOrigin() + id2 * 20);
         oracle.setMid(address(mcb), address(maaplx), 1.015e18);
-        _commit(alice, true, 10 * ONE_MCB, 1.01e18, false, 10 * ONE_MCB);
-        _commit(bob, false, 10 * ONE_MAAPLX, 1.02e18, false, 10 * ONE_MAAPLX);
+        _commit(alice, true, 10 * ONE_MCB, 1.01e18, address(0), 10 * ONE_MCB);
+        _commit(bob, false, 10 * ONE_MAAPLX, 1.02e18, address(0), 10 * ONE_MAAPLX);
         _toReveal(id2);
-        _reveal(alice, true, 10 * ONE_MCB, 1.01e18, false);
-        _reveal(bob, false, 10 * ONE_MAAPLX, 1.02e18, false);
+        _reveal(alice, true, 10 * ONE_MCB, 1.01e18, address(0));
+        _reveal(bob, false, 10 * ONE_MAAPLX, 1.02e18, address(0));
         _toSettle(id2);
         dark.settle(id2);
         IDarkCrossHook.BatchResult memory r = dark.batchResult(id2);
@@ -657,7 +738,7 @@ abstract contract DarkCrossHookBase is Fixture {
     }
 
     function test_settlePhaseRules() public {
-        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1e18, false, 10 * ONE_MCB);
+        uint256 id = _commit(alice, true, 10 * ONE_MCB, 1e18, address(0), 10 * ONE_MCB);
         vm.expectRevert(abi.encodeWithSelector(IDarkCrossHook.BatchNotSettleable.selector, id));
         dark.settle(id);
         _toReveal(id);
@@ -677,11 +758,11 @@ abstract contract DarkCrossHookBase is Fixture {
     }
 
     function test_batchResultStored() public {
-        uint256 id = _commit(alice, true, 60 * ONE_MCB, 1.01e18, true, 60 * ONE_MCB);
-        _commit(bob, false, 50.625e18, 1.015e18, false, 50.625e18);
+        uint256 id = _commit(alice, true, 60 * ONE_MCB, 1.01e18, address(0), 60 * ONE_MCB);
+        _commit(bob, false, 50.625e18, 1.015e18, address(0), 50.625e18);
         _toReveal(id);
-        _reveal(alice, true, 60 * ONE_MCB, 1.01e18, true);
-        _reveal(bob, false, 50.625e18, 1.015e18, false);
+        _reveal(alice, true, 60 * ONE_MCB, 1.01e18, address(0));
+        _reveal(bob, false, 50.625e18, 1.015e18, address(0));
         _toSettle(id);
         dark.settle(id);
         IDarkCrossHook.BatchResult memory r = dark.batchResult(id);
@@ -708,17 +789,18 @@ abstract contract DarkCrossHookBase is Fixture {
 
     function test_executeResidualOnlySelf() public {
         vm.expectRevert(abi.encodeWithSelector(IDarkCrossHook.Unauthorized.selector, address(this)));
-        dark.executeResidual(0, alice);
+        dark.executeResidual(0, alice, 1);
         vm.prank(address(dark));
         vm.expectRevert(abi.encodeWithSelector(IDarkCrossHook.Unauthorized.selector, address(dark)));
-        dark.executeResidual(0, alice);
+        dark.executeResidual(0, alice, 1);
     }
 
     function test_settleNonReentrant() public {
         ReentrantToken re = new ReentrantToken();
+        registry.add(address(new StaticAdapter(address(re), AAPL, "RE", 1e18, address(this))));
         (address lo, address hi) = address(re) < address(maaplx) ? (address(re), address(maaplx)) : (address(maaplx), address(re));
         PoolKey memory k = PoolKey(Currency.wrap(lo), Currency.wrap(hi), LPFeeLibrary.DYNAMIC_FEE_FLAG, 10, IHooks(address(hook)));
-        DarkCrossHook d = new DarkCrossHook(manager, hook, oracle, eligibility, address(re), address(maaplx), k, treasury);
+        DarkCrossHook d = new DarkCrossHook(manager, hook, oracle, eligibility, address(re), address(maaplx), k, treasury, address(this));
         re.setTarget(d);
         re.mint(alice, 100e18);
         vm.startPrank(alice);
@@ -737,6 +819,9 @@ abstract contract DarkCrossHookBase is Fixture {
         nQuote = uint8(bound(nQuote, 0, 6));
         mid = bound(mid, 0.9e18, 1.1e18);
         oracle.setMid(address(mcb), address(maaplx), mid);
+        // Crossing only: with no hook inventory every residual is refunded, not filled.
+        hook.withdrawInventory(cur(mcb), hook.inventory(cur(mcb)), address(this));
+        hook.withdrawInventory(cur(maaplx), hook.inventory(cur(maaplx)), address(this));
         (uint256 id,,) = dark.currentBatch();
         address[] memory who = new address[](uint256(nBase) + nQuote);
         uint256[] memory amts = new uint256[](who.length);
@@ -748,12 +833,12 @@ abstract contract DarkCrossHookBase is Fixture {
                 : bound(uint256(keccak256(abi.encode(seed, i))), dark.MIN_LOCK(), 500 * ONE_MAAPLX);
             fund(who[i], sellBase ? amts[i] : 0, sellBase ? 0 : amts[i]);
             traders.push(who[i]);
-            _commit(who[i], sellBase, amts[i], sellBase ? 1 : type(uint128).max, false, amts[i]);
+            _commit(who[i], sellBase, amts[i], sellBase ? 1 : type(uint128).max, address(0), amts[i]);
         }
         _toReveal(id);
         for (uint256 i; i < who.length; i++) {
             bool sellBase = i < nBase;
-            _reveal(who[i], sellBase, amts[i], sellBase ? 1 : type(uint128).max, false);
+            _reveal(who[i], sellBase, amts[i], sellBase ? 1 : type(uint128).max, address(0));
         }
         _toSettle(id);
         dark.settle(id);
@@ -801,14 +886,13 @@ abstract contract DarkCrossHookBase is Fixture {
             bool sellBase = r % 2 == 0;
             uint256 amt = sellBase ? bound(r >> 8, dark.MIN_LOCK(), 3000 * ONE_MCB) : bound(r >> 8, dark.MIN_LOCK(), 3000 * ONE_MAAPLX);
             uint256 limit = sellBase ? bound(r >> 100, 0.99e18, 1.03e18) : bound(r >> 100, 0.99e18, 1.03e18);
-            bool route = (r >> 200) % 3 != 0;
             bool reveals = (r >> 210) % 5 != 0;
             fund(who[i], sellBase ? amt : 0, sellBase ? 0 : amt);
             traders.push(who[i]);
-            _commit(who[i], sellBase, amt, limit, route, amt);
+            _commit(who[i], sellBase, amt, limit, address(0), amt);
             if (reveals) {
                 _toReveal(id);
-                _reveal(who[i], sellBase, amt, limit, route);
+                _reveal(who[i], sellBase, amt, limit, address(0));
                 vm.roll(dark.batchOrigin() + id * 20); // back to COMMIT for the next trader
             }
         }

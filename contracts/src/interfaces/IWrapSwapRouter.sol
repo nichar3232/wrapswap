@@ -7,9 +7,9 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 /// @title IWrapSwapRouter
 /// @notice Thin single-pool swap router over the v4 PoolManager with user-side slippage and deadline protection.
 /// @dev Payment is a plain ERC-20 allowance from msg.sender to the router (no Permit2). The router is a trusted
-///      router of the eligibility module, so it only forwards ParityHook hookData v1 naming msg.sender as swapper:
-///      empty hookData is replaced with abi.encode(uint8(1), msg.sender, bytes32(0)); any other hookData must be
-///      exactly that layout with swapper == msg.sender and is passed through unchanged (attestationUid preserved).
+///      router of the eligibility module, so it only ever names msg.sender as swapper: it forwards ParityHook hookData
+///      v2 abi.encode(uint8(2), msg.sender, attestationUid, recipient). Caller hookData is optional and, if given,
+///      must be v1 abi.encode(uint8(1), msg.sender, attestationUid) (only the uid is used). Output goes to recipient.
 interface IWrapSwapRouter {
     struct ExactInputParams {
         PoolKey key;

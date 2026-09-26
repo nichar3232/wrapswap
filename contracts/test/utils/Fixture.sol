@@ -124,7 +124,7 @@ abstract contract Fixture is Test {
 
         deployCodeTo(
             "ParityHook.sol:ParityHook",
-            abi.encode(address(manager), address(registry), address(calendar), address(eligibility), address(this)),
+            abi.encode(address(manager), address(registry), address(eligibility), address(this)),
             HOOK_ADDR
         );
         hook = ParityHook(HOOK_ADDR);
@@ -134,7 +134,9 @@ abstract contract Fixture is Test {
         poolId = key.toId();
         manager.initialize(key, paritySqrtPriceX96());
 
-        dark = new DarkCrossHook(manager, hook, oracle, eligibility, address(mcb), address(maaplx), key, treasury);
+        dark = new DarkCrossHook(
+            manager, hook, oracle, eligibility, address(mcb), address(maaplx), key, treasury, address(this)
+        );
         eligibility.setTrustedRouter(address(swapRouter), true);
         eligibility.setTrustedRouter(address(dark), true);
 

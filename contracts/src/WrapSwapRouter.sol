@@ -39,7 +39,7 @@ contract WrapSwapRouter is IWrapSwapRouter, IUnlockCallback {
 
     function swapExactIn(ExactInputParams calldata p) external returns (uint256 amountOut) {
         _checkDeadline(p.deadline);
-        bytes memory hookData = _hookData(p.hookData);
+        bytes memory hookData = _hookData(p.hookData, p.recipient);
         bytes memory result = poolManager.unlock(
             abi.encode(Callback(msg.sender, p.recipient, p.key, p.zeroForOne, true, p.amountIn, p.amountOutMin, hookData))
         );
@@ -48,7 +48,7 @@ contract WrapSwapRouter is IWrapSwapRouter, IUnlockCallback {
 
     function swapExactOut(ExactOutputParams calldata p) external returns (uint256 amountIn) {
         _checkDeadline(p.deadline);
-        bytes memory hookData = _hookData(p.hookData);
+        bytes memory hookData = _hookData(p.hookData, p.recipient);
         bytes memory result = poolManager.unlock(
             abi.encode(Callback(msg.sender, p.recipient, p.key, p.zeroForOne, false, p.amountOut, p.amountInMax, hookData))
         );
@@ -98,13 +98,18 @@ contract WrapSwapRouter is IWrapSwapRouter, IUnlockCallback {
     }
 
     /// @dev The eligibility module honours the claimed swapper only for trusted routers, so never forward a claim
-    ///      for anyone but the caller.
-    function _hookData(bytes calldata hookData) internal view returns (bytes memory) {
-        if (hookData.length == 0) return abi.encode(uint8(1), msg.sender, bytes32(0));
-        if (hookData.length != HOOK_DATA_V1_LENGTH) revert InvalidHookData();
-        (uint256 version, uint256 swapper,) = abi.decode(hookData, (uint256, uint256, bytes32));
-        if (version != 1 || swapper >> 160 != 0) revert InvalidHookData();
-        if (address(uint160(swapper)) != msg.sender) revert SwapperMismatch(address(uint160(swapper)), msg.sender);
-        return hookData;
+    ///      for anyone but the caller. Always forwards ParityHook hookData v2 (swapper, uid, recipient); the optional
+    ///      caller hookData (v1, naming msg.sender) only supplies the attestation uid.
+    function _hookData(bytes calldata hookData, address recipient) internal view returns (bytes memory) {
+        bytes32 uid;
+        if (hookData.length != 0) {
+            if (hookData.length != HOOK_DATA_V1_LENGTH) revert InvalidHookData();
+            uint256 version;
+            uint256 swapper;
+            (version, swapper, uid) = abi.decode(hookData, (uint256, uint256, bytes32));
+            if (version != 1 || swapper >> 160 != 0) revert InvalidHookData();
+            if (address(uint160(swapper)) != msg.sender) revert SwapperMismatch(address(uint160(swapper)), msg.sender);
+        }
+        return abi.encode(uint8(2), msg.sender, uid, recipient);
     }
 }

@@ -251,7 +251,7 @@ contract Deploy is Script {
         registry.add(d.mcbAdapter);
         registry.add(d.maaplxAdapter);
 
-        bytes memory args = abi.encode(d.poolManager, d.registry, d.calendar, d.eligibility, deployer);
+        bytes memory args = abi.encode(d.poolManager, d.registry, d.eligibility, deployer);
         bytes memory code = type(ParityHook).creationCode;
         (address predicted, bytes32 salt) = HookMiner.find(CREATE2_PROXY, PARITY_FLAGS, code, args);
         (bool ok,) = CREATE2_PROXY.call(abi.encodePacked(salt, code, args));
@@ -262,7 +262,7 @@ contract Deploy is Script {
         (address lo, address hi) = d.mcb < d.maaplx ? (d.mcb, d.maaplx) : (d.maaplx, d.mcb);
         d.key = PoolKey(Currency.wrap(lo), Currency.wrap(hi), LPFeeLibrary.DYNAMIC_FEE_FLAG, 10, IHooks(d.parityHook));
         d.darkCrossHook = address(
-            new DarkCrossHook(pm, ParityHook(d.parityHook), oracle, eligibility, d.mcb, d.maaplx, d.key, deployer)
+            new DarkCrossHook(pm, ParityHook(d.parityHook), oracle, eligibility, d.mcb, d.maaplx, d.key, deployer, deployer)
         );
         // Created last so every earlier address (and the §10 currency ordering) is unchanged.
         d.wrapSwapRouter = address(new WrapSwapRouter(pm));

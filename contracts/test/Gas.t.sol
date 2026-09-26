@@ -28,8 +28,8 @@ abstract contract GasBase is Fixture {
         dark.fund(address(mcb), 60e6);
         vm.prank(bob);
         dark.fund(address(maaplx), 50.625e18);
-        bytes32 hA = dark.commitHashOf(id, alice, true, 60e6, 1.01e18, true, "a");
-        bytes32 hB = dark.commitHashOf(id, bob, false, 50.625e18, 1.015e18, false, "b");
+        bytes32 hA = dark.commitHashOf(id, alice, true, 60e6, 1.01e18, address(0), "a");
+        bytes32 hB = dark.commitHashOf(id, bob, false, 50.625e18, 1.015e18, address(0), "b");
         vm.prank(alice);
         dark.commit(hA, address(mcb), 60e6, 0);
         vm.prank(bob);
@@ -62,7 +62,7 @@ contract GasCommit is GasBase {
         (id,,) = dark.currentBatch();
         vm.prank(alice);
         dark.fund(address(mcb), 60e6);
-        h = dark.commitHashOf(id, alice, true, 60e6, 1.01e18, true, "a");
+        h = dark.commitHashOf(id, alice, true, 60e6, 1.01e18, address(0), "a");
     }
 
     function test_gas_commit() public {
@@ -80,7 +80,7 @@ contract GasReveal is GasBase {
 
     function test_gas_reveal() public {
         vm.prank(alice);
-        dark.reveal(true, 60e6, 1.01e18, true, "a");
+        dark.reveal(true, 60e6, 1.01e18, address(0), "a");
     }
 }
 
@@ -90,9 +90,9 @@ contract GasSettle is GasBase {
         _commitBoth();
         vm.roll(dark.batchOrigin() + id * 20 + 12);
         vm.prank(alice);
-        dark.reveal(true, 60e6, 1.01e18, true, "a");
+        dark.reveal(true, 60e6, 1.01e18, address(0), "a");
         vm.prank(bob);
-        dark.reveal(false, 50.625e18, 1.015e18, false, "b");
+        dark.reveal(false, 50.625e18, 1.015e18, address(0), "b");
         vm.roll(dark.batchOrigin() + id * 20 + 18);
     }
 
