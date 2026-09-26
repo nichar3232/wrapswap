@@ -12,14 +12,14 @@ pnpm exec tsx services/crank/index.ts
 
 | Environment | Requirement / default |
 | --- | --- |
-| `NETWORK` | Required: `anvil` or `base-sepolia`. |
+| `NETWORK` | Required: `anvil` or `unichain-sepolia`. |
 | `RPC_URL` | Required JSON RPC URL. Chain ID must match the manifest. |
 | `CRANK_HEALTH_PORT` | Required health listener port; lane value `18104`. |
 | `CRANK_HEALTH_HOST` | Default `127.0.0.1`; use `0.0.0.0` when needed for container hosting. |
 | `CRANK_POLL_MS` | Default `1000`; actions run on new blocks, failed iterations retry with capped exponential jitter. |
 | `ORACLE_MODE` | `mock` or `external`; default `mock` if deployment.mockOracle, otherwise `external`. Pushes require both mock mode and deployment.mockOracle. |
 | `CRANK_PK` | Optional explicit hex private key; takes precedence over mnemonic on either network. Keep secret. |
-| `DEMO_MNEMONIC` | Signer derives address index 4. Required on Base Sepolia unless CRANK_PK is set. Anvil defaults to the standard public test mnemonic. |
+| `DEMO_MNEMONIC` | Signer derives address index 4. Required on Unichain Sepolia unless CRANK_PK is set. Anvil defaults to the standard public test mnemonic. |
 | `DATABASE_URL` | Not used by crank; the API/indexer need it, including hosted Postgres SSL settings documented in api/README.md. |
 | `ANVIL_PORT` | External Anvil service port (`18504`); include in RPC_URL. Crank does not start Anvil. |
 | `PG_PORT`, `API_PORT`, `WEB_PORT` | Other lane service ports (`15404`, `18004`, `13004`); not read by crank. |

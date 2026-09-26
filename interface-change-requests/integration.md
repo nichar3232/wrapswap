@@ -7,7 +7,7 @@ A visitor arriving after that epoch cannot reproduce the §10 order of operation
 
 Proposed clarification: define live seed as a starting-state fixture, with displayed
 live residual fees derived from the actual inventory; require an explicitly coordinated
-conversion before reveal when verifying the exact §10 BASE-SEPOLIA end-state numbers.
+conversion before reveal when verifying the exact §10 UNICHAIN-SEPOLIA end-state numbers.
 Do not change contract formulas. ANVIL remains deterministic with explicit phase mining.
 Affected: §7 and §10. Blocking: yes for unconditional exact live narrative; no for local replay.
 

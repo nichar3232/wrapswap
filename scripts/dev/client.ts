@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createPublicClient, createWalletClient, http } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
 import { parseDeployment, abis } from '@wrapswap/types';
-export const network = process.env.NETWORK || 'anvil';
+export const network = process.env.NETWORK || 'unichain-sepolia';
 export const deployment = () => parseDeployment(JSON.parse(readFileSync(`deployments/${network}.json`, 'utf8')));
 export const rpc = process.env.RPC_URL || `http://127.0.0.1:${process.env.ANVIL_PORT || 18508}`;
 export const chain = createPublicClient({transport:http(rpc)});

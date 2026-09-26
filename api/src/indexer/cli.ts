@@ -1,7 +1,7 @@
 import { Indexer, startIndexer } from "./index.js";
 import { loadDeployment } from "../chain/client.js";
 import { db, migrate } from "../db/index.js";
-for (const name of ["NETWORK", "DATABASE_URL", "RPC_URL"])
+for (const name of ["DATABASE_URL", "RPC_URL"])
   if (!process.env[name]) throw Error(`${name} is required`);
 const d = loadDeployment();
 await migrate(d);

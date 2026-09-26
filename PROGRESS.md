@@ -10,7 +10,7 @@
 - Seeded real concentrated liquidity, ERC6909 hook inventory, and three burner escrows.
 - First scripted fork flow green: vault mint, parity fill, drained-inventory curve fallback, crank cross+residual same transaction.
 - App unit/build integration green; nine tests include real Postgres replay.
-- make testnet attempted: blocked before broadcast because deployer has zero Base Sepolia ETH; no addresses fabricated.
+- make testnet attempted: blocked before broadcast because deployer has zero Unichain Sepolia ETH; no addresses fabricated.
 - Verified Ethereum AAPLx issuer-published address, holder and non-unit rebasing multiplier; bridge remains gated by §7 completion.
 - Five browser transaction tests passed in C worktree; main repeat exposed upstream Node24 Undici EINVAL, fixed with upstream dispatcher and a forced-QoS-failure regression test.
 - Eleven app/database/runtime tests green after fixed Undici dispatcher integration; Solidity suite remains 36 tests.

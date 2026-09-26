@@ -11,7 +11,7 @@ Implementation choices are in `decisions/contracts.md`. Interface gaps are filed
 | Invariants at ≥256 runs, depth ≥50 | PASS: runs 256, depth 50 (12,800 calls), 0 reverts, fail-on-revert on, both orderings | `forge test --match-path contracts/test/invariant/ParityHookInvariant.t.sol -vv` |
 | `forge coverage` ≥90% lines on both hooks | PASS: ParityHook 97.45% (191/196), DarkCrossHook 99.15% (232/234) | `forge coverage --ir-minimum --report summary` (via-IR needs `--ir-minimum`) |
 | Deploy.s.sol on a fresh anvil writes `deployments/anvil.json` that validates against §4 | PASS: checked with `parseDeployment` from `packages/types` (schema plus cross-field rules) | see "Deploy on a fresh anvil" below |
-| Both §10 variant tests pass | PASS: ANVIL and BASE-SEPOLIA × both orderings, with every `wrapswap:demo` constant asserted | `forge test --match-path contracts/test/DemoNarrative.t.sol` |
+| Both §10 variant tests pass | PASS: ANVIL and UNICHAIN-SEPOLIA × both orderings, with every `wrapswap:demo` constant asserted | `forge test --match-path contracts/test/DemoNarrative.t.sol` |
 | Every SCOPING §2 item has a passing test | PASS: 41 named tests, 69 runs across both orderings, all passing (checklist below) | the `--match-test` command below |
 | All work committed on `lane/contracts` | PASS | `git status` is clean |
 
@@ -131,7 +131,7 @@ Result: 69 tests passed, 0 failed, 0 skipped, plus all 5 invariants passing unde
 
 | File | Tests |
 |---|---|
-| `DemoNarrative.t.sol` | 4 (§10 ANVIL and BASE-SEPOLIA × mcbAAPL-c0 / mAAPLx-c0) |
+| `DemoNarrative.t.sol` | 4 (§10 ANVIL and UNICHAIN-SEPOLIA × mcbAAPL-c0 / mAAPLx-c0) |
 | `ParityHook.t.sol` | 47 × 2 orderings |
 | `DarkCrossHook.t.sol` | 27 × 2 orderings |
 | `invariant/ParityHookInvariant.t.sol` | 5 invariants × 2 orderings |
@@ -146,4 +146,4 @@ Result: 69 tests passed, 0 failed, 0 skipped, plus all 5 invariants passing unde
 - **E16 (CR-2).** There is no settle-time bound between the mid and parity.
 - **`contracts/script/Seed.s.sol`.** It is legacy and owned by integration. It still mentions vault/uAAPL, so it is the only hit for the SCOPING grep gate. It compiles, and the contracts lane must not edit it.
 - **`contracts/script/Addresses.sol`.** Nothing imports it and no lane owns it (CR-4).
-- **Base Sepolia deploy.** Not run from this lane (no key or RPC here). `Deploy.s.sol` requires every Sepolia external from env.
+- **Unichain Sepolia deploy.** Not run from this lane (no key or RPC here). `Deploy.s.sol` requires every Sepolia external from env.

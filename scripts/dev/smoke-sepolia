@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Read-only Base Sepolia smoke checks against deployments/base-sepolia.json.
-# Env: RPC_URL. Checks code at every address, ParityHook flag bits, pool at parity, seeded inventory.
+# Read-only Unichain Sepolia smoke checks against deployments/unichain-sepolia.json.
+# Env: RPC_URL. Checks code at every address, ParityHook flag bits, pool at parity, seeded inventory (+-10% after fills).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${RPC_URL:?}"
-m=deployments/base-sepolia.json
+m=deployments/unichain-sepolia.json
 fail=0
 ok() { printf 'PASS %s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1"; fail=1; }
-[[ $(cast chain-id --rpc-url "$RPC_URL") == 84532 ]] && ok 'chainId 84532' || bad 'chainId'
+[[ $(cast chain-id --rpc-url "$RPC_URL") == 1301 ]] && ok 'chainId 1301' || bad 'chainId'
 for a in $(jq -r '[.contracts[], .tokens[].address, .tokens[].adapter] | map(select(. != null)) | .[]' "$m"); do
   [[ $(cast code "$a" --rpc-url "$RPC_URL") != 0x ]] && ok "code $a" || bad "code $a"
 done
@@ -24,7 +24,8 @@ for t in $(jq -r '.tokens[] | "\(.symbol):\(.address)"' "$m"); do
   sym=${t%%:*} addr=${t#*:}
   inv=$(cast call "$hook" 'inventory(address)(uint256)' "$addr" --rpc-url "$RPC_URL" | awk '{print $1}')
   want=$([[ $sym == mcbAAPL ]] && echo 8000000000 || echo 12150000000000000000000)
-  [[ $inv == "$want" ]] && ok "inventory $sym $inv" || bad "inventory $sym $inv (want $want)"
+  # Seeded exactly; settled dark batches and proof swaps then move it, so accept +-10% of the seed.
+  awk -v i="$inv" -v w="$want" 'BEGIN{exit !(i >= 0.9*w && i <= 1.1*w)}' && ok "inventory $sym $inv (seed $want)" || bad "inventory $sym $inv (seed $want)"
 done
 cal=$(jq -r .contracts.calendar "$m")
 ts=$(cast block latest --field timestamp --rpc-url "$RPC_URL")

@@ -12,7 +12,7 @@ import {IParityHook} from "../src/interfaces/IParityHook.sol";
 import {IDarkCrossHook} from "../src/interfaces/IDarkCrossHook.sol";
 
 /// @notice Reproduces INTERFACES.md §10 exactly: every `wrapswap:demo` constant is hardcoded and asserted, for both
-///         variants (ANVIL at the warped open, BASE-SEPOLIA with the calendar closed) and both currency orderings.
+///         variants (ANVIL at the warped open, UNICHAIN-SEPOLIA with the calendar closed) and both currency orderings.
 abstract contract DemoNarrativeBase is Fixture {
     using StateLibrary for IPoolManager;
 
@@ -84,7 +84,7 @@ abstract contract DemoNarrativeBase is Fixture {
         });
     }
 
-    function baseSepoliaVariant() internal pure returns (Variant memory) {
+    function unichainSepoliaVariant() internal pure returns (Variant memory) {
         return Variant({
             warp: 1790424000,
             marketOpen: false,
@@ -244,8 +244,8 @@ contract DemoNarrative_McbC0Test is DemoNarrativeBase {
         _run(anvilVariant());
     }
 
-    function test_section10_baseSepolia_mcbC0() public {
-        _run(baseSepoliaVariant());
+    function test_section10_unichainSepolia_mcbC0() public {
+        _run(unichainSepoliaVariant());
     }
 }
 
@@ -258,7 +258,7 @@ contract DemoNarrative_MaaplxC0Test is DemoNarrativeBase {
         _run(anvilVariant());
     }
 
-    function test_section10_baseSepolia_maaplxC0() public {
-        _run(baseSepoliaVariant());
+    function test_section10_unichainSepolia_maaplxC0() public {
+        _run(unichainSepoliaVariant());
     }
 }

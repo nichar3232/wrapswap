@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.26;
 
-/// @notice Official deployment page checked 2026-09-25; no assumption of cross-chain address equality.
+/// @notice Official deployment page checked 2026-09-26 (developers.uniswap.org/docs/protocols/v4/deployments); no assumption of cross-chain address equality.
 library Addresses {
     struct Network {
         address poolManager;
@@ -26,12 +26,12 @@ library Addresses {
             n.universalRouter = 0xd6145b2D3F379919E8CdEda7B97e37c4b2Ca9c40;
             n.usdc = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
             n.oracle = 0x787f13dEa48Db0897CbCDD985de77809D837F988;
-        } else if (chainId == 84532) {
-            n.poolManager = 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408;
-            n.positionManager = 0x4B2C77d209D3405F41a037Ec6c77F7F5b8e2ca80;
-            n.stateView = 0x571291b572ed32ce6751a2Cb2486EbEe8DEfB9B4;
-            n.quoter = 0x4A6513c898fe1B2d0E78d3b0e0A4a151589B1cBa;
-            n.universalRouter = 0x8702463e73f74d0b6765aBceb314Ef07aCb92650;
+        } else if (chainId == 1301) {
+            n.poolManager = 0x00B036B58a818B1BC34d502D3fE730Db729e62AC;
+            n.positionManager = 0xf969Aee60879C54bAAed9F3eD26147Db216Fd664;
+            n.stateView = 0xc199F1072a74D4e905ABa1A84d9a45E2546B6222;
+            n.quoter = 0x56DCD40A3F2d466F48e7F48bDBE5Cc9B92Ae4472;
+            n.universalRouter = 0xf70536B3bcC1bD1a972dc186A2cf84cC6da6Be5D;
         } else {
             revert("Unsupported chain");
         }

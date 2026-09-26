@@ -10,8 +10,8 @@ it("NETWORK selects the same schema and loader with different addresses/start bl
   try {
     const base = {
       ...deployment,
-      network: "base-sepolia",
-      chainId: 84532,
+      network: "unichain-sepolia",
+      chainId: 1301,
       startBlock: "123",
       contracts: { ...deployment.contracts, registry: "0x" + "1".repeat(40) },
       blocks: { registry: "123" },
@@ -22,7 +22,7 @@ it("NETWORK selects the same schema and loader with different addresses/start bl
         JSON.stringify(d),
       );
     const a = loadDeployment("anvil", root),
-      b = loadDeployment("base-sepolia", root);
+      b = loadDeployment("unichain-sepolia", root);
     expect(a.tokens).toEqual(b.tokens);
     expect(a.pool).toEqual(b.pool);
     expect(b.startBlock).toBe("123");

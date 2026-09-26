@@ -10,6 +10,10 @@ import {
   deploymentPath,
   type Deployment,
 } from "@wrapswap/types";
+// Unichain Sepolia (1301) is the default network; NETWORK=anvil selects the offline stack. Set before `rpc` below
+// is read, and before every entrypoint (all import this module) checks its required env.
+process.env.NETWORK ||= "unichain-sepolia";
+if (process.env.NETWORK === "unichain-sepolia") process.env.RPC_URL ||= "https://sepolia.unichain.org";
 export function loadDeployment(
   network = process.env.NETWORK,
   root = process.cwd(),

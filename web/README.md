@@ -13,7 +13,7 @@ All browser configuration lives in `src/config.ts`. Vite public environment vari
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
-| `VITE_NETWORK` | `anvil` or `base-sepolia`; validates deployment network and drives chain switch | `anvil` |
+| `VITE_NETWORK` | `anvil` or `unichain-sepolia`; validates deployment network and drives chain switch | `anvil` |
 | `VITE_USE_MOCKS` | Public USE_MOCKS flag; exactly `true` selects deterministic §10 fixtures | `false` |
 | `VITE_API_URL` | API base URL, no trailing slash; `/deployment` must serve `deployments/${NETWORK}.json` | `/api` |
 | `VITE_CRANK_URL` | Crank base URL, queried at `/status` (separate from API) | `/crank` |
@@ -27,12 +27,12 @@ Set API server `NETWORK` to match `VITE_NETWORK`. `PG_PORT` is not used by this 
 
 For Vercel, keep the repository as the project root, use install command `pnpm install --frozen-lockfile`, build command `pnpm exec tsc --noEmit -p web/tsconfig.json && pnpm exec vite build --config web/vite.config.ts`, output directory `dist/web`. Set the five `VITE_` variables above. Hosted live API/RPC/crank URLs must be HTTPS and allow the site origin through CORS; dev proxies are not included in the production bundle. No server or rewrite is required for this single-page app.
 
-Mocks use `DEMO` constants and the illustrative §4 deployment (only in `src/mocks`). Anvil is open: 4.60 bps, 101.203425 output. Base Sepolia is closed: 14.60 bps, 101.102175 output, with “NYSE closed: +10 bps off-hours premium”. Transactions and dark phase advances in mock mode are explicitly simulated. The batch history includes the §10 matched and residual amounts. Canonical shares are accounting only.
+Mocks use `DEMO` constants and the illustrative §4 deployment (only in `src/mocks`). Anvil is open: 4.60 bps, 101.203425 output. Unichain Sepolia is closed: 14.60 bps, 101.102175 output, with “NYSE closed: +10 bps off-hours premium”. Transactions and dark phase advances in mock mode are explicitly simulated. The batch history includes the §10 matched and residual amounts. Canonical shares are accounting only.
 
 ```sh
 pnpm exec vitest run web/src
 WEB_PORT=13005 VITE_NETWORK=anvil pnpm exec playwright test --config web/playwright.config.ts
-WEB_PORT=13005 VITE_NETWORK=base-sepolia pnpm exec playwright test --config web/playwright.config.ts
+WEB_PORT=13005 VITE_NETWORK=unichain-sepolia pnpm exec playwright test --config web/playwright.config.ts
 WEB_PORT=13005 VITE_USE_MOCKS=false VITE_NETWORK=anvil pnpm exec playwright test --config web/playwright.config.ts
 ```
 

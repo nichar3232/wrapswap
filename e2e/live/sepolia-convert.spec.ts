@@ -4,9 +4,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { api, webURL, deployment, chain, account, abis, DEMO } from '../support.js';
 import { wallet, network } from '../../scripts/dev/client.js';
 
-// Live Convert on Base Sepolia through the web UI and WrapSwapRouter (INTERFACES.md §13), as demo account index 1.
-// Run against a local stack started with NETWORK=base-sepolia; writes logs/sepolia/live-swap.json.
-test.skip(network !== 'base-sepolia', 'live Base Sepolia only');
+// Live Convert on Unichain Sepolia through the web UI and WrapSwapRouter (INTERFACES.md §13), as demo account index 1.
+// Run against a local stack started with NETWORK=unichain-sepolia; writes logs/sepolia/live-swap.json.
+test.skip(network !== 'unichain-sepolia', 'live Unichain Sepolia only');
 
 test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ page }) => {
   test.setTimeout(180000);

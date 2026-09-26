@@ -4,7 +4,7 @@ import { db, migrate } from "./db/index.js";
 import { routes } from "./routes/index.js";
 import { startIndexer } from "./indexer/index.js";
 import { loadDeployment } from "./chain/client.js";
-for (const key of ["DATABASE_URL", "RPC_URL", "API_PORT", "NETWORK"])
+for (const key of ["DATABASE_URL", "RPC_URL", "API_PORT"])
   if (!process.env[key]) throw Error(`${key} is required`);
 const d = loadDeployment(),
   app = Fastify({ logger: true });
