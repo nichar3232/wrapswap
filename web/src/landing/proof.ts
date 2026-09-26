@@ -1,5 +1,8 @@
-export const EXPLORER = "https://sepolia.uniscan.xyz";
-export const NETWORK_NAME = "Unichain Sepolia";
+import { CHAINS, explorerUrl } from "@wrapswap/types";
+
+const NETWORK = "unichain-sepolia";
+export const EXPLORER = CHAINS[NETWORK].explorer;
+export const NETWORK_NAME = CHAINS[NETWORK].name;
 /** Real router swap from a user wallet on Unichain Sepolia. Empty hides the card; fill in the 0x… hash. */
 export const PROOF_SWAP_TX = "";
 
@@ -31,7 +34,7 @@ export function proofRows(d: ProofDeployment | undefined) {
   return CONTRACTS.flatMap(([name, key]) => {
     const address = d?.contracts[key];
     return address
-      ? [{ name, address, url: `${EXPLORER}/address/${address}` }]
+      ? [{ name, address, url: explorerUrl(NETWORK, "address", address)! }]
       : [];
   });
 }

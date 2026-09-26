@@ -14,7 +14,9 @@ Global conventions:
 - JSON: every integer that can exceed 2^53 is a decimal string; small counters (`int` in schemas) are JSON numbers.
   Addresses are EIP-55 checksummed in responses and accepted case-insensitively in requests.
 - Time: all market-hours logic uses the chain's latest block timestamp, never the host clock (anvil is warped).
-- Network selection: every consumer reads `NETWORK` (`anvil` | `base-sepolia`) and loads `deployments/${NETWORK}.json`.
+- Network selection: every consumer reads `NETWORK` (`anvil` | `base-sepolia` | `unichain-sepolia`) and loads
+  `deployments/${NETWORK}.json`. When `NETWORK` is unset, `parseNetwork` resolves `DEFAULT_NETWORK` (`unichain-sepolia`,
+  chainId 1301); Base Sepolia is retired.
 - Ports come from env: `ANVIL_PORT`, `PG_PORT`, `API_PORT`, `WEB_PORT`, `CRANK_HEALTH_PORT`. No defaults are bound
   in lane code except as documented fallbacks for a solo developer.
 
@@ -747,7 +749,7 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
 ```
 
 ```json wrapswap:schema Network
-{ "enum": ["anvil", "base-sepolia"] }
+{ "enum": ["anvil", "base-sepolia", "unichain-sepolia"] }
 ```
 
 ```json wrapswap:schema PoolKey
@@ -807,7 +809,7 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
   "properties": {
     "schemaVersion": { "const": 1 },
     "network": { "$ref": "Network" },
-    "chainId": { "enum": [31337, 84532] },
+    "chainId": { "enum": [31337, 84532, 1301] },
     "deployCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "deployedAt": { "type": "string" },
     "deployer": { "$ref": "Address" },
@@ -2234,6 +2236,12 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
     },
     "base-sepolia": {
       "network": "base-sepolia", "chainId": 84532, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200,
+      "parityFill": { "feePips": 1460, "feeBps": "14.60", "feeAmount": "147825000000000000", "amountOut": "101102175000000000000" },
+      "residual": { "feePips": 1447, "feeBps": "14.47", "feeAmount": "14650875000000000", "amountOut": "10110349125000000000" },
+      "end": { "demoMAAPLx": "601102175000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60710036625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "162475875000000000" }
+    },
+    "unichain-sepolia": {
+      "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200,
       "parityFill": { "feePips": 1460, "feeBps": "14.60", "feeAmount": "147825000000000000", "amountOut": "101102175000000000000" },
       "residual": { "feePips": 1447, "feeBps": "14.47", "feeAmount": "14650875000000000", "amountOut": "10110349125000000000" },
       "end": { "demoMAAPLx": "601102175000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60710036625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "162475875000000000" }
