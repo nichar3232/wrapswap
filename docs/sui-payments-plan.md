@@ -118,7 +118,7 @@ Everything else the UI needs (pool, current batch, manifest, own leaf) is read b
 
 ## 11. Verified live
 
-From `~/wrapswap-run/status/sui.md` and `submission/sui.md`, on the active vault/pool pair: scripted `DEMO_CHECK=1` sui-demo 18/18, and a browser click-through of the Send panel: deposit → `credit_deposit` → sealed send → batch applied → payee decrypts own leaf → sealed withdraw → batch → cross-issuer delivery via WrapSwapRouter/ParityHook → `debit_withdrawal`, ending with reserves 1:1 and solvent. Transaction hashes are in `submission/sui.md`. The click-through harness injects stand-in wallets signing with the demo keys (headless Chromium cannot drive Slush/MetaMask); chains, Seal, Walrus and keeper are real. Also: ShareVault forge tests including a Unichain fork test against the live hook.
+From `~/wrapswap-run/status/sui.md` and `submission/sui-details.md`, on the active vault/pool pair: scripted `DEMO_CHECK=1` sui-demo 18/18, and a browser click-through of the Send panel: deposit → `credit_deposit` → sealed send → batch applied → payee decrypts own leaf → sealed withdraw → batch → cross-issuer delivery via WrapSwapRouter/ParityHook → `debit_withdrawal`, ending with reserves 1:1 and solvent. Transaction hashes are in `submission/sui-details.md`. The click-through harness injects stand-in wallets signing with the demo keys (headless Chromium cannot drive Slush/MetaMask); chains, Seal, Walrus and keeper are real. Also: ShareVault forge tests including a Unichain fork test against the live hook.
 
 ## 12. Disclosures and limits
 

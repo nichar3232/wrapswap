@@ -14,6 +14,70 @@ The issuer wrappers are testnet mocks with real multipliers. No issuer is repres
 
 App navigation: **Portfolio · Move · Send · Liquidity**. Move holds Convert and Dark Cross.
 
+## Verify the integration
+
+The repository is public. Developer feedback for Uniswap: [FEEDBACK.md](FEEDBACK.md). Addresses come from
+[`deployments/unichain-sepolia.json`](deployments/unichain-sepolia.json) and
+[`deployments/sui-testnet.json`](deployments/sui-testnet.json); line numbers are at tag `v1-ethglobal-tokyo`.
+
+### Uniswap v4 (Unichain Sepolia, chain 1301)
+
+**ParityHook** [`0x484b…e0c8`](https://sepolia.uniscan.xyz/address/0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8#code): the only pool hook. One hook serves all three pools.
+
+| What | Where |
+| --- | --- |
+| IHooks callbacks implemented: permission flags (beforeInitialize, beforeSwap, afterSwap, beforeSwapReturnDelta) | [`ParityHook.sol` L106–111](contracts/src/ParityHook.sol#L106-L111) |
+| `beforeInitialize`: dynamic fee required, registered issuers, pool price within the 50 bps peg guard | [`ParityHook.sol` L223–243](contracts/src/ParityHook.sol#L223-L243) |
+| `beforeSwap`: parity fill with `beforeSwapReturnDelta` (hook inventory as ERC-6909 claims: mint in / burn out), fee returned with `OVERRIDE_FEE_FLAG` | [`ParityHook.sol` L245–295](contracts/src/ParityHook.sol#L245-L295); delta at [`ParityHook.sol` L292–294](contracts/src/ParityHook.sol#L292-L294) |
+| Parity pricing: canonical shares in, fee on gross output | `_quote` [`ParityHook.sol` L330–355](contracts/src/ParityHook.sol#L330-L355) |
+| Fee = base + skew: `_tradeFee` [`ParityHook.sol` L370–382](contracts/src/ParityHook.sol#L370-L382), `_fee` [`ParityHook.sol` L384–388](contracts/src/ParityHook.sol#L384-L388); skew fee only if \|skew\| grows, capped | [`CanonicalShares.sol` L79–90](contracts/src/libraries/CanonicalShares.sol#L79-L90); constants [`CanonicalShares.sol` L14–18](contracts/src/libraries/CanonicalShares.sol#L14-L18) |
+| `afterSwap` peg guard on fall-through (50 bps) | [`ParityHook.sol` L297–322](contracts/src/ParityHook.sol#L297-L322); `_pegStatus` [`ParityHook.sol` L426–432](contracts/src/ParityHook.sol#L426-L432) |
+| Inventory deposit/withdraw through `unlock` → `sync`/`settle`/`mint`, `burn`/`take` | [`ParityHook.sol` L142–157](contracts/src/ParityHook.sol#L142-L157) |
+
+**DarkCrossHooks**: AAPL [`0xBac8…4898`](https://sepolia.uniscan.xyz/address/0xBac8C71CfbB1101221cb4699533d79Df188C4898#code) · NVDA [`0xadf7…691a`](https://sepolia.uniscan.xyz/address/0xadf79997624aFeCE9d3E9391d7B51F59a8fB691a#code) · TSLA [`0x223a…3a3c`](https://sepolia.uniscan.xyz/address/0x223a9d724F5bbF4e76830edDf4858fdD838c3a3c#code).
+Despite the name, these are **not pool hooks**: they have no `IHooks` permission flags and are deployed with plain CREATE
+([`DarkCrossHook.sol` L25–30](contracts/src/DarkCrossHook.sol#L25-L30)). Each one is a PoolManager `unlock` client that settles a sealed batch:
+
+| What | Where |
+| --- | --- |
+| `commit` / `reveal` | [`DarkCrossHook.sol` L201–226](contracts/src/DarkCrossHook.sol#L201-L226) / [`DarkCrossHook.sol` L228–258](contracts/src/DarkCrossHook.sol#L228-L258) |
+| `settle` → `poolManager.unlock` | [`DarkCrossHook.sol` L262–295](contracts/src/DarkCrossHook.sol#L262-L295) (unlock at [`DarkCrossHook.sol` L281](contracts/src/DarkCrossHook.sol#L281)) |
+| `unlockCallback`: cross at the oracle midpoint, then residuals | [`DarkCrossHook.sol` L297–319](contracts/src/DarkCrossHook.sol#L297-L319) |
+| Cross, and the 1 bp fee (`CROSS_FEE_PIPS = 100`) | `_cross` [`DarkCrossHook.sol` L367–422](contracts/src/DarkCrossHook.sol#L367-L422), `_creditCross` [`DarkCrossHook.sol` L424–435](contracts/src/DarkCrossHook.sol#L424-L435) |
+| Residual `poolManager.swap` into the ParityHook pool (inventory fill only, trader's limit) | `executeResidual` [`DarkCrossHook.sol` L324–362](contracts/src/DarkCrossHook.sol#L324-L362) |
+| Delta settlement `sync`/`settle`/`take`; unfilled amounts released to the committer | `_resolve` [`DarkCrossHook.sol` L499–507](contracts/src/DarkCrossHook.sol#L499-L507), `_release` [`DarkCrossHook.sol` L472–489](contracts/src/DarkCrossHook.sol#L472-L489) |
+
+**WrapSwapRouter** [`0x49d7…40Cb`](https://sepolia.uniscan.xyz/address/0x49d7eA31c619E80785Fa31CBc5bE052ED4EC40Cb#code): `swapExactIn` → `poolManager.unlock` [`WrapSwapRouter.sol` L40–47](contracts/src/WrapSwapRouter.sol#L40-L47);
+`unlockCallback` → `swap`, `sync`/`settle` input, `take` output to the recipient [`WrapSwapRouter.sol` L58–94](contracts/src/WrapSwapRouter.sol#L58-L94); swapper and recipient in `hookData` [`WrapSwapRouter.sol` L103–114](contracts/src/WrapSwapRouter.sol#L103-L114).
+
+Pool keys (currency0, currency1, fee = `DYNAMIC_FEE_FLAG` 8388608, tickSpacing 10, hooks = ParityHook):
+
+| Asset | Pool id | currency0 | currency1 |
+| --- | --- | --- | --- |
+| AAPL | `0xb1d8e1c8…a9f9` | mAAPLx `0x433DAfF77AD96b9319957D83d9d422E70c996C45` | mcbAAPL `0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c` |
+| NVDA | `0xf57d09b5…b0c2` | mcbNVDA `0x9b1dc2Cb4cF7b3e514555944E5cE07A54265A2D2` | mNVDAx `0xEdcD509ab5404529ed5169379EeE14A755E3027c` |
+| TSLA | `0xb8dec912…2d5e` | mcbTSLA `0x0757eEe1292046c7303f5C603001e0a9069a6B80` | mTSLAx `0x752746b311B256170f1a3156B34465D5A4363153` |
+
+### Sui (testnet)
+
+Package `unison_pay`: [`0x2f18fa6d…f452c`](https://suiscan.xyz/testnet/object/0x2f18fa6d27e46235a4dcb9c0de62adbf612e3f60700ffeeac4e13d50ea4f452c).
+
+| What | Where |
+| --- | --- |
+| Pay entry: `submit` a Seal-encrypted instruction (payer = tx sender) | [`pay.move` L128–157](sui/unison_pay/sources/pay.move#L128-L157) |
+| Batch apply (the total must stay unchanged) | `apply_batch` [`pay.move` L163–198](sui/unison_pay/sources/pay.move#L163-L198) |
+| Seal policies: `seal_approve_batch` (only after the window closes, via Clock), `seal_approve_leaf` (owner only) | [`pay.move` L273–275](sui/unison_pay/sources/pay.move#L273-L275), [`pay.move` L267–269](sui/unison_pay/sources/pay.move#L267-L269) |
+| Withdraw path: a sealed withdraw instruction → escrow leaf at apply → `debit_withdrawal` after Unichain settles | [`pay.move` L220–234](sui/unison_pay/sources/pay.move#L220-L234); keeper `settlePending` [`keeper.ts` L267–320](services/crank/sui/keeper.ts#L267-L320) |
+| Deposit credit (single-use EVM receipt) | `credit_deposit` [`pay.move` L202–216](sui/unison_pay/sources/pay.move#L202-L216); keeper `creditDeposits` [`keeper.ts` L96–149](services/crank/sui/keeper.ts#L96-L149) |
+| Walrus blob writes: sealed instruction (payer), manifest per root (keeper) | `walrusPut` [`lib.ts` L75–91](services/crank/sui/lib.ts#L75-L91); [`payer.ts` L11–29](services/crank/sui/payer.ts#L11-L29); `publishRoot` [`keeper.ts` L73–91](services/crank/sui/keeper.ts#L73-L91) |
+| ShareVault settle on Unichain [`0x76B1…Bd5d`](https://sepolia.uniscan.xyz/address/0x76B1661dB3858b5455Ae4371291c954fa248Bd5d#code) | `settleWithdrawals` [`ShareVault.sol` L143–155](contracts/src/ShareVault.sol#L143-L155), `settleOne` [`ShareVault.sol` L158–216](contracts/src/ShareVault.sol#L158-L216); `deposit` [`ShareVault.sol` L123–136](contracts/src/ShareVault.sol#L123-L136) |
+
+How Send maps to the track:
+- **Payment flows:** confidential share payments. Sealed instructions are batched per 90 s window, and a sealed withdrawal lands in any issuer's wrapper.
+- **Vaults:** ShareVault custody on Unichain mirrors the Sui pool total. The solvency invariant (Sui `total_shares` ≤ vault shares held) is enforced by the keeper and served at `/api/pay/reserves`.
+- **Automation:** the keeper credits deposits, applies each batch when its window closes, settles withdrawals through Uniswap v4 and debits Sui. The demo relay and the MCP server drive the same flow without a wallet.
+- **Financial interfaces:** the Send panel in the app, `POST /api/demo/send`, and `/api/pay/reserves`.
+
 ## Products
 
 | Product | What it does | Where it settles |
@@ -155,7 +219,7 @@ demo figures.
 
 ## Submission
 
-[ETHGlobal submission](submission/ethglobal.md) · [Sui submission](submission/sui.md) · [Developer feedback](FEEDBACK.md) · [Demo script](submission/demo-script.md)
+[Uniswap prize](submission/uniswap.md) · [Sui prize](submission/sui.md) · [Sui details and all hashes](submission/sui-details.md) · [ETHGlobal submission](submission/ethglobal.md) · [Developer feedback](FEEDBACK.md) · [Demo script](submission/demo-script.md)
 
 ## License
 

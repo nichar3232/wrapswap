@@ -115,6 +115,6 @@ Test funds: `TestShareFaucet.claim()` sends 1,000 of every mock wrapper (once pe
 ## Prize tracks
 
 - **Uniswap: Best Uniswap Stack Contribution** (primary).
-  - *How we used it:* ParityHook is a generic wrapper-parity hook primitive. It shows a settlement-engine pattern for custom-accounting hooks: an all-or-nothing `beforeSwapReturnDelta` fill from ERC-6909 claims, with a zero-delta fall-through to the same pool under a peg guard and one fee schedule through the LP-fee override. DarkCrossHook fills dark-cross residuals from that hook's inventory inside a single `unlock`. See the README "Uniswap stack integration" table for line-linked integration points.
+  - *How we used it:* ParityHook is a generic wrapper-parity hook primitive. It shows a settlement-engine pattern for custom-accounting hooks: an all-or-nothing `beforeSwapReturnDelta` fill from ERC-6909 claims, with a zero-delta fall-through to the same pool under a peg guard and one fee schedule through the LP-fee override. DarkCrossHook fills dark-cross residuals from that hook's inventory inside a single `unlock`. See the README "Verify the integration" section for line-linked integration points, and [uniswap.md](uniswap.md).
   - *Feedback:* paste the short form from `submission/feedback-form.md` answers 11 and 17, and link {{URL:feedback-md}}.
 - Up to two more partner prizes may be selected. **OWNER:** decide; none are drafted here.

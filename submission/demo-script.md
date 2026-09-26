@@ -90,9 +90,9 @@ Show a **quote only**. The fee has no market-hours input. The pool already holds
 
 ### B3 · 2:50–3:00 — Integration table, close
 
-- **Screen:** `{{URL:repo-readme-integrations}}`, the README "Uniswap stack integration" table, slow scroll. End card with the tagline.
+- **Screen:** `{{URL:repo-readme-integrations}}`, the README "Verify the integration" section, slow scroll. End card with the tagline.
 - **Voiceover (21 words):** "Every Uniswap integration point is linked by line in the README, alongside our v4 feedback. Unison: share-for-share conversion, no cash leg."
-- **Caption:** `github.com · README → Uniswap stack integration` → `Unison — share-for-share conversion, no cash leg`
+- **Caption:** `github.com · README → Verify the integration` → `Unison — share-for-share conversion, no cash leg`
 
 ---
 

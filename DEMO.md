@@ -177,7 +177,7 @@ NETWORK=unichain-sepolia RPC_URL=https://sepolia.unichain.org pnpm exec tsx scri
 - In the app: **Send**. With a wallet, the panel walks Deposit (Unichain ShareVault) → Send (a Seal-encrypted payment on Sui, applied when the pool's 90 s window closes) → the recipient withdraws into either issuer's wrapper. Without a wallet it calls the relay's `POST /api/demo/send` (the Sui confidential path above) and lists every Unichain and Sui tx with explorer links.
 - Reserves: `/api/pay/reserves` reads both chains. `invariant` means Sui total = vault shares, and `solvent` means Sui total ≤ vault shares held.
 - Talking point: sending costs Sui gas only. A withdrawal into the other issuer's wrapper converts through ParityHook and pays the normal Convert fee. The claim is confidential, not anonymous: the keeper sees amounts.
-- Verified live runs and their hashes: [submission/sui.md](submission/sui.md). Design as shipped: [docs/sui-payments-plan.md](docs/sui-payments-plan.md).
+- Verified live runs and their hashes: [submission/sui-details.md](submission/sui-details.md). Design as shipped: [docs/sui-payments-plan.md](docs/sui-payments-plan.md).
 
 ### 4.7 Agents (MCP)
 
