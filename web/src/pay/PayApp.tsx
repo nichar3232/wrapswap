@@ -188,6 +188,7 @@ type EvmWallet = ReturnType<typeof useEvmWallet>;
 
 // ---------------------------------------------------------------- header pieces
 
+const SETTLE_GRACE_MS = 60_000;
 type Reserves = { suiTotalShares: string; vaultShares: string; vaultSharesHeld: string; invariant: boolean; checkedBlock: string };
 function ReservesBadge() {
   const [r, set] = useState<{ data?: Reserves; error?: string }>({});
@@ -208,14 +209,23 @@ function ReservesBadge() {
       clearInterval(t);
     };
   }, []);
+  // Between ShareVault settling on Unichain and the keeper's debit on Sui the two sides briefly differ; show that as
+  // settling, and only call it a mismatch if it persists.
+  const [since, setSince] = useState<number | null>(null);
+  useEffect(() => {
+    if (!r.data) return;
+    if (r.data.invariant) setSince(null);
+    else setSince((t) => t ?? Date.now());
+  }, [r.data]);
   if (!r.data) return <span className="pay-badge warn">{r.error ? "Reserves unavailable" : "Reserves…"}</span>;
+  const settling = !r.data.invariant && since !== null && Date.now() - since < SETTLE_GRACE_MS;
   return (
     <span
-      className={`pay-badge ${r.data.invariant ? "ok" : "bad"}`}
+      className={`pay-badge ${r.data.invariant ? "ok" : settling ? "warn" : "bad"}`}
       title={`Sui credits ${formatShares(r.data.suiTotalShares, 6)} · vault ${formatShares(r.data.vaultShares, 6)} · held ${formatShares(r.data.vaultSharesHeld, 6)} · block ${r.data.checkedBlock}`}
       data-testid="reserves"
     >
-      {r.data.invariant ? "Reserves 1:1" : "Reserves mismatch"} · {formatShares(r.data.suiTotalShares, 4)} shares backed
+      {r.data.invariant ? "Reserves 1:1" : settling ? "Reserves settling" : "Reserves mismatch"} · {formatShares(r.data.suiTotalShares, 4)} shares backed
     </span>
   );
 }
