@@ -23,7 +23,8 @@ scripts/dev/live-down         # stop (keeps the Postgres data); `live-down --res
 
 - `NETWORK` defaults to `unichain-sepolia`, with `USE_MOCKS=false`, `deployments/unichain-sepolia.json` and the public externals in `scripts/dev/unichain-sepolia.env`.
 - Secrets come from `~/wrapswap-run/env/onchain.env` (`DEMO_MNEMONIC`, `CRANK_PRIVATE_KEY`, `UNICHAIN_SEPOLIA_RPC_URL`). Override the path with `LIVE_ENV=...`.
-- The browser only ever gets the public RPC `https://sepolia.unichain.org`.
+- Web is the **production build** (`dist/web`, rebuilt by `live-up`) served by `scripts/dev/serve-web.mjs`, never the Vite dev server. On the single port 13010 it serves `/` (landing) and `/app`, and proxies `/api` → 18010, `/crank` → 18110 and `/rpc` → `RPC_URL`, so RPC keys stay server-side.
+- `/api`, `/crank` and `/rpc` are rate-limited to 600 requests/min per client IP (`RATE_LIMIT_PER_MIN`); over the limit returns 429. Behind Funnel the client IP comes from `X-Forwarded-For`. One open `/app` tab uses about 100/min.
 - Processes run in the tmux session `wrapswap-live` with one window each for indexer, api, crank and web (`tmux attach -t wrapswap-live`). Logs go to `logs/live-{indexer,api,crank,web}.log`.
 
 ## 2. Local anvil stack (offline backup)
@@ -43,35 +44,50 @@ scripts/dev/record-ready && DEMO_RUN=video npx playwright test e2e/demo.spec.ts 
 cp test-results/video/*/video.webm ~/wrapswap-run/demo.webm
 ```
 
-## 3. Laptop tunnel
+## 3. Public URL (Tailscale Funnel) and laptop tunnel
 
-Run this on the laptop, then open **http://localhost:13010/app**. The landing page is at `/`, and the API is at
-http://localhost:18010/health.
+The live app is public at **https://nichars-mac-mini.tail43cacc.ts.net/app** (landing at `/`, API at `/api/health`),
+served from the mini through Tailscale Funnel on port 13010.
+
+```sh
+/Applications/Tailscale.app/Contents/MacOS/Tailscale funnel --bg 13010   # start; persists until reset
+/Applications/Tailscale.app/Contents/MacOS/Tailscale funnel status        # check
+/Applications/Tailscale.app/Contents/MacOS/Tailscale funnel reset        # stop: tailscale funnel reset
+```
+
+`tailscale` is not on the mini's PATH, so the commands above use the app binary. `tailscale funnel reset` removes all
+Funnel/serve config and takes the public URL offline.
+
+From the mini itself the hostname resolves to the tailnet IP and skips Funnel. To test the public path, pin curl to
+the public ingress: `curl --resolve nichars-mac-mini.tail43cacc.ts.net:443:$(dig +short @1.1.1.1 nichars-mac-mini.tail43cacc.ts.net | head -1) https://nichars-mac-mini.tail43cacc.ts.net/api/health`.
+
+Private fallback without Funnel: run this on the laptop, then open **http://localhost:13010/app**.
 
 ```sh
 ssh -N -L 13010:127.0.0.1:13010 -L 18010:127.0.0.1:18010 mini
 ```
 
-The web proxies `/api` and `/crank` itself. For the anvil backup, tunnel `13008` and `18008` the same way.
+For the anvil backup, tunnel `13008` and `18008` the same way.
 
 ## 4. Run of show (Unichain Sepolia)
 
-The figures below are from the live 1301 pool **at time of writing** (block 63574283, Sat 2026-09-26 12:45 UTC).
+The figures below are from the live 1301 pool **at time of writing** (block 63577136, Sat 2026-09-26 13:32 UTC).
 NYSE is closed until Mon 2026-09-28 13:30 UTC. Every live swap moves the skew, so read the numbers off the screen.
 
 ### 4.1 Convert: PARITY fill (Convert tab)
 
 - The header shows `unichain-sepolia · Chain 1301 · NYSE CLOSED`, crank healthy and an indexer lag of about 2 blocks.
 - Convert 100 mcbAAPL to mAAPLx and the **PARITY** badge appears. The quote shows ratio 1.0125 and 101.25 shares.
-- Fee 2.00 base + 2.33 skew + 10.00 closed = **14.33 bps**; fee 0.14509125 mAAPLx; output **101.10490875 mAAPLx** (at time of writing).
+- Fee 2.00 base + 2.09 skew + 10.00 closed = **14.09 bps**; fee 0.14266125 mAAPLx; output **101.10733875 mAAPLx** (at time of writing).
 - Talking point: the hook fills the swap from its own inventory inside `beforeSwap` at the share ratio, with no USDC leg. It prices off-hours risk instead of refusing to trade.
 - Executed Converts through `WrapSwapRouter.swapExactIn` (100 mcbAAPL each):
   - Deployer, 101.10227625 mAAPLx out: [0x9b989f6b…ef30](https://sepolia.uniscan.xyz/tx/0x9b989f6b2494ad76114315fd5f9a0c1cac8bb59d5de820759eee9b14dfc2ef30)
   - Owner MetaMask wallet, 101.1035925 mAAPLx out: [0xd1bfee59…1ff1](https://sepolia.uniscan.xyz/tx/0xd1bfee595d7521ca50eb2d95de3012090632982994be5365877ac669e9841ff1)
+  - Production `/app` UI, demo account 1, via `e2e/live/sepolia-convert.spec.ts`: 101.1060225 mAAPLx out, exactly the quote (14.22 bps): [0x992435f8…4dce](https://sepolia.uniscan.xyz/tx/0x992435f8914807eb93e290c497f717e45561f0667cdea906c022b6facfca4dce)
 
 ### 4.2 Pool skew (Pool tab)
 
-- Inventory is held as ERC-6909 claims in the PoolManager. At time of writing, skew is 0.179, shown as about 17.9%.
+- Inventory is held as ERC-6909 claims in the PoolManager. At time of writing, skew is 0.160, shown as about 16.0%.
 - Talking point: the skew fee prices the inventory imbalance. When inventory can't cover a swap, it falls through to the same pool's liquidity, guarded to within 50 bps of parity.
 
 ### 4.3 Dark Cross settle (Dark Cross tab)

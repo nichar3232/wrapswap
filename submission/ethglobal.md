@@ -1,6 +1,6 @@
 # ETHGlobal Tokyo 2026 — project submission draft
 
-Placeholders used in this file: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{{URL:feedback-md}}`
+Placeholders used in this file: `{{URL:repo}}`, `{{URL:video}}`, `{{URL:feedback-md}}`
 
 **About these fields.** The Hacker Dashboard form sits behind a login and the public event page returned HTTP 500 on 2026-09-26, so the exact form fields couldn't be fetched. The public [event details page](https://ethglobal.com/events/tokyo2026/info/details) confirms the dashboard asks for a title, a description and a repository link, lets you pick up to three partner prizes (each with an integration explanation and feedback), and requires disclosure of AI use. The fields below follow that plus the lane's fallback list. **Confirm the field names in the dashboard before pasting.**
 
@@ -32,7 +32,7 @@ WrapSwap is share-for-share conversion, no USDC leg. A Uniswap v4 hook, ParityHo
 
 Users only ever hold real issuer securities; shares are internal accounting. Swaps are gated to non-US users through the Coinbase Verified Country EAS attestation. On testnet, an owner-set `demoMode` bypasses the gate so anyone can try it, and that toggle is public on-chain.
 
-The closed-market fee is deliberate: the hook keeps quoting when NYSE is closed and prices the off-hours risk. On Unichain Sepolia this weekend, the same 100 mcbAAPL quote is 14.33 bps (101.10490875 mAAPLx out, at time of writing), against 4.60 bps (101.203425 mAAPLx out) with the market open on the local fork.
+The closed-market fee is deliberate: the hook keeps quoting when NYSE is closed and prices the off-hours risk. On Unichain Sepolia this weekend, the same 100 mcbAAPL quote is 14.09 bps (101.10733875 mAAPLx out, at time of writing), against 4.60 bps (101.203425 mAAPLx out) with the market open on the local fork.
 
 ## How it's made
 
@@ -64,7 +64,7 @@ The project was built with AI coding agents (Claude) working in parallel lanes a
 ## Links
 
 - Repo: {{URL:repo}}
-- Live demo: {{URL:web-live}}
+- Live demo: https://nichars-mac-mini.tail43cacc.ts.net/app (landing: https://nichars-mac-mini.tail43cacc.ts.net)
 - Video: {{URL:video}}
 
 ## Contract addresses (Unichain Sepolia, chain 1301)

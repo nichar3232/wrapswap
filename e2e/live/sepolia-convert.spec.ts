@@ -20,7 +20,10 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
     if (method === 'eth_sendTransaction') {
       const tx = params[0];
       // Network fees are estimated: the demo account holds only a small Sepolia gas top-up.
-      const hash = await wallet(1).sendTransaction({ to: tx.to, data: tx.data, value: BigInt(tx.value || 0), chain: null });
+      // The public Unichain RPC intermittently reports a stale pending nonce (0); use max(latest, pending).
+      const [latest, pending] = await Promise.all((['latest', 'pending'] as const).map((blockTag) =>
+        chain.getTransactionCount({ address: account(1).address, blockTag })));
+      const hash = await wallet(1).sendTransaction({ to: tx.to, data: tx.data, value: BigInt(tx.value || 0), chain: null, nonce: Math.max(latest, pending) });
       hashes.push(hash);
       return hash;
     }
@@ -49,6 +52,8 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
   const receipt = await chain.getTransactionReceipt({ hash: swapTx as `0x${string}` });
   expect(receipt.status).toBe('success');
   expect(receipt.to?.toLowerCase()).toBe(d.contracts.wrapSwapRouter!.toLowerCase());
+  // Public RPC backends lag each other; poll until the post-swap balance is visible.
+  await expect.poll(async () => baseBefore - (await balance(base.address)), { timeout: 30000 }).toBe(DEMO.parityFill.amountIn);
   const [baseAfter, quoteAfter] = [await balance(base.address), await balance(quote.address)];
   expect(baseBefore - baseAfter).toBe(DEMO.parityFill.amountIn);
   const received = quoteAfter - quoteBefore;

@@ -70,7 +70,7 @@ Start state: a fresh `scripts/dev/record-ready` stack, before any swap.
 
 ## Part B — live Unichain Sepolia, Variant UNICHAIN-SEPOLIA (2:20–3:00)
 
-Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote only**. The pool already holds live swaps, so the numbers below are the live 1301 quote **at time of writing** (block 63574283, Sat 2026-09-26 12:45 UTC). Any later swap moves the skew line, so read the final figures off the screen.
+Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote only**. The pool already holds live swaps, so the numbers below are the live 1301 quote **at time of writing** (block 63577136, Sat 2026-09-26 13:32 UTC). Any later swap moves the skew line, so read the final figures off the screen.
 
 ### B1 · 2:20–2:30 — Verified hook on Uniscan
 
@@ -81,12 +81,12 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 ### B2 · 2:30–2:50 — Live quote, NYSE closed
 
 - **Screen:**
-  1. The live stack through the tunnel, `http://localhost:13010/app` (see DEMO.md), Convert tab. The header shows NYSE **CLOSED** · next open Mon 13:30 UTC.
+  1. `https://nichars-mac-mini.tail43cacc.ts.net/app` (live stack on the mini via Tailscale Funnel; see DEMO.md), Convert tab. The header shows NYSE **CLOSED** · next open Mon 13:30 UTC.
   2. From `mcbAAPL`, To `mAAPLx`, amount `100`.
-  3. At time of writing, the fee breakdown shows base 2.00 + skew 2.33 + **NYSE closed +10.00** = **14.33 bps**; fee 0.14509125 mAAPLx; output **101.10490875 mAAPLx**.
+  3. At time of writing, the fee breakdown shows base 2.00 + skew 2.09 + **NYSE closed +10.00** = **14.09 bps**; fee 0.14266125 mAAPLx; output **101.10733875 mAAPLx**.
   4. Hover the closed line.
-- **Voiceover (44 words):** "It's the weekend, so NYSE is closed. The same 100 mcbAAPL quote now adds a 10 basis point line: 14.33 total, 101.1049 mAAPLx out. The hook doesn't refuse to trade off-hours. It prices the risk that the underlying can't be hedged until Monday's open."
-- **Caption:** `NYSE CLOSED · fee 14.33 bps = 2.00 base + 2.33 skew + 10.00 off-hours risk · 101.10490875 mAAPLx` (at time of writing)
+- **Voiceover (44 words):** "It's the weekend, so NYSE is closed. The same 100 mcbAAPL quote now adds a 10 basis point line: 14.09 total, 101.1073 mAAPLx out. The hook doesn't refuse to trade off-hours. It prices the risk that the underlying can't be hedged until Monday's open."
+- **Caption:** `NYSE CLOSED · fee 14.09 bps = 2.00 base + 2.09 skew + 10.00 off-hours risk · 101.10733875 mAAPLx` (at time of writing)
 
 ### B3 · 2:50–3:00 — Integration table, close
 
@@ -108,7 +108,7 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 | A 60 mcbAAPL @1.0100, B 50.625 mAAPLx @1.0150, mid 1.0125 | shared | `dark.orders`, `dark.oracleMidX18` |
 | crossed 50 ↔ 50.625; A gets 50.5996875; B gets 49.975 | shared | `dark.crossedBase/crossedQuote`, `dark.crossOut` |
 | residual 10 mcbAAPL → 10.120474125 mAAPLx, 4.47 bps, min 10.1 | ANVIL | `variants.anvil.residual`, `dark.residual.minOut` |
-| 14.33 bps = 2.00 + 2.33 + 10.00, fee 0.14509125, out 101.10490875 (at time of writing) | UNICHAIN-SEPOLIA | live `ParityHook.quote` / `feeBreakdown` on 1301, block 63574283 |
+| 14.09 bps = 2.00 + 2.09 + 10.00, fee 0.14266125, out 101.10733875 (at time of writing) | UNICHAIN-SEPOLIA | live `ParityHook.quote` / `feeBreakdown` on 1301, block 63577136 |
 | next open Mon 2026-09-28 13:30 UTC | UNICHAIN-SEPOLIA | `variants.unichain-sepolia.nextOpen = 1790602200` |
 
 ## Technical claims in the voiceover → source

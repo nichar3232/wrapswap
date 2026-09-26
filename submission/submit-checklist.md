@@ -1,6 +1,6 @@
 # Submit checklist (owner, in order)
 
-Placeholders referenced: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{{URL:feedback-md}}`, `{{URL:repo-readme-integrations}}`
+Placeholders referenced: `{{URL:repo}}`, `{{URL:video}}`, `{{URL:feedback-md}}`, `{{URL:repo-readme-integrations}}`
 
 **Hard deadline: Sun 2026-09-27 09:00 JST = Sat 2026-09-26 24:00 UTC.** Part B must be recorded while NYSE is closed. That window runs from now until Mon 2026-09-28 13:30 UTC, so the deadline is the binding constraint.
 
@@ -20,7 +20,7 @@ Placeholders referenced: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{
 ## 2. Record Part B on the live site (≈10 min)
 
 - [ ] Open `https://sepolia.uniscan.xyz/address/0x1D2C9335813B8d3fFDCCC9d43aAf73d7871b20c8#code` and confirm the "verified" check shows (block B1).
-- [ ] Run `scripts/dev/live-up`, open the tunnel (DEMO.md §3) and go to `http://localhost:13010/app`, Convert tab. Check the header says NYSE **CLOSED** and chain 1301. The 100 mcbAAPL → mAAPLx quote was **14.33 bps** / **101.10490875 mAAPLx** at time of writing (block B2); read the live figures off the screen. **Only quote; don't execute a swap before recording.**
+- [ ] Run `scripts/dev/live-up` (Funnel serves it, DEMO.md §3) and open `https://nichars-mac-mini.tail43cacc.ts.net/app`, Convert tab. Check the header says NYSE **CLOSED** and chain 1301. The 100 mcbAAPL → mAAPLx quote was **14.09 bps** / **101.10733875 mAAPLx** at time of writing (block B2); read the live figures off the screen. **Only quote; don't execute a swap before recording.**
 - [ ] Open `{{URL:repo-readme-integrations}}` (block B3).
 - [ ] Record blocks B1–B3 (2:20–3:00).
 
@@ -39,7 +39,6 @@ Placeholders referenced: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{
   | `{{URL:repo}}` | the public GitHub repo URL |
   | `{{URL:feedback-md}}` | `{{URL:repo}}/blob/main/FEEDBACK.md` |
   | `{{URL:repo-readme-integrations}}` | `{{URL:repo}}#uniswap-stack-integration` |
-  | `{{URL:web-live}}` | the hosted web app URL from the deployment lane |
   | `{{URL:video}}` | from step 3 |
   | `{{URL:addr-*}}` | `deployments/unichain-sepolia.json` → `contracts` / `tokens` (resolved in place for Unichain Sepolia) |
   | `{{URL:uniscan-*}}` | `https://sepolia.uniscan.xyz/address/<addr>#code` (resolved in place for Unichain Sepolia) |

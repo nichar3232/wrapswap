@@ -52,7 +52,8 @@ export class Crank {
         address: this.account.address,
         blockTag: "pending",
       });
-      if (latest === pending) return;
+      // Only pending > latest means a stuck tx; some public RPCs (Unichain Sepolia) report a stale pending count below latest.
+      if (pending <= latest) return;
       if (now() < deadline) {
         await sleep(1000);
         continue;
@@ -94,10 +95,17 @@ export class Crank {
             100 + Math.min(this.actionAttempts.get(action) ?? 0, 5) * 20,
           )) /
         100n;
+      // The loop sends one tx at a time, so max(latest, pending) is the next nonce even when pending is stale.
+      const [latest, pending] = await Promise.all(
+        (["latest", "pending"] as const).map((blockTag) =>
+          this.client.getTransactionCount({ address: this.account.address, blockTag }),
+        ),
+      );
       const hash = await this.wallet.writeContract({
         ...request,
         chain: null,
         gasPrice,
+        nonce: Math.max(latest, pending),
       });
       // The loop remains busy until this receipt resolves. On restart recoverPending fences the nonce.
       const receipt = await this.client.waitForTransactionReceipt({ hash });

@@ -11,7 +11,7 @@ const port = Number(process.env.WEB_PORT || 13010);
 const apiPort = Number(process.env.API_PORT || 18010);
 const crankPort = Number(process.env.CRANK_HEALTH_PORT || 18110);
 const rpcUrl = process.env.RPC_URL;
-const limit = Number(process.env.RATE_LIMIT_PER_MIN || 300);
+const limit = Number(process.env.RATE_LIMIT_PER_MIN || 600);
 if (!rpcUrl) throw Error('RPC_URL is required');
 
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
@@ -29,6 +29,8 @@ function limited(req, res) {
   const ip = clientIp(req);
   const n = (hits.get(ip) ?? 0) + 1;
   hits.set(ip, n);
+  res.setHeader('x-ratelimit-limit', String(limit));
+  res.setHeader('x-ratelimit-remaining', String(Math.max(limit - n, 0)));
   if (n <= limit) return false;
   res.writeHead(429, { 'content-type': 'application/json', 'retry-after': '60' }).end('{"error":"rate limited"}');
   return true;
