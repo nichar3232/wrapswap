@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Native live-network stack (default NETWORK=unichain-sepolia, chainId 1301; USE_MOCKS=false): its own Postgres
+# container plus indexer, API, crank and web in the detached tmux session "wrapswap-live" (one window each).
+# Secrets (DEMO_MNEMONIC, CRANK_PRIVATE_KEY, optional UNICHAIN_SEPOLIA_RPC_URL) come from LIVE_ENV; public
+# externals from scripts/dev/$NETWORK.env. Ports: web 13010, API 18010, crank 18110, Postgres 15410.
+# Stop with scripts/dev/live-down.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+NETWORK=${NETWORK:-unichain-sepolia}
+LIVE_ENV=${LIVE_ENV:-$HOME/wrapswap-run/env/onchain.env}
+[[ -f $LIVE_ENV ]] || { echo "Missing $LIVE_ENV (DEMO_MNEMONIC, CRANK_PRIVATE_KEY)" >&2; exit 1; }
+[[ -f scripts/dev/$NETWORK.env && -f deployments/$NETWORK.json ]] || { echo "Unknown live network $NETWORK" >&2; exit 1; }
+set -a; source "$LIVE_ENV"; source "scripts/dev/$NETWORK.env"; set +a
+public_rpc=$RPC_URL
+export NETWORK USE_MOCKS=false DEPLOYMENT_FILE=deployments/$NETWORK.json
+export WEB_PORT=13010 API_PORT=18010 CRANK_HEALTH_PORT=18110 CRANK_PORT=18110 PG_PORT=15410
+export RPC_URL=${UNICHAIN_SEPOLIA_RPC_URL:-$public_rpc} CRANK_PK=${CRANK_PK:-${CRANK_PRIVATE_KEY:-}}
+export DATABASE_URL=postgresql://wrapswap:wrapswap@127.0.0.1:$PG_PORT/wrapswap
+# The browser gets the public RPC only; a keyed RPC_URL stays server-side.
+export VITE_NETWORK=$NETWORK VITE_RPC_URL=$public_rpc
+export INDEXER_CONFIRMATIONS=${INDEXER_CONFIRMATIONS:-2}
+PG=wrapswap-live-pg
+docker start $PG >/dev/null 2>&1 || docker run -d --name $PG \
+  -e POSTGRES_USER=wrapswap -e POSTGRES_PASSWORD=wrapswap -e POSTGRES_DB=wrapswap \
+  -p 127.0.0.1:$PG_PORT:5432 postgres:16 >/dev/null
+until docker exec $PG pg_isready -U wrapswap -d wrapswap >/dev/null 2>&1; do sleep 1; done
+sleep 2
+pnpm db:migrate
+S=wrapswap-live
+tmux kill-session -t $S 2>/dev/null || true
+envfile=$(mktemp); chmod 600 "$envfile"; export -p > "$envfile"
+start() { tmux new-window -d -t $S -n "$1" "source '$envfile'; cd '$PWD'; $2 2>&1 | tee -a logs/live-$1.log"; }
+tmux new-session -d -s $S -n shell
+start indexer 'pnpm exec tsx scripts/dev/indexer.mjs'
+sleep 5
+start api 'pnpm dev:api'
+start crank 'pnpm dev:crank'
+start web 'pnpm dev:web'
+sleep 3; rm -f "$envfile"
+for kind in api crank web; do
+  for i in $(seq 90); do node scripts/dev/health.mjs $kind 2>/dev/null && break; sleep 2; done
+  node scripts/dev/health.mjs $kind && echo "$kind healthy"
+done
+echo "$NETWORK: web http://127.0.0.1:$WEB_PORT/app  API http://127.0.0.1:$API_PORT/health  (tmux attach -t $S)"

@@ -24,6 +24,12 @@ export async function migrate(d: Deployment, down = false, pool = db) {
         await c.query(
           readFileSync(new URL("./schema.sql", import.meta.url), "utf8"),
         );
+      await c.query(
+        readFileSync(
+          new URL("./migrations/001-network-check.sql", import.meta.url),
+          "utf8",
+        ),
+      );
     }
     await c.query("COMMIT");
   } catch (e) {

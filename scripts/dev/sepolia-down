@@ -1,4 +1,0 @@
-#!/usr/bin/env bash
-# Stop the native Unichain Sepolia stack started by scripts/dev/sepolia-up (the Postgres data is kept).
-tmux kill-session -t wrapswap-sepolia 2>/dev/null || true
-docker stop wrapswap-sepolia-pg >/dev/null 2>&1 || true
