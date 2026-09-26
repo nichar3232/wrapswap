@@ -177,7 +177,11 @@ const hB = await withNonceRetry(() => wB.writeContract({ address: evm.shareVault
 await evmTx(hB);
 receipt(`B deposits ${formatShares(bDeposit, 2)} mAAPLx -> credit to Sui ${addrB.slice(0, 10)}…`, { unichain: uniscan('tx', hB) });
 
-const credits = await keeper.creditDeposits();
+const credits: Awaited<ReturnType<typeof keeper.creditDeposits>> = [];
+for (let i = 0; i < 20 && credits.length < 2; i++) {
+  credits.push(...(await keeper.creditDeposits()));
+  if (credits.length < 2) await new Promise((r) => setTimeout(r, 3_000)); // RPC log indexing can trail receipts
+}
 for (const r of credits) receipt(`keeper credit_deposit (${formatShares(BigInt(String(r.detail?.shares)), 4)} shares)`, { sui: suiscan('tx', r.sui!), evm: uniscan('tx', r.evm!), walrusManifest: walruscan(r.walrus!) });
 check(credits.length >= 2, 'both deposits attested on Sui');
 const a0 = await ownBalance(A);
