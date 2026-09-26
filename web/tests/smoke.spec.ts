@@ -1,10 +1,11 @@
+import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 import { DEMO, type Network } from "@wrapswap/types";
 import { formatUnits } from "viem";
 const network = (process.env.VITE_NETWORK || "anvil") as Network;
 const v = DEMO.variants[network];
 test("Convert: canonical quote, approval, settlement", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await expect(
     page.getByRole("heading", {
       name: "share-for-share conversion, no USDC leg.",
@@ -52,7 +53,7 @@ test("Convert: canonical quote, approval, settlement", async ({ page }) => {
 test("Dark Cross: commit, reveal, settle and exact residual", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Connect wallet" }).click();
   await page.getByRole("button", { name: "Dark Cross", exact: true }).click();
   await expect(page.getByText("50 mcbAAPL", { exact: true })).toBeVisible();
@@ -72,7 +73,7 @@ test("Dark Cross: commit, reveal, settle and exact residual", async ({
 test("Pool: token inventory, canonical shares, skew and fills", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Pool", exact: true }).click();
   for (const text of [
     "8000 tokens",
@@ -92,4 +93,37 @@ test("Pool: token inventory, canonical shares, skew and fills", async ({
       exact: true,
     }),
   ).toBeVisible();
+});
+test("Landing: Unison brand, proof from deployment, Launch app", async ({
+  page,
+}) => {
+  const d = JSON.parse(
+    readFileSync(
+      new URL("../../deployments/base-sepolia.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  await page.goto("/");
+  await expect(page).toHaveTitle("Unison");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unison");
+  await expect(page.getByText("WrapSwap", { exact: true })).toHaveCount(0);
+  const proof = page.locator("#proof");
+  await expect(
+    proof.getByRole("link", { name: "Basescan ↗" }).first(),
+  ).toHaveAttribute(
+    "href",
+    `https://sepolia.basescan.org/address/${d.contracts.parityHook}`,
+  );
+  await expect(proof.getByRole("row")).toHaveCount(6);
+  await page.getByRole("button", { name: /switch to dark theme/i }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await page.getByRole("link", { name: "Launch app" }).first().click();
+  await expect(page).toHaveURL(/\/app$/);
+  await expect(
+    page.getByRole("button", { name: "Convert", exact: true }),
+  ).toBeVisible();
+  await page.goto("/app?tab=pool");
+  await expect(page.getByText("Total 20250 canonical shares")).toBeVisible();
 });

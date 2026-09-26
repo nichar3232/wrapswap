@@ -24,6 +24,8 @@ import {
   subscribeWallet,
   verifyOrder,
 } from "./wallet";
+import { Mark, ThemeToggle } from "./brand";
+import "./theme.css";
 import "./style.css";
 const units = (n: string | bigint, decimals = 18) =>
   formatUnits(BigInt(n), decimals);
@@ -41,6 +43,10 @@ const TABS = [
   ["Dark Cross", "Dark Pool"],
   ["Pool", "Pool"],
 ] as const;
+/** Landing-page deep links: /app?tab=convert|dark|pool. */
+const TAB_LINKS: Record<string, string> = { dark: "Dark Cross", pool: "Pool" };
+const initialTab = () =>
+  TAB_LINKS[new URLSearchParams(location.search).get("tab") ?? ""] ?? "Convert";
 type Wallet = {
   d: Deployment;
   address?: Address;
@@ -58,7 +64,7 @@ function App() {
     crank = useApi("crankStatus");
   const [address, setAddress] = useState<Address>();
   const eligibility = useApi("eligibility", address || null);
-  const [tab, setTab] = useState("Convert"),
+  const [tab, setTab] = useState<string>(initialTab),
     [pending, setPending] = useState(false),
     [message, setMessage] = useState("");
   useEffect(
@@ -113,7 +119,10 @@ function App() {
         Skip to content
       </a>
       <header className="nav">
-        <div className="wordmark">WrapSwap</div>
+        <a className="wordmark" href="/">
+          <Mark />
+          unison
+        </a>
         <nav aria-label="Main navigation">
           {TABS.map(([t, name], i) => (
             <React.Fragment key={t}>
@@ -145,6 +154,7 @@ function App() {
           ) : config.useMocks ? (
             <span className="badge">Simulated transactions</span>
           ) : null}
+          <ThemeToggle />
           <button
             className="primary"
             disabled={!d || pending}

@@ -57,7 +57,7 @@ test("env-only live API transport, deployment chain and eligibility denial", asy
         }
       : value,
   );
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Connect wallet" }).click();
   await expect(
     page.getByText(`${network} · Chain ${DEMO.variants[network].chainId}`, {
@@ -89,7 +89,7 @@ test("live blocked peg route is visible and cannot submit", async ({
         }
       : value,
   );
-  await page.goto("/");
+  await page.goto("/app");
   await page.getByRole("button", { name: "Connect wallet" }).click();
   await expect(page.getByTestId("route-badge")).toHaveText("BLOCKED-PEG");
   await expect(page.getByText("Peg deviation exceeds 50 bps")).toBeVisible();
@@ -107,7 +107,7 @@ test("network errors and empty lists stay visible on each tab", async ({
         ? { items: [], nextCursor: null }
         : value,
   );
-  await page.goto("/");
+  await page.goto("/app");
   await expect(
     page.getByText("Quote: Error: Chain unavailable.", { exact: false }),
   ).toBeVisible();
@@ -134,7 +134,7 @@ test("loading and malformed deployment never produce blank screens", async ({
     await new Promise((resolve) => setTimeout(resolve, 500));
     await route.fulfill({ json: {} });
   });
-  await page.goto("/");
+  await page.goto("/app");
   await expect(page.getByText("Loading deployment…")).toBeVisible();
   await expect(page.getByText("Deployment:", { exact: false })).toContainText(
     "Retrying automatically",

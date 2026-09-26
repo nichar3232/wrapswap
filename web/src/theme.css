@@ -1,0 +1,49 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+/* Unison theme tokens, shared by the landing page and the app. Light ("blue field") is the default. */
+:root,
+:root[data-theme="light"] {
+  --field-edge: #86a9f2;
+  --field-core: #4c7ceb;
+  --ink: #05070d;
+  --ink-soft: rgba(5, 7, 13, 0.72);
+  --hairline: rgba(5, 7, 13, 0.12);
+  --accent: #1f4fd1;
+  --surface: #f4f7fe;
+  --bg: var(--surface);
+  --grain-opacity: 0.06;
+  --field: radial-gradient(
+    120% 110% at 28% 22%,
+    var(--field-core) 0%,
+    #6b93ef 42%,
+    var(--field-edge) 100%
+  );
+  --black: #000;
+  --black-ink: #eef2fb;
+  --black-ink-soft: rgba(238, 242, 251, 0.68);
+  --black-hairline: rgba(238, 242, 251, 0.12);
+  --sans:
+    "Inter Tight", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --field-core: #2f5fd8;
+  --ink: #eef2fb;
+  --ink-soft: rgba(238, 242, 251, 0.68);
+  --hairline: rgba(238, 242, 251, 0.1);
+  --accent: #5b8bff;
+  --surface: #0e1016;
+  --bg: #07080c;
+  --grain-opacity: 0.08;
+  --field:
+    radial-gradient(
+      60% 55% at 50% 45%,
+      rgb(47 95 216 / 0.28),
+      rgb(47 95 216 / 0) 70%
+    ),
+    #07080c;
+  color-scheme: dark;
+}
