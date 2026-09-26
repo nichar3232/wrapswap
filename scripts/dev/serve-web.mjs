@@ -15,6 +15,8 @@ const rpcUrl = process.env.RPC_URL;
 const limit = Number(process.env.RATE_LIMIT_PER_MIN || 600);
 // Sui payments API (the Sui keeper's pay-api) until the sui branch mounts /pay routes in the API itself.
 const payUrl = process.env.PAY_API_URL || 'http://127.0.0.1:5402';
+// Demo relay (services/relay): POST /api/demo/* signs with the demo key; it enforces its own per-IP action limit.
+const relayPort = Number(process.env.RELAY_PORT || 18210);
 // Unison MCP server (packages/mcp, Streamable HTTP, stateless JSON) mounted at /mcp.
 const mcpUrl = process.env.MCP_URL || 'http://127.0.0.1:18220/mcp';
 if (!rpcUrl) throw Error('RPC_URL is required');
@@ -32,7 +34,8 @@ async function body(req) {
 }
 async function proxy(req, res, target) {
   try {
-    const headers = { 'content-type': req.headers['content-type'] ?? 'application/json' };
+    // Upstreams rate-limit per client IP: pass it on (X-Forwarded-For is only trusted from loopback peers).
+    const headers = { 'content-type': req.headers['content-type'] ?? 'application/json', 'x-forwarded-for': clientIp(req) };
     if (req.headers.accept) headers.accept = req.headers.accept;
     const r = await fetch(target, { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : await body(req) });
     const out = Buffer.from(await r.arrayBuffer());
@@ -71,7 +74,9 @@ async function file(res, path) {
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const p = url.pathname;
-  if (p.startsWith('/api/pay/')) {
+  if (p.startsWith('/api/demo/')) {
+    if (!limited(req, res)) await proxy(req, res, `http://127.0.0.1:${relayPort}${p.slice(4)}${url.search}`);
+  } else if (p.startsWith('/api/pay/')) {
     if (!limited(req, res)) await proxy(req, res, `${payUrl}${p.slice(4)}${url.search}`);
   } else if (p === '/api' || p.startsWith('/api/')) {
     if (!limited(req, res)) await proxy(req, res, `http://127.0.0.1:${apiPort}${p.slice(4) || '/'}${url.search}`);
