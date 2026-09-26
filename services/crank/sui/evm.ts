@@ -83,6 +83,9 @@ export async function scanDeposits(vault: Hex, fromBlock: bigint, toBlock: bigin
   return out;
 }
 
+const SETTLE_BASE_GAS = 300_000n;
+const SETTLE_GAS_PER_WITHDRAWAL = 600_000n;
+
 export type SettlementResult = {
   txHash: Hex;
   settled: Map<string, { sharesDebited: bigint; amountOut: bigint; amountIn: bigint; source: Hex }>;
@@ -96,12 +99,17 @@ export async function settle(
 ): Promise<SettlementResult> {
   const wc = keeperWallet();
   const pc = publicClient();
+  // Explicit gas: every withdrawal runs inside try/catch, so the outer call never reverts and eth_estimateGas settles
+  // on a limit where a conversion runs out of gas and is *skipped* (observed on 1301: WithdrawalSkipped with
+  // FailedInnerCall). A conversion through the router costs ~350k; give each withdrawal ample headroom.
+  const gas = SETTLE_BASE_GAS + SETTLE_GAS_PER_WITHDRAWAL * BigInt(ws.length);
   const txHash = await withNonceRetry(() =>
     wc.writeContract({
       address: vault,
       abi: shareVaultAbi,
       functionName: 'settleWithdrawals',
       args: [ws, `0x${Buffer.from(auth).toString('hex')}`],
+      gas,
     }),
   );
   const rcpt = await pc.waitForTransactionReceipt({ hash: txHash });

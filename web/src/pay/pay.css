@@ -265,7 +265,7 @@
 }
 .pay-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(90px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 10px;
 }
 .pay-balance {
@@ -285,6 +285,13 @@
 }
 .pay-balance > div {
   min-width: 0;
+}
+.pay-balance .pay-big small {
+  display: block;
+  margin-top: 2px;
+}
+.pay-balance button {
+  flex: none;
 }
 .pay-window {
   background: var(--c-surface);
