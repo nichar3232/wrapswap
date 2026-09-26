@@ -5,6 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { UnisonApi } from "./api.js";
 import { createUnisonServer } from "./server.js";
 import { toolsFor } from "./registry.js";
+import { suiGo } from "./tools.js";
 
 describe.runIf(process.env.UNISON_LIVE === "1")("live API", () => {
   it("reads pools and quotes the cheap direction for every asset over MCP", async () => {
@@ -31,6 +32,13 @@ describe.runIf(process.env.UNISON_LIVE === "1")("live API", () => {
       expect(Number(d.sharesOut)).toBeLessThan(10);
       expect(Number(d.sharesOut)).toBeGreaterThan(9.99);
     }
+    // send_confidential is exposed exactly when the Sui lane is GO; the relay's /demo/send is live (tracking 404s cleanly).
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names.includes("send_confidential")).toBe(suiGo());
+    const status = await api.get<any>("/demo/status");
+    expect(status.ok).toBe(true);
+    expect(status.sui).toBeTruthy();
+    await expect(api.get("/demo/send/does-not-exist")).rejects.toMatchObject({ status: 404 });
     const batch: any = await client.callTool({ name: "get_batch", arguments: { asset: "AAPL" } });
     expect(batch.isError).toBeFalsy();
     await client.close();
