@@ -1,3 +1,4 @@
+import { formatUnits } from "viem";
 import { test, expect, type Page } from "@playwright/test";
 import { DEMO, type Network } from "@wrapswap/types";
 import { injectTestWallet, setTxMode } from "./testWallet";
@@ -169,7 +170,10 @@ test("Pool: stats, inventory, fee-curve sliders drawn with the contract formula,
   await page.getByRole("button", { name: "Off-hours" }).click();
   await expect(readout).toContainText("25.00 bps");
   await expect(readout).toContainText("capped at 25");
-  await expect(page.getByRole("cell", { name: /101\.102175 mAAPLx|101\.203425 mAAPLx/ })).toBeVisible();
+  // The mock fill is the network variant's parity fill (INTERFACES.md §10), not a pinned literal.
+  const full = formatUnits(BigInt(v.parityFill.amountOut), 18); // the table truncates to 6 decimals
+  const out = full.slice(0, full.indexOf(".") + 7).replace(".", "\\.");
+  await expect(page.getByRole("cell", { name: new RegExp(`${out} mAAPLx`) })).toBeVisible();
 });
 
 test("responsive: 390px has no sideways page scroll on any tab", async ({ page }) => {

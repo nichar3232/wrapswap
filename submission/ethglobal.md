@@ -32,7 +32,7 @@ WrapSwap is share-for-share conversion, no USDC leg. A Uniswap v4 hook, ParityHo
 
 Users only ever hold real issuer securities; shares are internal accounting. Swaps are gated to non-US users through the Coinbase Verified Country EAS attestation. On testnet, an owner-set `demoMode` bypasses the gate so anyone can try it, and that toggle is public on-chain.
 
-The off-hours fee is deliberate and narrow: a same-share swap carries no underlying price risk, so off-hours the only risk is rebalancing lag (issuers can't mint or redeem until the open), which grows with inventory skew. The hook keeps quoting when NYSE is closed and charges 15 bps × |post-trade skew| only to trades that increase skew. On Unichain Sepolia this weekend (book |skew| 0.10), 100 mcbAAPL → mAAPLx rebalances and costs 3.29 bps; the reverse deepens skew and costs 4.93 bps (1.64 bps off-hours), at time of writing.
+The off-hours fee is deliberate and narrow: a same-share swap carries no underlying price risk, so off-hours the only risk is rebalancing lag (issuers can't mint or redeem until the open), which grows with inventory skew. The hook keeps quoting when NYSE is closed and charges 15 bps × |post-trade skew| only to trades that increase skew. On Unichain Sepolia this weekend (book |skew| 0.089), 100 mcbAAPL → mAAPLx rebalances and costs 3.16 bps; the reverse deepens skew and costs 4.65 bps (1.49 bps off-hours), at time of writing.
 
 ## How it's made
 

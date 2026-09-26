@@ -42,8 +42,10 @@ it("demo inventory transition and dark residual match both §10 variants", () =>
   const a = { spt: DEMO.tokens.mcbAAPL.sharesPerTokenX18, decimals: 6 },
     b = { spt: DEMO.tokens.mAAPLx.sharesPerTokenX18, decimals: 18 };
   for (const v of Object.values(DEMO.variants)) {
-    const s0 = c.toSharesDown(DEMO.inventory.mcbAAPL, a.spt, a.decimals),
-      s1 = DEMO.inventory.mAAPLx;
+    // Live variants carry their on-chain seed (scripts/dev/demo-variant.ts); anvil uses the §10 seed.
+    const seed = (v as any).seedInventory ?? DEMO.inventory;
+    const s0 = c.toSharesDown(BigInt(seed.mcbAAPL), a.spt, a.decimals),
+      s1 = BigInt(seed.mAAPLx);
     const fee = c.tradeFeeBreakdown(s0, s1, true, DEMO.parityFill.shares, v.marketOpen);
     const q = c.parityQuote(
       a,

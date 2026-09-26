@@ -1134,7 +1134,7 @@ that cannot be read is an error, never a default. Chain-read values carry the `b
   { "name": "fills", "method": "GET", "path": "/fills", "query": "FillsQuery", "response": "FillListResponse", "backing": "view: v_fills" },
   { "name": "eligibility", "method": "GET", "path": "/eligibility/:address", "query": "EligibilityQuery", "response": "EligibilityResponse", "backing": "chain: IEligibility.check, demoMode; table: eligibility_checks (insert), eligibility_denials" },
   { "name": "assets", "method": "GET", "path": "/assets", "query": null, "response": "AssetsResponse", "backing": "file: deployments/${NETWORK}.json (tokens, pool/pools, dark); chain: IWrapperAdapter.ratio, IssuerRegistry.active" },
-  { "name": "stats", "method": "GET", "path": "/stats", "query": "StatsQuery", "response": "StatsResponse", "backing": "view: v_fills; chain: IWrapperAdapter.sharesPerToken" },
+  { "name": "stats", "method": "GET", "path": "/stats", "query": "StatsQuery", "response": "StatsResponse", "backing": "view: v_fills; table: faucet_claims; chain: IWrapperAdapter.sharesPerToken, TestShareFaucet.nextClaimAt" },
   { "name": "crankStatus", "method": "GET", "path": "/status", "query": null, "response": "CrankStatusResponse", "backing": "crank process on CRANK_HEALTH_PORT (§7), not the API" }
 ]
 ```
@@ -1706,7 +1706,9 @@ Route decision, first match wins:
 `IWrapperAdapter.sharesPerToken` (rounded down). `feesEarned` counts inventory fees only (PARITY and DARK-RESIDUAL
 fills; the fee is charged in `tokenOut`), not dark-cross treasury fees or fall-through LP fees. With `?address=`,
 `wallet` repeats the counts for that account and lists its 10 most recent fills; otherwise `wallet` is null.
-`byAsset` groups the same totals by the fills' `underlying` asset (tokens as in `GET /assets`).
+`byAsset` groups the same totals by the fills' `underlying` asset (tokens as in `GET /assets`). `faucet` (null if the
+manifest has no `faucet`) counts indexed `TestShareFaucet.Claimed` events; with `?address=` it adds that wallet's
+last claim time (indexer) and `nextClaimAt` (read on chain).
 
 ```json wrapswap:schema StatsQuery
 {
@@ -1720,7 +1722,7 @@ fills; the fee is charged in `tokenOut`), not dark-cross treasury fees or fall-t
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["indexedBlock", "fills", "byKind", "sharesVolume", "byAsset", "feesEarned", "wallet"],
+  "required": ["indexedBlock", "fills", "byKind", "sharesVolume", "byAsset", "feesEarned", "faucet", "wallet"],
   "properties": {
     "indexedBlock": { "$ref": "UInt" },
     "fills": { "type": "integer" },
@@ -1772,6 +1774,18 @@ fills; the fee is charged in `tokenOut`), not dark-cross treasury fees or fall-t
         }
       }
     },
+    "faucet": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["address", "claims", "claimants", "walletLastClaimAt", "walletNextClaimAt"],
+      "properties": {
+        "address": { "$ref": "Address" },
+        "claims": { "type": "integer" },
+        "claimants": { "type": "integer" },
+        "walletLastClaimAt": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" },
+        "walletNextClaimAt": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" }
+      }
+    },
     "wallet": {
       "type": ["object", "null"],
       "additionalProperties": false,
@@ -1787,8 +1801,9 @@ fills; the fee is charged in `tokenOut`), not dark-cross treasury fees or fall-t
 }
 ```
 
-`GET /assets`: every asset in the deployment, grouped by the tokens' `underlying`. Platforms are the issuer tokens
-of that asset with their adapter ratio read on chain (`sharesPerTokenX18`; `healthy` = adapter ratio healthy and IssuerRegistry `active`); `pools`
+`GET /assets`: every asset in the deployment: the manifest's `assets[]` when present (multi-asset deployments),
+otherwise the tokens grouped by `underlying`. Platforms are the issuer tokens (wrappers) of that asset; `name`,
+`adapterKind` and `mock` are null when the manifest does not carry them for a wrapper. Each platform comes with their adapter ratio read on chain (`sharesPerTokenX18`; `healthy` = adapter ratio healthy and IssuerRegistry `active`); `pools`
 are the deployment's ParityHook pools whose currencies both belong to the asset; `darkCross` is set when the
 DarkCrossHook pair belongs to it. The UI builds its asset/platform pickers from this response.
 
@@ -1814,18 +1829,19 @@ DarkCrossHook pair belongs to it. The UI builds its asset/platform pickers from 
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["issuer", "symbol", "name", "address", "decimals", "adapter", "adapterKind", "sharesPerTokenX18", "healthy", "mock"],
+              "required": ["platform", "issuer", "symbol", "name", "address", "decimals", "adapter", "adapterKind", "sharesPerTokenX18", "healthy", "mock"],
               "properties": {
+                "platform": { "type": "string" },
                 "issuer": { "type": "string" },
                 "symbol": { "type": "string" },
-                "name": { "type": "string" },
+                "name": { "type": ["string", "null"] },
                 "address": { "$ref": "Address" },
                 "decimals": { "type": "integer" },
                 "adapter": { "$ref": "Address" },
-                "adapterKind": { "type": "string" },
+                "adapterKind": { "type": ["string", "null"] },
                 "sharesPerTokenX18": { "$ref": "UInt" },
                 "healthy": { "type": "boolean" },
-                "mock": { "type": "boolean" }
+                "mock": { "type": ["boolean", "null"] }
               }
             }
           },
@@ -2467,10 +2483,10 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
       "end": { "demoMAAPLx": "601203425000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60720161625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "51100875000000000" }
     },
     "unichain-sepolia": {
-      "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200,
-      "parityFill": { "feePips": 460, "feeBps": "4.60", "feeAmount": "46575000000000000", "amountOut": "101203425000000000000" },
-      "residual": { "feePips": 447, "feeBps": "4.47", "feeAmount": "4525875000000000", "amountOut": "10120474125000000000" },
-      "end": { "demoMAAPLx": "601203425000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60720161625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "51100875000000000" }
+      "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200, "seedBlock": 63580006, "label": "Seed state at deploy block 63580006, market closed", "seedInventory": {"mcbAAPL": "8888888889", "mAAPLx": "11000000000000000000000"},
+      "parityFill": { "feePips": 330, "feeBps": "3.30", "feeAmount": "33412500000000000", "amountOut": "101216587500000000000" },
+      "residual": { "feePips": 317, "feeBps": "3.17", "feeAmount": "3209625000000000", "amountOut": "10121790375000000000" },
+      "end": { "demoMAAPLx": "601216587500000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60721477875000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "36622125000000000" }
     }
   }
 }

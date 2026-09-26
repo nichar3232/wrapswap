@@ -2,7 +2,7 @@ import { keccak256, toHex } from "viem";
 import type { Deployment } from "@wrapswap/types";
 import { db } from "../db/index.js";
 import { publicClient, loadDeployment, json } from "../chain/client.js";
-import { decode, projection, accepts } from "./events.js";
+import { decode, projection, accepts, deploymentTokens } from "./events.js";
 const LOG_ADDRESS_CHUNK = 8;
 export { projection } from "./events.js";
 export class Indexer {
@@ -111,8 +111,11 @@ export class Indexer {
       await c.query("COMMIT");
       const last = head - BigInt(this.confirmations);
       const addresses = [
-        ...Object.values(d.contracts).filter(Boolean),
-        ...d.tokens.flatMap((t) => [t.address, t.adapter]),
+        ...new Set([
+          ...Object.values(d.contracts).filter(Boolean),
+          ...deploymentTokens(d).flatMap((t) => [t.address, t.adapter]),
+          ...(d.faucet ? [d.faucet] : []),
+        ]),
       ];
       for (
         let from = cursor ? BigInt(cursor.last_block) + 1n : start;

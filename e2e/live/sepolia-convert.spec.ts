@@ -52,10 +52,12 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
   const receipt = await chain.getTransactionReceipt({ hash: swapTx as `0x${string}` });
   expect(receipt.status).toBe('success');
   expect(receipt.to?.toLowerCase()).toBe(d.contracts.wrapSwapRouter!.toLowerCase());
-  // Public RPC backends lag each other; poll until the post-swap balance is visible.
-  await expect.poll(async () => baseBefore - (await balance(base.address)), { timeout: 30000 }).toBe(DEMO.parityFill.amountIn);
-  const [baseAfter, quoteAfter] = [await balance(base.address), await balance(quote.address)];
-  expect(baseBefore - baseAfter).toBe(DEMO.parityFill.amountIn);
+  // Public RPC backends lag each other: poll until one read shows both post-swap balances, and keep that read.
+  let baseAfter = baseBefore, quoteAfter = quoteBefore;
+  await expect.poll(async () => {
+    [baseAfter, quoteAfter] = [await balance(base.address), await balance(quote.address)];
+    return baseBefore - baseAfter === DEMO.parityFill.amountIn && quoteAfter > quoteBefore;
+  }, { timeout: 30000 }).toBe(true);
   const received = quoteAfter - quoteBefore;
   expect(received >= (BigInt(q.amountOut) * 995n) / 1000n).toBe(true);
   mkdirSync('logs/sepolia', { recursive: true });

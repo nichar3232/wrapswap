@@ -1,9 +1,34 @@
 import { abis, topics, type Deployment } from "@wrapswap/types";
-import { decodeEventLog, type Abi } from "viem";
+import { decodeEventLog, parseAbi, toEventSelector, type Abi } from "viem";
 import { json } from "../chain/client.js";
-export const eventAbi = Object.values(abis)
-  .flat()
-  .filter((x) => x.type === "event") as Abi;
+// TestShareFaucet is a testnet mock outside the frozen interfaces; its events are indexed from the manifest's `faucet`.
+export const faucetAbi = parseAbi([
+  "event Claimed(address indexed account, uint256 timestamp)",
+  "event TokenListed(address indexed token)",
+]);
+const faucetTopics = new Map(faucetAbi.map((e) => [toEventSelector(e), e.name]));
+export const eventAbi = [
+  ...Object.values(abis)
+    .flat()
+    .filter((x) => x.type === "event"),
+  ...faucetAbi,
+] as Abi;
+/** Every issuer token in the manifest: `tokens` plus each `assets[].wrappers` entry (multi-asset deployments). */
+export function deploymentTokens(d: Deployment) {
+  const out = d.tokens.map((t) => ({ ...t }));
+  for (const a of d.assets ?? [])
+    for (const w of a.wrappers)
+      if (!out.some((t) => t.address.toLowerCase() === w.token.toLowerCase()))
+        out.push({
+          symbol: w.symbol,
+          address: w.token,
+          adapter: w.adapter,
+          decimals: w.decimals,
+          underlying: a.symbol,
+          issuer: w.platform.toLowerCase(),
+        } as any);
+  return out;
+}
 export const eventNames = [
   ...new Set(Object.keys(topics).map((x) => x.split(".")[1])),
 ];
@@ -26,8 +51,15 @@ const tables: Record<string, string> = {
   EligibilityDenied: "eligibility_denials",
   DemoModeSet: "demo_mode_changes",
   MidUpdated: "oracle_mids",
+  Claimed: "faucet_claims",
 };
 export function accepts(log: any, d: Deployment) {
+  if (faucetTopics.has(log.topics[0]))
+    return (
+      !!d.faucet &&
+      d.faucet.toLowerCase() === log.address.toLowerCase() &&
+      log.blockNumber >= BigInt(d.startBlock)
+    );
   const key = Object.entries(topics).find(
     ([, topic]) => topic === log.topics[0],
   )?.[0];
@@ -46,7 +78,7 @@ export function accepts(log: any, d: Deployment) {
   )[owner];
   const candidates = contract
     ? [d.contracts[contract as keyof Deployment["contracts"]]]
-    : d.tokens.map((t) =>
+    : deploymentTokens(d).map((t) =>
         owner === "IWrapperAdapter" ? t.adapter : t.address,
       );
   return (
@@ -69,6 +101,7 @@ export function projection(
   provenance: Record<string, any>,
   d: Deployment,
 ) {
+  if (event === "TokenListed") return null;
   let table = tables[event];
   let a: any = { ...json(args) };
   if (

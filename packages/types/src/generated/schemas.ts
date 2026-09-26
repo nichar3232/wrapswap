@@ -46,6 +46,7 @@ export const schemas = {
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
+                  "platform",
                   "issuer",
                   "symbol",
                   "name",
@@ -58,6 +59,9 @@ export const schemas = {
                   "mock"
                 ],
                 "properties": {
+                  "platform": {
+                    "type": "string"
+                  },
                   "issuer": {
                     "type": "string"
                   },
@@ -65,7 +69,10 @@ export const schemas = {
                     "type": "string"
                   },
                   "name": {
-                    "type": "string"
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   },
                   "address": {
                     "$ref": "Address"
@@ -77,7 +84,10 @@ export const schemas = {
                     "$ref": "Address"
                   },
                   "adapterKind": {
-                    "type": "string"
+                    "type": [
+                      "string",
+                      "null"
+                    ]
                   },
                   "sharesPerTokenX18": {
                     "$ref": "UInt"
@@ -86,7 +96,10 @@ export const schemas = {
                     "type": "boolean"
                   },
                   "mock": {
-                    "type": "boolean"
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   }
                 }
               }
@@ -2048,6 +2061,7 @@ export const schemas = {
       "sharesVolume",
       "byAsset",
       "feesEarned",
+      "faucet",
       "wallet"
     ],
     "properties": {
@@ -2148,6 +2162,45 @@ export const schemas = {
                 }
               }
             }
+          }
+        }
+      },
+      "faucet": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "claims",
+          "claimants",
+          "walletLastClaimAt",
+          "walletNextClaimAt"
+        ],
+        "properties": {
+          "address": {
+            "$ref": "Address"
+          },
+          "claims": {
+            "type": "integer"
+          },
+          "claimants": {
+            "type": "integer"
+          },
+          "walletLastClaimAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "walletNextClaimAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(0|[1-9][0-9]*)$"
           }
         }
       },
@@ -2259,16 +2312,17 @@ export type AssetsResponse = {
   "assets": Array<{
     "asset": string;
     "platforms": Array<{
+      "platform": string;
       "issuer": string;
       "symbol": string;
-      "name": string;
+      "name": string | null;
       "address": Address;
       "decimals": number;
       "adapter": Address;
-      "adapterKind": string;
+      "adapterKind": string | null;
       "sharesPerTokenX18": UInt;
       "healthy": boolean;
-      "mock": boolean;
+      "mock": boolean | null;
     }>;
     "pools": Array<{
       "poolId": Bytes32;
@@ -2749,6 +2803,13 @@ export type StatsResponse = {
       "shares": UInt;
     }>;
   };
+  "faucet": {
+    "address": Address;
+    "claims": number;
+    "claimants": number;
+    "walletLastClaimAt": string | null;
+    "walletNextClaimAt": string | null;
+  } | null;
   "wallet": {
     "address": Address;
     "fills": number;
@@ -2911,7 +2972,7 @@ export const routes = [
     "path": "/stats",
     "query": "StatsQuery",
     "response": "StatsResponse",
-    "backing": "view: v_fills; chain: IWrapperAdapter.sharesPerToken"
+    "backing": "view: v_fills; table: faucet_claims; chain: IWrapperAdapter.sharesPerToken, TestShareFaucet.nextClaimAt"
   },
   {
     "name": "crankStatus",

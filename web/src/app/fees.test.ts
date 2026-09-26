@@ -17,7 +17,8 @@ describe("fee formula pinned to contract output", () => {
     expect(feeAtSkew(-0.2, true).totalPips).toBe(BigInt(DEMO.variants.anvil.parityFill.feePips));
     // Off-hours the demo fill reduces |skew| (0.20 -> 0.19), so it pays no premium; the curve shows the skew-increasing side.
     const t = canonical.tradeFeeBreakdown(8100n * canonical.ONE, 12150n * canonical.ONE, true, 10125n * 10n ** 16n, false);
-    expect(t.totalPips).toBe(BigInt(DEMO.variants["unichain-sepolia"].parityFill.feePips));
+    // The live variant is generated from its own on-chain seed; on the §10 seed, closed = open for this fill.
+    expect(t.totalPips).toBe(BigInt(DEMO.variants.anvil.parityFill.feePips));
     expect(feeAtSkew(-0.2, false).totalPips).toBe(760n);
   });
   it("is symmetric, 2 bps at balance (open or closed), off-hours 15 bps x |skew|, capped at 25 bps", () => {

@@ -15,6 +15,19 @@ export const IParityHookAbi = [
   },
   {
     "type": "function",
+    "name": "CLOSED_FEE_PIPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint24",
+        "internalType": "uint24"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "HOOK_DATA_VERSION",
     "inputs": [],
     "outputs": [
@@ -29,19 +42,6 @@ export const IParityHookAbi = [
   {
     "type": "function",
     "name": "MAX_FEE_PIPS",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint24",
-        "internalType": "uint24"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "OFF_HOURS_MAX_FEE_PIPS",
     "inputs": [],
     "outputs": [
       {

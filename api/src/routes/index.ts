@@ -15,6 +15,7 @@ import {
 } from "viem";
 import { chainReader, publicClient } from "../chain/client.js";
 import { permitsDarkFallback, routeErrors } from "../chain/reverts.js";
+import { deploymentTokens } from "../indexer/events.js";
 import { db, camel } from "../db/index.js";
 const reasons = [
   "OK",
@@ -85,17 +86,26 @@ export async function routes(
   chainClient: any = publicClient,
   pool: any = db,
 ) {
+  // Load-balanced public RPCs (Unichain Sepolia) can route a read pinned to the newest block to a backend that has not
+  // seen it yet ("returned no data", unknown block); retry those briefly before reporting CHAIN_UNAVAILABLE.
+  const stale = /returned no data|header not found|unknown block|block not found|could not be found/i;
   const client = new Proxy(chainClient, {
     get(target, key) {
       const value = target[key];
       return typeof value === "function"
         ? async (...args: any[]) => {
-            try {
-              return await value.apply(target, args);
-            } catch (e) {
-              throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), {
-                cause: e,
-              });
+            for (let attempt = 0; ; attempt++) {
+              try {
+                return await value.apply(target, args);
+              } catch (e) {
+                if (attempt < 3 && stale.test(String(e))) {
+                  await new Promise((r) => setTimeout(r, 250));
+                  continue;
+                }
+                throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), {
+                  cause: e,
+                });
+              }
             }
           }
         : value;
@@ -123,8 +133,12 @@ export async function routes(
       throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), { cause: e });
     }
   };
+  const allTokens = deploymentTokens(d);
+  const faucetAbi = parseAbi([
+    "function nextClaimAt(address account) view returns (uint256)",
+  ]);
   const token = async (address: string, b: any) => {
-    const t = d.tokens.find((t) => eq(t.address, address))!;
+    const t = allTokens.find((t) => eq(t.address, address))!;
     const [ratio, active] = await Promise.all([
       client.readContract({
         address: t.adapter,
@@ -629,41 +643,49 @@ export async function routes(
   get("/assets", "AssetsResponse", async () => {
     const b = await block();
     // A multi-pool deployment lists `pools`; the current schema has the single `pool`.
-    const pools: any[] = (d as any).pools ?? [d.pool];
-    const names = [...new Set(d.tokens.map((t) => t.underlying))];
+    const manifest =
+      d.assets ??
+      [...new Set(d.tokens.map((t) => t.underlying))].map((symbol) => ({
+        symbol,
+        pool: d.pool,
+        darkCross: true,
+        wrappers: d.tokens
+          .filter((t) => t.underlying === symbol)
+          .map((t) => ({ platform: t.issuer, symbol: t.symbol, token: t.address })),
+      }));
     return {
       network: d.network,
       chainId: d.chainId,
       block: b.number,
       assets: await Promise.all(
-        names.map(async (asset) => {
-          const tokens = d.tokens.filter((t) => t.underlying === asset);
-          const mine = (a: string) => tokens.some((t) => eq(t.address, a));
+        manifest.map(async (m: any) => {
+          const mine = (a: string) => m.wrappers.some((w: any) => eq(w.token, a));
           const platforms = await Promise.all(
-            tokens.map(async (t) => {
+            m.wrappers.map(async (w: any) => {
+              const t = allTokens.find((t) => eq(t.address, w.token))!;
+              const known = d.tokens.find((x) => eq(x.address, w.token));
               const live = await token(t.address, b);
               return {
+                platform: w.platform,
                 issuer: t.issuer,
                 symbol: t.symbol,
-                name: t.name,
+                name: known?.name ?? null,
                 address: t.address,
                 decimals: t.decimals,
                 adapter: t.adapter,
-                adapterKind: t.adapterKind,
+                adapterKind: known?.adapterKind ?? null,
                 sharesPerTokenX18: live.sharesPerTokenX18,
                 healthy: live.healthy,
-                mock: t.mock,
+                mock: known?.mock ?? null,
               };
             }),
           );
           return {
-            asset,
+            asset: m.symbol,
             platforms,
-            pools: pools
-              .filter((p) => mine(p.key.currency0) && mine(p.key.currency1))
-              .map((p) => ({ poolId: p.id, ...p.key })),
+            pools: [m.pool].map((p: any) => ({ poolId: p.id, ...p.key })),
             darkCross:
-              mine(d.dark.baseToken) && mine(d.dark.quoteToken)
+              m.darkCross && mine(d.dark.baseToken) && mine(d.dark.quoteToken)
                 ? {
                     hook: d.contracts.darkCrossHook,
                     baseToken: d.dark.baseToken,
@@ -685,7 +707,7 @@ export async function routes(
       // Share figures use the on-chain adapter ratio of each fill's token (INTERFACES.md StatsResponse).
       const ratios = new Map<string, { spt: bigint; decimals: number }>();
       const underlying = (tokenAddress: string) =>
-        d.tokens.find((t) => eq(t.address, tokenAddress))?.underlying ?? "UNKNOWN";
+        allTokens.find((t) => eq(t.address, tokenAddress))?.underlying ?? "UNKNOWN";
       const shares = async (tokenAddress: string, amount: bigint) => {
         const key = tokenAddress.toLowerCase();
         if (!ratios.has(key)) {
@@ -729,11 +751,38 @@ export async function routes(
       ]);
       const tokens = await Promise.all(
         fees.map(async (r) => {
-          const t = d.tokens.find((t) => eq(t.address, r.tokenOut))!;
+          const t = allTokens.find((t) => eq(t.address, r.tokenOut))!;
           const amount = BigInt(r.amount);
           return { symbol: t.symbol, address: t.address, amount, shares: await shares(t.address, amount) };
         }),
       );
+      let faucet = null;
+      if (d.faucet) {
+        const [claims] = await sql(
+          "SELECT count(*)::int AS n, count(DISTINCT account)::int AS accounts, max(CASE WHEN account=$2 THEN \"timestamp\" END)::text AS last FROM faucet_claims WHERE chain_id=$1",
+          [d.chainId, address ?? ""],
+        );
+        let next = null;
+        if (address)
+          try {
+            next = await client.readContract({
+              address: d.faucet,
+              abi: faucetAbi,
+              functionName: "nextClaimAt",
+              args: [req.query.address],
+              blockNumber: b.number,
+            });
+          } catch (e) {
+            throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), { cause: e });
+          }
+        faucet = {
+          address: d.faucet,
+          claims: claims.n,
+          claimants: claims.accounts,
+          walletLastClaimAt: address ? claims.last : null,
+          walletNextClaimAt: next,
+        };
+      }
       let wallet = null;
       if (address) {
         const w = await volume(address);
@@ -754,6 +803,7 @@ export async function routes(
             .reduce((s, t) => s + t.shares, 0n),
         })),
         feesEarned: { totalShares: tokens.reduce((s, t) => s + t.shares, 0n), tokens },
+        faucet,
         wallet,
       };
     },
