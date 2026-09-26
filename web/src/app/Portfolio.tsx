@@ -98,7 +98,7 @@ export function Portfolio({
   const mine = w.activity.filter((a) => !indexed.has(a.hash.toLowerCase())).slice(0, 5);
   const MINE_STATUS: Record<string, string> = { PARITY: "Convert · confirming", "DARK-COMMIT": "Dark Cross · settles with the batch", SEND: "Send · confidential via Sui" };
   const mocks = import.meta.env.VITE_USE_MOCKS === "true";
-  const [allDone, setAllDone] = useState<AllResult[]>();
+  const [allDone, setAllDone] = useState<{ results: AllResult[]; before: Record<string, bigint> }>();
 
   // Disconnected: one card, not three asset cards of dashes.
   if (!w.address)
@@ -117,13 +117,13 @@ export function Portfolio({
       </div>
     );
 
-  if (allDone) return <ConvertAllResult results={allDone} assets={assets} onDone={() => setAllDone(undefined)} />;
+  if (allDone) return <ConvertAllResult results={allDone.results} before={allDone.before} assets={assets} onDone={() => setAllDone(undefined)} />;
 
   return (
     <div className="page portfolio">
       <div className="port-actions">
         <Faucet d={d} assets={assets} faucetAddr={d?.faucet} />
-        <ConvertAll d={d} assets={assets} onDone={setAllDone} />
+        <ConvertAll d={d} assets={assets} onDone={(results, before) => setAllDone({ results, before })} />
       </div>
       {assets.length === 0 && (
         <section className="card">

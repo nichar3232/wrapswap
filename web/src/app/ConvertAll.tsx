@@ -35,7 +35,15 @@ const SELL_REBUY_BPS = SELL_REBUY.takerBpsPerSide * 2 + SELL_REBUY.gapBps;
 const isTarget = (p: Platform) => /^xStocks\b/.test(p.name);
 
 /** Every non-xStocks balance of every asset, converted into that asset's xStocks wrapper. */
-export function ConvertAll({ d, assets, onDone }: { d: Deployment | undefined; assets: Asset[]; onDone: (r: AllResult[]) => void }) {
+export function ConvertAll({
+  d,
+  assets,
+  onDone,
+}: {
+  d: Deployment | undefined;
+  assets: Asset[];
+  onDone: (r: AllResult[], before: Record<string, bigint>) => void;
+}) {
   const w = useWallet();
   const tx = useTx<unknown>();
   const jobs = assets.flatMap((asset) => {
@@ -49,6 +57,8 @@ export function ConvertAll({ d, assets, onDone }: { d: Deployment | undefined; a
 
   const run = async () => {
     const results: AllResult[] = [];
+    // Holdings before, so the after-state is before ± each leg's exact amounts (a fresh RPC read can lag the chain).
+    const before = { ...w.balances.values };
     const done = await tx.run("Convert all to xStocks", async (onHash) => {
       if (w.relay) {
         // One relay action: it converts its own whole balance of each other wrapper, asset by asset.
@@ -118,7 +128,7 @@ export function ConvertAll({ d, assets, onDone }: { d: Deployment | undefined; a
     });
     if (done && results.length) {
       tx.reset();
-      onDone(results);
+      onDone(results, before);
     }
   };
 
@@ -147,8 +157,22 @@ export function ConvertAll({ d, assets, onDone }: { d: Deployment | undefined; a
 
 
 /** After-state: the new holdings, each conversion's transaction, and what the same move would cost as sell + rebuy. */
-export function ConvertAllResult({ results, assets, onDone }: { results: AllResult[]; assets: Asset[]; onDone: () => void }) {
-  const w = useWallet();
+export function ConvertAllResult({
+  results,
+  before,
+  assets,
+  onDone,
+}: {
+  results: AllResult[];
+  before: Record<string, bigint>;
+  assets: Asset[];
+  onDone: () => void;
+}) {
+  const after = (token: string) => {
+    const b = before[token];
+    if (b === undefined) return undefined;
+    return results.reduce((v, r) => (r.from.token.address === token ? v - r.amountIn : r.to.token.address === token ? v + r.amountOut : v), b);
+  };
   const sharesIn = results.reduce((s, r) => s + r.sharesIn, 0n);
   const feeShares = results.reduce((s, r) => s + r.feeShares, 0n);
   // Volume-weighted fee rate across the legs, in pips.
@@ -201,7 +225,7 @@ export function ConvertAllResult({ results, assets, onDone }: { results: AllResu
         <ul className="holdings new-holdings">
           {touched.flatMap((a) =>
             a.platforms.map((p) => {
-              const bal = w.balances.values[p.token.address];
+              const bal = after(p.token.address);
               return (
                 <li key={p.token.address} className="holding">
                   <div className="holding-name">
