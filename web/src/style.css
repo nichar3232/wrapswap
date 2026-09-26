@@ -141,6 +141,9 @@ button.wide {
   gap: 8px;
 }
 .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 11px;
   font-weight: 500;
   color: var(--muted);
@@ -198,6 +201,10 @@ h1 {
 }
 .hero.compact h1 {
   font-size: clamp(28px, 4vw, 36px);
+}
+.hero.compact h2.sub {
+  margin-top: 10px;
+  font-size: 15px;
 }
 h2.sub {
   margin: 14px 0 0;
@@ -298,6 +305,21 @@ dd {
   max-width: 460px;
   padding: 8px;
   gap: 0;
+  box-shadow: 0 40px 120px -40px rgba(91, 61, 245, 0.45);
+}
+/* The To chip already names the token; keep the symbol in the output's text for screen readers. */
+.swap output.amount .unit {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.route {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .field {
   background: var(--surface);
@@ -475,6 +497,67 @@ select.token option {
   color: var(--warn);
 }
 
+/* Dark Pool */
+.stack {
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.card.order {
+  padding: 24px;
+  box-shadow: 0 40px 120px -40px rgba(91, 61, 245, 0.45);
+}
+.card.order .metric {
+  font-size: 44px;
+  margin-top: 12px;
+}
+.steps {
+  counter-reset: step;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 16px;
+}
+.steps button {
+  counter-increment: step;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.3;
+  text-align: left;
+  background: transparent;
+}
+.steps button::before {
+  content: "0" counter(step);
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+}
+.steps button:disabled {
+  opacity: 0.35;
+}
+.steps button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.steps button.primary:disabled {
+  background: rgba(91, 61, 245, 0.35);
+  border-color: transparent;
+  opacity: 0.7;
+}
+.card.quiet {
+  background: transparent;
+  backdrop-filter: none;
+}
+.card.quiet .metric {
+  font-size: 26px;
+}
+
 /* Status lines */
 .state {
   font-size: 13px;
@@ -498,8 +581,12 @@ select.token option {
 .notice {
   max-width: 460px;
   text-align: center;
-  font-size: 13px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--faint);
+}
+.eligibility {
+  font-size: 12px;
+  margin-bottom: -4px;
 }
 
 /* Pool */
@@ -607,6 +694,7 @@ tbody tr:last-child td {
   opacity: 1;
 }
 .card-head .tip::after,
+.nav .tip::after,
 footer .tip::after {
   left: auto;
   right: -8px;
@@ -614,6 +702,13 @@ footer .tip::after {
 }
 
 /* Footer */
+.nav .tip::after {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+.network {
+  color: var(--faint);
+}
 footer {
   display: flex;
   flex-wrap: wrap;
@@ -668,6 +763,12 @@ footer {
   }
   main {
     padding-top: 24px;
+  }
+  .steps {
+    grid-template-columns: 1fr;
+  }
+  .card.order .metric {
+    font-size: 36px;
   }
   .metric {
     font-size: 28px;

@@ -29,6 +29,13 @@ const units = (n: string | bigint, decimals = 18) =>
   formatUnits(BigInt(n), decimals);
 const zero32 = toHex(new Uint8Array(32));
 /** [internal tab key, visible name]; keys double as accessible names. */
+const ROUTE_TIPS: Record<Route, string> = {
+  PARITY: "Filled from ParityHook inventory at exact share parity.",
+  "FALL-THROUGH": "Inventory short; the remainder routes through the v4 pool.",
+  DARK: "Size is better crossed in the next dark batch.",
+  "BLOCKED-PEG": "Paused: the issuer peg has drifted beyond tolerance.",
+  "BLOCKED-ELIGIBILITY": "This wallet has no valid issuer eligibility attestation.",
+};
 const TABS = [
   ["Convert", "Convert"],
   ["Dark Cross", "Dark Pool"],
@@ -129,11 +136,15 @@ function App() {
         <div className="wallet">
           {(health.data?.demoMode ?? d?.demoMode) ||
           eligibility.data?.demoMode ? (
-            <span className="badge">Demo mode</span>
-          ) : null}
-          {config.useMocks && (
+            <span className="badge">
+              Demo mode
+              {config.useMocks && (
+                <Tip text="Simulated transactions: nothing is signed or sent onchain." />
+              )}
+            </span>
+          ) : config.useMocks ? (
             <span className="badge">Simulated transactions</span>
-          )}
+          ) : null}
           <button
             className="primary"
             disabled={!d || pending}
@@ -160,6 +171,11 @@ function App() {
         ) : (
           <div className="hero compact">
             <h1>{TABS.find(([t]) => t === tab)![1]}</h1>
+            <h2 className="sub">
+              {tab === "Dark Cross"
+                ? "Commit privately. Cross at the oracle mid."
+                : "Hook-owned inventory, priced by skew."}
+            </h2>
           </div>
         )}
         <ApiState state={deployment} label="Deployment" />
@@ -226,7 +242,7 @@ function App() {
           NYSE {nyse.data ? (nyse.data.open ? "open" : "closed") : "—"}
         </span>
         <span aria-hidden="true">·</span>
-        <span>
+        <span className="network">
           {d?.network || config.network} · Chain {d?.chainId || "—"}
         </span>
         <span aria-hidden="true">·</span>
@@ -348,7 +364,14 @@ function Convert({
         </div>
       </div>
       <div className="meta">
-        {activeRoute ? <RouteBadge route={activeRoute} /> : <span />}
+        {activeRoute ? (
+          <span className="route">
+            <RouteBadge route={activeRoute} />
+            <Tip text={ROUTE_TIPS[activeRoute]} />
+          </span>
+        ) : (
+          <span />
+        )}
         {q && (
           <span className="fee-line">Fee {Number(q.fee.totalBps)} bps</span>
         )}
@@ -490,54 +513,53 @@ function Dark({
     setSaved(o);
   };
   return (
-    <div className="cards">
-      <section className="card">
+    <div className="stack">
+      <section className="card order">
         <div className="card-head">
-          <span className="label">Batch {batch.data?.batchId ?? "—"}</span>
-          <RouteBadge route="DARK" />
+          <span className="label">
+            Batch {batch.data?.batchId ?? "—"}
+            {batch.data && (
+              <>
+                {" · "}
+                <span role="timer">
+                  {Math.max(
+                    0,
+                    Number(batch.data.phaseEndsBlock) -
+                      Number(batch.data.blockNumber),
+                  )}{" "}
+                  blocks left
+                </span>
+              </>
+            )}
+          </span>
+          <span className="route">
+            <RouteBadge route="DARK" />
+            <Tip text="Commit privately, reveal in the next phase, then settle. Unmatched size routes into the ParityHook pool in the same transaction." />
+          </span>
         </div>
         <ApiState state={batch} label="Current batch" />
-        {batch.data && (
-          <>
-            <p className="metric" role="timer">
-              {Math.max(
-                0,
-                Number(batch.data.phaseEndsBlock) -
-                  Number(batch.data.blockNumber),
-              )}{" "}
-              <span className="unit">blocks</span>
-            </p>
-            <p className="caption">
-              <strong>{phase}</strong> · {batch.data.participants} participants
-              · ends block {batch.data.phaseEndsBlock}
-            </p>
-            <p className="caption">
-              Oracle{" "}
-              {batch.data.oracle.midX18
-                ? units(batch.data.oracle.midX18)
-                : "Unavailable"}{" "}
-              {b.symbol}/{a.symbol}
-            </p>
-            {batch.data.oracle.stale && (
-              <p role="alert" className="state error">
-                Oracle stale · settlement paused
-              </p>
-            )}
-          </>
-        )}
-      </section>
-      <section className="card">
-        <div className="card-head">
-          <span className="label">Your order</span>
-          <Tip text="Commit privately, reveal in the next phase, then settle. Unmatched size routes into the ParityHook pool in the same transaction." />
-        </div>
         <p className="metric">
           {units(amount, a.decimals)} <span className="unit">{a.symbol}</span>
         </p>
         <p className="caption">
           Min {units(limit)} {b.symbol}/{a.symbol}
+          {batch.data && (
+            <>
+              {" · "}oracle{" "}
+              {batch.data.oracle.midX18
+                ? units(batch.data.oracle.midX18)
+                : "unavailable"}
+              {" · "}
+              {batch.data.participants} in batch
+            </>
+          )}
         </p>
-        <div className="actions">
+        {batch.data?.oracle.stale && (
+          <p role="alert" className="state error">
+            Oracle stale · settlement paused
+          </p>
+        )}
+        <div className="actions steps" data-phase={phase}>
           <button
             className={phase === "COMMIT" ? "primary" : ""}
             disabled={
@@ -685,7 +707,7 @@ function Dark({
           </>
         )}
       </section>
-      <section className="card">
+      <section className="card quiet">
         <div className="card-head">
           <span className="label">Last settlement</span>
         </div>
