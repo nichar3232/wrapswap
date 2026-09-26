@@ -18,6 +18,8 @@ const ROUNDING_MARGIN = 10n ** 13n;
 const MAX_FEE_BPS = 250; // ParityHook MAX_FEE_PIPS = 2500
 /** Seal key servers read the Clock through their own full nodes; give the close time a moment to propagate. */
 const SEAL_CLOCK_MARGIN_MS = 4_000;
+/** ~5 minutes of Unichain's 1 s blocks. */
+const EVM_LOOKBACK_BLOCKS = 300n;
 
 /** unison_pay::pay::EDuplicateReceipt = 8 */
 const isDuplicateReceipt = (e: unknown) => /abortCode\W+8\b|EDuplicateReceipt/.test(String((e as Error)?.message));
@@ -96,7 +98,11 @@ export class Keeper {
     if (!evm) return [];
     const pc = publicClient();
     const head = await pc.getBlockNumber();
-    const from = BigInt(this.state.evmFromBlock ?? evm.startBlock);
+    // Public RPCs are load-balanced and a lagging backend can omit recent logs, so every scan re-reads a trailing
+    // window; the credited list (and Sui's single-use receipts) make re-reading harmless.
+    const start = BigInt(evm.startBlock);
+    const cursor = BigInt(this.state.evmFromBlock ?? evm.startBlock);
+    const from = cursor - EVM_LOOKBACK_BLOCKS > start ? cursor - EVM_LOOKBACK_BLOCKS : start;
     if (from > head) return [];
     const events = await scanDeposits(evm.shareVault, from, head);
     const receipts: Receipt[] = [];
