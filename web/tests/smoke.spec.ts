@@ -32,7 +32,11 @@ test("nav: Portfolio · Move · Send · Liquidity with the asset picker; no cons
   const errors = watchConsole(page);
   await demo(page);
   await expect(tab(page, "Portfolio")).toHaveAttribute("aria-current", "page");
-  await expect(page.locator("header").getByRole("radiogroup", { name: "Asset" }).getByRole("radio")).toHaveText(["AAPL", "NVDA", "TSLA"]);
+  // The asset picker is not in the header: it sits in Move and Liquidity.
+  await expect(page.locator("header").getByRole("radiogroup", { name: "Asset" })).toHaveCount(0);
+  await expect(panel(page, "portfolio").getByRole("radiogroup", { name: "Asset" })).toHaveCount(0);
+  for (const t of ["move", "liquidity"])
+    await expect(panel(page, t).locator('.asset-pick [role="radio"]')).toHaveText(["AAPL", "NVDA", "TSLA"]); // inactive panels are aria-hidden
   await expect(page.locator("header").getByTestId("status-pill")).toHaveText(/^(Unichain Sepolia|Anvil)$/);
   await expect(page.locator("header").getByText("Demo", { exact: true })).toBeVisible();
   for (const t of ["Move", "Send", "Liquidity", "Portfolio"]) {
@@ -66,17 +70,17 @@ test("panels slide and lock; URL and ←/→ keys stay in sync; legacy ?tab= lin
 test("asset picker: NVDA / TSLA switch every panel, and the choice survives a reload", async ({ page }) => {
   await demo(page, "/app?tab=move");
   await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toContainText("mcbAAPL");
-  await page.locator("header").getByRole("radio", { name: "NVDA" }).click();
+  await panel(page, "move").getByRole("radio", { name: "NVDA" }).click();
   await expect(page).toHaveURL(/asset=NVDA/);
   await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toContainText("mcbNVDA");
   await expect(convert(page).locator(".unit")).toHaveText("mcbNVDA");
   await expect(convert(page).getByTestId("you-keep")).toContainText("→");
   await tab(page, "Liquidity").click();
   await expect(panel(page, "liquidity")).toContainText("NVDA · fee by direction now");
-  await page.locator("header").getByRole("radio", { name: "TSLA" }).click();
+  await panel(page, "liquidity").getByRole("radio", { name: "TSLA" }).click();
   await expect(panel(page, "liquidity")).toContainText("TSLA · fee by direction now");
   await page.reload();
-  await expect(page.locator("header").getByRole("radio", { name: "TSLA" })).toHaveAttribute("aria-checked", "true");
+  await expect(panel(page, "liquidity").getByRole("radio", { name: "TSLA" })).toHaveAttribute("aria-checked", "true");
 });
 
 test("Portfolio: holdings per asset per wrapper in shares, faucet claim → cooldown, Convert prefills Move", async ({ page }) => {

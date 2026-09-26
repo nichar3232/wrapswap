@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { PoolAssetResponse } from "@wrapswap/types";
 import type { Feed } from "../hooks/useApi";
 import { amount, fmtShares } from "../lib/format";
@@ -59,7 +60,17 @@ const KEEPER_WHY =
  * Liquidity for the selected asset, from GET /pool/:asset: inventory per wrapper, skew, the fee each direction pays
  * now, and what the LP has earned. Display-only: depositInventory / withdrawInventory are keeper-only.
  */
-export function Liquidity({ asset, pool, onMove }: { asset: Asset | undefined; pool: Feed<"poolAsset">; onMove: (fromToken: string) => void }) {
+export function Liquidity({
+  asset,
+  pool,
+  onMove,
+  picker,
+}: {
+  asset: Asset | undefined;
+  pool: Feed<"poolAsset">;
+  onMove: (fromToken: string) => void;
+  picker?: ReactNode;
+}) {
   const p = pool.data && asset && pool.data.asset === asset.symbol ? pool.data : undefined;
   if (!asset || !p)
     return (
@@ -82,7 +93,10 @@ export function Liquidity({ asset, pool, onMove }: { asset: Asset | undefined; p
   const baseBps = (x: Direction) => ((x.totalPips - x.skewFeePips) / 100).toFixed(2);
   return (
     <div className="page liquidity">
-      <h1 className="page-title">Pool inventory &amp; LP economics</h1>
+      <div className="page-head">
+        <h1 className="page-title">Pool inventory &amp; LP economics</h1>
+        {picker}
+      </div>
       <div className="liq-top">
         <section className="card liq-hero" aria-label={`${asset.symbol} fee by direction`}>
           <span className="tile-k">{asset.symbol} · fee by direction now</span>

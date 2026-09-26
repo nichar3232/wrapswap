@@ -226,6 +226,16 @@ function App() {
     setTab("Move");
   };
   const index = TABS.indexOf(tab);
+  // The asset picker lives in the tabs that act on one asset (Move, Liquidity), not in the header.
+  const picker = (
+    <div className="asset-pick" role="radiogroup" aria-label="Asset">
+      {assets.map((a) => (
+        <button key={a.symbol} type="button" role="radio" aria-checked={a === asset} onClick={() => chooseAsset(a.symbol)}>
+          {a.symbol}
+        </button>
+      ))}
+    </div>
+  );
   const [sendOpened, setSendOpened] = useState(tab === "Send");
   useEffect(() => {
     if (tab === "Send") setSendOpened(true);
@@ -321,13 +331,6 @@ function App() {
           <span className={`tab-bar${still ? " still" : ""}`} style={{ transform: `translateX(${bar.left}px)`, width: bar.width }} aria-hidden="true" />
         </nav>
         <div className="wallet">
-          <div className="asset-pick" role="radiogroup" aria-label="Asset">
-            {assets.map((a) => (
-              <button key={a.symbol} type="button" role="radio" aria-checked={a === asset} onClick={() => chooseAsset(a.symbol)}>
-                {a.symbol}
-              </button>
-            ))}
-          </div>
           <NetworkBadge feeds={feeds} />
           {demo && (
             <span
@@ -349,11 +352,11 @@ function App() {
                 {t === "Portfolio" ? (
                   <Portfolio d={d} assets={assets} onMove={moveFrom} onTry={() => setTab("Move")} />
                 ) : t === "Move" ? (
-                  <Move d={d} asset={asset} pool={pool} batch={batch} intent={intent} />
+                  <Move d={d} asset={asset} pool={pool} batch={batch} intent={intent} picker={picker} />
                 ) : t === "Send" ? (
                   <SendOverview>{(i === index || sendOpened) && <SendSlot d={d} assets={assets} />}</SendOverview>
                 ) : (
-                  <Liquidity asset={asset} pool={pool} onMove={moveFrom} />
+                  <Liquidity asset={asset} pool={pool} onMove={moveFrom} picker={picker} />
                 )}
               </div>
             </section>

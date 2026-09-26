@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Deployment } from "@wrapswap/types";
 import type { Feed } from "../hooks/useApi";
 import type { Asset } from "./assets";
@@ -19,12 +19,14 @@ export function Move({
   pool,
   batch,
   intent,
+  picker,
 }: {
   d: Deployment | undefined;
   asset: Asset | undefined;
   pool: Feed<"poolAsset">;
   batch: Feed<"currentBatch">;
   intent?: MoveIntent;
+  picker?: ReactNode;
 }) {
   const [mode, setMode] = useState<"convert" | "dark">(() => (new URLSearchParams(location.search).get("mode") === "dark" ? "dark" : "convert"));
   useEffect(() => {
@@ -35,6 +37,8 @@ export function Move({
   return (
     <div className="page move">
       <div className="card move-card">
+        <div className="move-top">
+        {picker}
         <div className="seg" role="tablist" aria-label="Move mode">
           {MODES.map((m) => (
             <button
@@ -52,6 +56,7 @@ export function Move({
             </button>
           ))}
           <span className="seg-thumb" style={{ transform: `translateX(${active === "dark" ? 100 : 0}%)` }} aria-hidden="true" />
+        </div>
         </div>
         {!asset || !d ? (
           <Skeleton w="100%" h="18em" />

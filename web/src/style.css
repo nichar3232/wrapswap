@@ -3360,3 +3360,44 @@ table.all-legs td {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* App header: the tabs sit just right of the logo; asset picker, network and wallet stay at the right edge. */
+.nav {
+  grid-template-columns: auto auto 1fr;
+  column-gap: 40px;
+}
+.nav > nav {
+  justify-self: start;
+}
+.nav > .wallet {
+  justify-self: end;
+}
+
+/* Asset picker: inside the per-asset tabs, not the header */
+.move-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.move-top > .seg {
+  flex: 1;
+}
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.page-head .page-title {
+  margin: 0;
+}
+@media (max-width: 720px) {
+  .move-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .asset-pick {
+    order: 0;
+  }
+}
