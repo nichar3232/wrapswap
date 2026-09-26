@@ -11,9 +11,9 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   await page.goto(webURL);
   await page.getByRole('button',{name:'Convert',exact:true}).click();
   await page.getByRole('button',{name:/connect wallet/i}).click();
-  await page.getByRole('textbox').first().fill(formatUnits(DEMO.parityFill.amountIn,DEMO.tokens.mcbAAPL.decimals));
+  await page.getByLabel('Conversion amount').fill(formatUnits(DEMO.parityFill.amountIn,DEMO.tokens.mcbAAPL.decimals));
   await expect(page.getByText('PARITY',{exact:true})).toBeVisible();
-  await expect(page.getByText(new RegExp(v.parityFill.feeBps.replace('.', '\\.')+'\\s*bps'))).toBeVisible();
+  await expect(page.getByTestId('fee-breakdown').getByText(new RegExp(v.parityFill.feeBps.replace('.', '\\.')+'\\s*bps'))).toBeVisible();
   const base=d.tokens.find(x=>x.symbol==='mcbAAPL')!;
   const quote=d.tokens.find(x=>x.symbol==='mAAPLx')!;
   const query=`?tokenIn=${base.address}&tokenOut=${quote.address}&amount=${DEMO.parityFill.amountIn}&kind=exactIn`;
@@ -23,7 +23,12 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   expect(before.fee.totalPips).toBe(v.parityFill.feePips);
   const onchain=await read('parityHook','quote',[d.pool.key,base.address.toLowerCase()===d.pool.key.currency0.toLowerCase(),DEMO.parityFill.amountSpecified],BigInt(before.block));
   for(const field of ['amountIn','amountOut','grossOut','shares','feeAmount'])expect(before[field]).toBe(onchain[field].toString());
-  await page.getByRole('button',{name:/^(approve.*convert|convert|swap)$/i}).click();
+  // Live Convert: ERC-20 approval to WrapSwapRouter, then swapExactIn with the displayed minimum output (§13).
+  const convert=page.getByRole('button',{name:/^convert through parityhook$/i});
+  await page.getByRole('button',{name:/^approve token$/i}).click();
+  await expect(convert).toBeEnabled({timeout:30000});
+  await convert.click();
+  await expect(page.getByText(/conversion confirmed/i)).toBeVisible({timeout:30000});
   await expect.poll(async()=> (await chain.readContract({address:base.address,abi:abis.IMockIssuerToken,functionName:'balanceOf',args:[account(1).address]})).toString()).toBe(v.end.demoMcbAAPL.toString());
   await waitHead();
   const fills=await api('/fills','FillListResponse');

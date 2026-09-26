@@ -9,3 +9,4 @@ for run in 1 2 3; do
 done
 diff -u logs/integration/run-1.json logs/integration/run-2.json
 diff -u logs/integration/run-1.json logs/integration/run-3.json
+npx playwright test e2e/scenarios --workers=1

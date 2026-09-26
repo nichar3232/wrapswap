@@ -12,7 +12,9 @@ export async function api(path:string,schema:any) {
   return body;
 }
 export async function waitHead() {
-  await expect.poll(async()=>{const h=await api('/health','HealthResponse');return h.ok && h.indexedBlock===h.headBlock;},{timeout:30000}).toBe(true);
+  // The API's headBlock can trail the chain; also require the indexer to reach the RPC head read here.
+  const target=BigInt(await rpcCall('eth_blockNumber') as string); // uncached, unlike getBlockNumber()
+  await expect.poll(async()=>{const h=await api('/health','HealthResponse');return h.ok && h.indexedBlock===h.headBlock && BigInt(h.indexedBlock)>=target;},{timeout:30000}).toBe(true);
 }
 export async function injectWallet(page:Page) {
   await page.exposeFunction('demoRPC', async ({method,params=[]}:any) => {
