@@ -1,0 +1,5 @@
+GasCommit:test_gas_commit() (gas: 183008)
+GasFallThrough:test_gas_fallThrough() (gas: 289366)
+GasParityFill:test_gas_parityFill() (gas: 283490)
+GasReveal:test_gas_reveal() (gas: 132344)
+GasSettle:test_gas_settle() (gas: 697551)

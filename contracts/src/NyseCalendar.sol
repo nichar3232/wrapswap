@@ -81,21 +81,31 @@ contract NyseCalendar is INyseCalendar, Ownable {
 
     /// @dev US DST: second Sunday of March 02:00 EST (07:00 UTC) to first Sunday of November 02:00 EDT (06:00 UTC).
     function _dst(uint256 ts) private pure returns (bool) {
-        uint256 y = 1970;
-        uint256 d = ts / 1 days;
-        while (d >= (_leap(y) ? 366 : 365)) {
-            d -= (_leap(y) ? 366 : 365);
-            y++;
-        }
-        uint256 jan = ts / 1 days - d;
-        uint256 march = jan + 31 + (_leap(y) ? 29 : 28);
-        uint256 nov = march + 245;
+        uint256 y = _yearOf(ts / 1 days);
+        uint256 march = _daysFromCivil(y, 3, 1);
+        uint256 nov = _daysFromCivil(y, 11, 1);
         uint256 secondSunday = march + (7 - (march + 4) % 7) % 7 + 7;
         uint256 firstSunday = nov + (7 - (nov + 4) % 7) % 7;
         return ts >= secondSunday * 1 days + 7 hours && ts < firstSunday * 1 days + 6 hours;
     }
 
-    function _leap(uint256 y) private pure returns (bool) {
-        return y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    /// @dev Gregorian year of a day number (days since 1970-01-01), Howard Hinnant's civil_from_days.
+    function _yearOf(uint256 z) private pure returns (uint256) {
+        z += 719468;
+        uint256 era = z / 146097;
+        uint256 doe = z - era * 146097;
+        uint256 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        uint256 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        uint256 mp = (5 * doy + 2) / 153;
+        return yoe + era * 400 + (mp >= 10 ? 1 : 0);
+    }
+
+    /// @dev Day number of a Gregorian date (month 3..12 only, which is all _dst needs), days_from_civil.
+    function _daysFromCivil(uint256 y, uint256 m, uint256 d) private pure returns (uint256) {
+        uint256 era = y / 400;
+        uint256 yoe = y - era * 400;
+        uint256 doy = (153 * (m - 3) + 2) / 5 + d - 1;
+        uint256 doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        return era * 146097 + doe - 719468;
     }
 }
