@@ -245,31 +245,33 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {IIssuerRegistry} from "./IIssuerRegistry.sol";
-import {INyseCalendar} from "./INyseCalendar.sol";
 import {IEligibility} from "./IEligibility.sol";
 
 /// @title IParityHook
 /// @notice Settlement engine for pools of two real issuer tokens of the same underlying security.
 /// @dev Pool: currency0/currency1 = the two issuer tokens (sorted), fee = DYNAMIC_FEE_FLAG, hooks = this.
 ///      Hook permissions: beforeInitialize | beforeSwap | afterSwap | beforeSwapReturnDelta (flags 0x20C8).
-///      Inventory = ERC-6909 claims owned by this hook in the PoolManager, excluding feesAccrued.
+///      Inventory = ERC-6909 claims owned by this hook in the PoolManager; fees stay in it (100% to the LP).
 ///      beforeSwap fills all-or-nothing from inventory via BeforeSwapDelta; otherwise returns ZERO_DELTA and the
 ///      swap falls through to concentrated liquidity on the same pool, after which afterSwap enforces the peg guard.
-///      Fees are pips (1e-6): total = min(BASE + ceil(SKEW * |skew|) + (open ? 0 : offHours), MAX), skew pre-trade.
-///      offHours = ceil(OFF_HOURS_MAX * |post-trade skew|) if the trade increases |skew|, else 0 (rebalancing lag:
-///      issuers cannot mint/redeem until the open). Post-trade skew moves the trade's canonical shares one-for-one
-///      (exact input: input shares; exact output: net output shares). FeeBreakdown.closedPips carries offHours;
-///      feeBreakdown(key) reports it for a marginal skew-increasing trade, quote() for the actual trade.
+///      Fees are pips (1e-6): total = baseFeePips + skewPips. baseFeePips is owner-settable (default 200 = 2 bps).
+///      skewPips = min(ceil(SKEW_FEE_PIPS * |post-trade skew|), SKEW_FEE_CAP_PIPS) when the trade increases |skew|,
+///      else 0. skew = (inv0Shares - inv1Shares) / (inv0Shares + inv1Shares) in canonical shares. The post-trade skew
+///      moves the trade's canonical shares one-for-one (exact input: input shares; exact output: net output shares).
 ///      amountSpecified < 0 = exact input, > 0 = exact output (pinned v4-core convention).
+///      hookData: empty, or abi.encode(uint8 1, address swapper, bytes32 uid) (96 bytes), or
+///      abi.encode(uint8 2, address swapper, bytes32 uid, address recipient) (128 bytes; recipient reported in Converted).
 interface IParityHook {
     struct FeeBreakdown {
         uint24 basePips;
         uint24 skewPips;
-        uint24 closedPips;
         uint24 totalPips;
-        /// @dev (inv0Shares - inv1Shares) * 1e18 / (inv0Shares + inv1Shares), truncated toward zero; 0 if empty.
+        /// @dev Pre-trade (inv0Shares - inv1Shares) * 1e18 / (inv0Shares + inv1Shares), truncated toward zero; 0 if empty.
         int256 skewX18;
-        bool marketOpen;
+        /// @dev Post-trade skew, same definition (equals skewX18 in the trade-less feeBreakdown view).
+        int256 postSkewX18;
+        /// @dev true when the trade does not increase |skew| (skewPips == 0).
+        bool reducesImbalance;
     }
 
     struct Quote {
@@ -299,15 +301,21 @@ interface IParityHook {
     event PoolRegistered(
         PoolId indexed poolId, address indexed currency0, address indexed currency1, bytes32 underlying, int24 tickSpacing
     );
-    event FeeQuoted(
-        PoolId indexed poolId,
-        uint24 totalPips,
-        uint24 basePips,
-        uint24 skewPips,
-        uint24 closedPips,
-        int256 skewX18,
-        bool marketOpen
+    /// @notice One inventory fill. Amounts: amountIn in `from` raw units; sharesOut, baseFee, skewFee in canonical
+    ///         shares (1e18) with sharesIn = sharesOut + baseFee + skewFee; postSkew 1e18 signed.
+    event Converted(
+        bytes32 indexed asset,
+        address indexed from,
+        address indexed to,
+        address sender,
+        address recipient,
+        uint256 amountIn,
+        uint256 sharesOut,
+        uint256 baseFee,
+        uint256 skewFee,
+        int256 postSkew
     );
+    event BaseFeeSet(uint24 basePips);
     event InventoryFill(
         PoolId indexed poolId,
         address indexed swapper,
@@ -334,7 +342,6 @@ interface IParityHook {
     event InventoryChanged(
         address indexed currency, address indexed actor, uint8 indexed reason, int256 delta, uint256 inventoryAfter
     );
-    event FeesSwept(address indexed currency, address indexed to, uint256 amount);
     event PegGuardStatus(
         PoolId indexed poolId, bool tripped, uint256 poolPriceX18, uint256 parityPriceX18, uint256 deviationBps
     );
@@ -349,34 +356,42 @@ interface IParityHook {
     error InsufficientInventory(address currency, uint256 available, uint256 requested);
     error InvalidHookData();
     error ZeroAmount();
+    error BaseFeeTooHigh(uint24 basePips, uint24 max);
 
-    function BASE_FEE_PIPS() external view returns (uint24);
+    function DEFAULT_BASE_FEE_PIPS() external view returns (uint24);
+    function MAX_BASE_FEE_PIPS() external view returns (uint24);
     function SKEW_FEE_PIPS() external view returns (uint24);
-    function OFF_HOURS_MAX_FEE_PIPS() external view returns (uint24);
-    function MAX_FEE_PIPS() external view returns (uint24);
+    function SKEW_FEE_CAP_PIPS() external view returns (uint24);
     function PEG_GUARD_BPS() external view returns (uint256);
     function HOOK_DATA_VERSION() external view returns (uint8);
 
     function poolManager() external view returns (IPoolManager);
     function registry() external view returns (IIssuerRegistry);
-    function calendar() external view returns (INyseCalendar);
     function eligibility() external view returns (IEligibility);
+
+    function baseFeePips() external view returns (uint24);
+    /// @notice Owner-only. basePips <= MAX_BASE_FEE_PIPS.
+    function setBaseFeePips(uint24 basePips) external;
 
     function isKeeper(address account) external view returns (bool);
     function setKeeper(address keeper, bool allowed) external;
 
     /// @notice Keeper-only. Pulls ERC20 from msg.sender and mints ERC-6909 claims to this hook.
     function depositInventory(Currency currency, uint256 amount) external;
-    /// @notice Keeper-only. Burns claims and sends ERC20 to `to`. Cannot touch feesAccrued.
+    /// @notice Keeper-only. Burns claims and sends ERC20 to `to` (inventory includes retained fees).
     function withdrawInventory(Currency currency, uint256 amount, address to) external;
-    /// @notice Owner-only. Burns fee claims and sends ERC20 to `to`.
-    function sweepFees(Currency currency, address to) external returns (uint256 amount);
 
     function inventory(Currency currency) external view returns (uint256);
     function inventoryShares(Currency currency) external view returns (uint256);
-    function feesAccrued(Currency currency) external view returns (uint256);
 
+    /// @notice Trade-less view: the fee a marginal |skew|-increasing trade pays now (skew at the current skew).
     function feeBreakdown(PoolKey calldata key) external view returns (FeeBreakdown memory);
+    /// @notice Exact-input Convert quote from inventory for `amountIn` of `fromWrapper` into `toWrapper` (both registered
+    ///         for `asset`). sharesOut, baseFee, skewFee in canonical shares (sharesIn = sharesOut + baseFee + skewFee).
+    function quote(bytes32 asset, address fromWrapper, address toWrapper, uint256 amountIn)
+        external
+        view
+        returns (uint256 sharesOut, uint256 baseFee, uint256 skewFee, int256 postSkew, bool reducesImbalance);
     function quote(PoolKey calldata key, bool zeroForOne, int256 amountSpecified)
         external
         view
@@ -393,12 +408,10 @@ Normative behaviour (the contracts lane implements exactly this):
 
 | Constant | Value |
 |---|---|
-| `BASE_FEE_PIPS` | 200 (2 bps) |
-| `SKEW_FEE_PIPS` | 1300 (13 bps at \|skew\| = 1) |
-| `OFF_HOURS_MAX_FEE_PIPS` | 1500 (15 bps at \|post-trade skew\| = 1). While `calendar.isOpen(block.timestamp)` is false a trade that increases \|skew\| pays `ceil(1500 · |post-trade skew|)`; a trade that leaves \|skew\| unchanged or reduces it pays 0. Post-trade skew moves the trade's canonical shares one-for-one (exact input: input shares; exact output: net output shares). Rationale: a same-share swap carries no underlying price risk; off-hours the only risk is rebalancing lag (issuers cannot mint/redeem until the open), which grows with skew. `feeBreakdown(key)` reports the marginal skew-increasing premium `ceil(1500 · |skew|)`; `quote()` and `beforeSwap` use the trade's own premium |
-| `MAX_FEE_PIPS` | 2500 (25 bps cap) |
+| `DEFAULT_BASE_FEE_PIPS` | 200 (2 bps). `baseFeePips` is owner-settable (`setBaseFeePips`, ≤ `MAX_BASE_FEE_PIPS` = 5000) |
+| `SKEW_FEE_PIPS` | 1500: skew fee = min(ceil(1500 · \|post-trade skew\|), `SKEW_FEE_CAP_PIPS` = 5000), charged only when the trade increases \|skew\| (else 0). Post-trade skew moves the trade's canonical shares one-for-one (exact input: input shares; exact output: net output shares). Total = base + skew; the whole fee stays in the hook's inventory (to the LP), the protocol takes 0 on Convert. No market-hours input. `feeBreakdown(key)` reports the marginal \|skew\|-increasing fee; `quote()` and `quote(asset, from, to, amountIn)` price the actual trade |
 | `PEG_GUARD_BPS` | 50 |
-| `HOOK_DATA_VERSION` | 1 |
+| `HOOK_DATA_VERSION` | 2 (v2 = v1 + recipient; v1 still accepted) |
 
 - `beforeInitialize`: `key.fee == DYNAMIC_FEE_FLAG` else `DynamicFeeRequired`; both currencies `registry.active` with
   equal `underlyingOf`, else `UnsupportedPool`; emits `PoolRegistered`.
@@ -433,16 +446,19 @@ pragma solidity ^0.8.26;
 
 import {IPoolManager} from "v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
-import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {IParityHook} from "./IParityHook.sol";
 import {IPriceOracle} from "./IPriceOracle.sol";
 import {IEligibility} from "./IEligibility.sol";
 
 /// @title IDarkCrossHook
-/// @notice Commit-reveal batch crossing of one issuer pair (baseToken, quoteToken) at an IPriceOracle midpoint.
-/// @dev Not attached to any pool (no hook permission flags). settle() runs inside one PoolManager.unlock: crossed
-///      amounts move between escrow balances; each residual with routeResidual=true is swapped exact-input into the
-///      ParityHook pool of the same pair, with ParityHook hookData v1 naming the trader as swapper.
+/// @notice Commit-reveal batch crossing of one issuer pair (baseToken, quoteToken) of one asset at an IPriceOracle
+///         midpoint no older than ORACLE_MAX_AGE (30 minutes).
+/// @dev Not attached to any pool (no hook permission flags). Opposite sides cross directly at the mid; the crossed
+///      volume pays CROSS_FEE_PIPS (1 bp) to protocolFeeRecipient (owner-settable), no skew. Every residual then falls
+///      through, inside one PoolManager.unlock, into the ParityHook pool of the same pair as an exact-input inventory
+///      fill at base + skew (to the LP), capped at the hook's available inventory; the unfilled part (and a residual
+///      that cannot fill at the trader's limit) stays with the committer (unlocked to escrow), never filled free.
+///      Proceeds go to the order's recipient: credited to escrow when it is the committer, transferred otherwise.
 ///      Batch = BATCH_BLOCKS blocks from batchOrigin: COMMIT_BLOCKS commit, REVEAL_BLOCKS reveal, remainder settle.
 ///      Prices are whole quote tokens per whole base token, 1e18 fixed point.
 interface IDarkCrossHook {
@@ -462,7 +478,7 @@ interface IDarkCrossHook {
         bool sellBase;
         uint256 amountIn;
         uint256 limitPriceX18;
-        bool routeResidual;
+        address recipient;
         uint256 crossedIn;
         uint256 residualIn;
     }
@@ -491,26 +507,29 @@ interface IDarkCrossHook {
         bool sellBase,
         uint256 amountIn,
         uint256 limitPriceX18,
-        bool routeResidual
+        address recipient
     );
     event RevealRejected(uint256 indexed batchId, address indexed trader, uint8 reason);
+    /// @notice Batch crossing summary: matchedShares = canonical shares of the crossed base amount; protocolFee =
+    ///         canonical shares of the 1 bp cross fees (both sides).
     event Crossed(
+        uint256 indexed batchId, bytes32 indexed asset, uint256 matchedShares, uint256 midpoint, uint256 protocolFee
+    );
+    /// @notice Per-trader crossed fill (token amounts; fee in the output token).
+    event CrossFilled(
         uint256 indexed batchId,
         address indexed trader,
+        address indexed recipient,
         bool sellBase,
         uint256 amountIn,
         uint256 amountOut,
-        uint256 feeAmount,
-        uint256 midX18
+        uint256 fee
     );
-    event ResidualRouted(
-        uint256 indexed batchId,
-        address indexed trader,
-        PoolId indexed poolId,
-        bool sellBase,
-        uint256 amountIn,
-        uint256 amountOut
-    );
+    /// @notice Residual filled from ParityHook inventory: shares = canonical shares in; baseFee/skewFee in shares.
+    event ResidualFilled(uint256 indexed batchId, address indexed user, uint256 shares, uint256 baseFee, uint256 skewFee);
+    /// @notice Residual not filled (inventory short, limit not met, or dust): returned to the committer's escrow.
+    event Unfilled(uint256 indexed batchId, address indexed user, uint256 sharesRefunded);
+    event ProtocolFeeRecipientSet(address indexed recipient);
     event ResidualSkipped(uint256 indexed batchId, address indexed trader, bytes reason);
     event Forfeited(uint256 indexed batchId, address indexed trader, address token, uint256 amount);
     event BatchSettled(
@@ -554,19 +573,22 @@ interface IDarkCrossHook {
     function baseToken() external view returns (address);
     function quoteToken() external view returns (address);
     function parityPoolKey() external view returns (PoolKey memory);
-    function treasury() external view returns (address);
+    function asset() external view returns (bytes32);
+    function protocolFeeRecipient() external view returns (address);
+    /// @notice Owner-only.
+    function setProtocolFeeRecipient(address recipient) external;
     function batchOrigin() external view returns (uint256);
 
     function currentBatch() external view returns (uint256 batchId, Phase phase, uint256 phaseEndsBlock);
     /// @notice keccak256(abi.encode(block.chainid, address(this), batchId, trader, sellBase, amountIn,
-    ///         limitPriceX18, routeResidual, salt)).
+    ///         limitPriceX18, recipient, salt)). recipient == address(0) means the committer.
     function commitHashOf(
         uint256 batchId,
         address trader,
         bool sellBase,
         uint256 amountIn,
         uint256 limitPriceX18,
-        bool routeResidual,
+        address recipient,
         bytes32 salt
     ) external view returns (bytes32);
 
@@ -580,7 +602,7 @@ interface IDarkCrossHook {
         external
         returns (bool accepted);
     /// @notice REVEAL phase of the batch the caller committed to.
-    function reveal(bool sellBase, uint256 amountIn, uint256 limitPriceX18, bool routeResidual, bytes32 salt)
+    function reveal(bool sellBase, uint256 amountIn, uint256 limitPriceX18, address recipient, bytes32 salt)
         external;
     /// @notice Permissionless. batchId < current, or batchId == current in SETTLE phase. Reverts OracleStale if the
     ///         mid is older than ORACLE_MAX_AGE at block.timestamp.
@@ -636,10 +658,9 @@ library CanonicalShares {
     function parityPriceX18(uint256 spt0, uint256 spt1) internal pure returns (uint256);                            // floor(spt0 * 1e18 / spt1)
     function skewX18(uint256 shares0, uint256 shares1) internal pure returns (int256);                              // trunc toward zero
     function skewPips(uint256 shares0, uint256 shares1, uint24 skewFeePips) internal pure returns (uint24);         // ceil
-    function offHoursPips(uint256 shares0, uint256 shares1, uint256 post0, uint256 post1) internal pure returns (uint24); // ceil(1500*|post skew|) iff |skew| grows, else 0
-    function marginalOffHoursPips(uint256 shares0, uint256 shares1) internal pure returns (uint24);             // ceil(1500*|skew|)
     function postTradeShares(uint256 shares0, uint256 shares1, bool zeroForOne, uint256 shares) internal pure returns (uint256, uint256);
-    function totalFeePips(uint256 shares0, uint256 shares1, uint256 post0, uint256 post1, bool marketOpen) internal pure returns (uint24); // capped
+    function increasesImbalance(uint256 shares0, uint256 shares1, uint256 post0, uint256 post1) internal pure returns (bool); // exact |post skew| > |skew|
+    function skewFeePips(uint256 shares0, uint256 shares1, uint256 post0, uint256 post1) internal pure returns (uint24);   // increases ? min(ceil(1500*|post skew|), 5000) : 0
     function feeOnGross(uint256 grossOut, uint24 feePips) internal pure returns (uint256);                         // ceil(gross * pips / 1e6)
     function grossForNet(uint256 netOut, uint24 feePips) internal pure returns (uint256);                          // ceil(net * 1e6 / (1e6 - pips))
     function poolPriceX18(uint160 sqrtPriceX96, uint8 dec0, uint8 dec1) internal pure returns (uint256);           // floor
@@ -660,9 +681,9 @@ eligibility or by the peg guard is visible only through the API's simulation (§
 <!-- BEGIN GENERATED: events -->
 | Contract | Event (indexed params marked) | topic0 |
 |---|---|---|
+| IParityHook | `BaseFeeSet(uint24 basePips)` | `0xb6636f3a867159cd52a46bcad51f6313ca8596a6a4a9f1254e62156f5eaf57fd` |
+| IParityHook | `Converted(bytes32 indexed asset, address indexed from, address indexed to, address sender, address recipient, uint256 amountIn, uint256 sharesOut, uint256 baseFee, uint256 skewFee, int256 postSkew)` | `0xc4bf65cf11201e0b77b9cdd71bde26e0733aa15051008c040f192571cd4e456f` |
 | IParityHook | `FallThrough(PoolId indexed poolId, address indexed swapper, address indexed sender, bool zeroForOne, uint8 reason, int128 amount0, int128 amount1, uint24 feePips, uint256 deviationBpsAfter)` | `0x08a5690319d08e67b2120f187209783d9f9feb7617e20d00a59267de8cef9d0e` |
-| IParityHook | `FeeQuoted(PoolId indexed poolId, uint24 totalPips, uint24 basePips, uint24 skewPips, uint24 closedPips, int256 skewX18, bool marketOpen)` | `0x70a33abfcb089e53dfc79c5d08579d7c73a8147d2faa33ee063a481d161f4fd4` |
-| IParityHook | `FeesSwept(address indexed currency, address indexed to, uint256 amount)` | `0x244e51bc38c1452fa8aaf487bcb4bca36c2baa3a5fbdb776b1eabd8dc6d277cd` |
 | IParityHook | `InventoryChanged(address indexed currency, address indexed actor, uint8 indexed reason, int256 delta, uint256 inventoryAfter)` | `0x167335e2f932a38f3d0d37a40a8762d258e478d874023b84bc2dfbdc5bb71de1` |
 | IParityHook | `InventoryFill(PoolId indexed poolId, address indexed swapper, address indexed sender, bool zeroForOne, bool exactInput, uint256 amountIn, uint256 amountOut, uint256 shares, uint256 feeAmount, uint24 feePips)` | `0xb3cbc8a811283975fbe6ea59fccba6de9456803108e9153f99ade1d6416afc22` |
 | IParityHook | `KeeperSet(address indexed keeper, bool allowed)` | `0x8dd62d4e1f60b96148552898e743aa2b571686baa26f4f1b647565dc3996c1a7` |
@@ -670,13 +691,16 @@ eligibility or by the peg guard is visible only through the API's simulation (§
 | IParityHook | `PoolRegistered(PoolId indexed poolId, address indexed currency0, address indexed currency1, bytes32 underlying, int24 tickSpacing)` | `0xb419fe0f6962531749e701dc0de5ed15cd668c91aac2ba9e3c43297289b62643` |
 | IDarkCrossHook | `BatchSettled(uint256 indexed batchId, uint256 midX18, uint64 midUpdatedAt, uint256 crossedBase, uint256 crossedQuote, uint256 residualBaseIn, uint256 residualQuoteIn, uint32 participants)` | `0x9ad14ebbb40ae19eb62a3ebce10099ab3dc79dabd3477dd3b42906f3204b38da` |
 | IDarkCrossHook | `Committed(uint256 indexed batchId, address indexed trader, bytes32 commitHash, address lockToken, uint256 locked)` | `0xbae78d1b7091b54681f1aab6629ff13d0a248169449e8de7cd772a2423e01a91` |
-| IDarkCrossHook | `Crossed(uint256 indexed batchId, address indexed trader, bool sellBase, uint256 amountIn, uint256 amountOut, uint256 feeAmount, uint256 midX18)` | `0x120c141ee2d80d9ad63fc08d6f5bfee2e6cc296db28c0e47bbff2163d108765a` |
+| IDarkCrossHook | `CrossFilled(uint256 indexed batchId, address indexed trader, address indexed recipient, bool sellBase, uint256 amountIn, uint256 amountOut, uint256 fee)` | `0xa907fe0fa50c8460838982940ca2f6dc551be4809b4b0d0681f1adbdc94117ba` |
+| IDarkCrossHook | `Crossed(uint256 indexed batchId, bytes32 indexed asset, uint256 matchedShares, uint256 midpoint, uint256 protocolFee)` | `0xf18e236e0df1dd10e30b6f838bf3502f0c6896f92cfba441130b2db9bf357e85` |
 | IDarkCrossHook | `Forfeited(uint256 indexed batchId, address indexed trader, address token, uint256 amount)` | `0x0a040e9fa8d18588360122b3c43fd8e3795efab941f6925f6ef84a1729f61904` |
 | IDarkCrossHook | `Funded(address indexed account, address indexed token, uint256 amount)` | `0x3b5083eec1a1116c56de5d6841cff8efc6a0aec9850e836ec509d6ce024ea561` |
-| IDarkCrossHook | `ResidualRouted(uint256 indexed batchId, address indexed trader, PoolId indexed poolId, bool sellBase, uint256 amountIn, uint256 amountOut)` | `0xc867dddaeae961373512a0256d29d1ea7ac187c80f7fecd1b24cbe4d2d0b47eb` |
+| IDarkCrossHook | `ProtocolFeeRecipientSet(address indexed recipient)` | `0x5034c7ac62cd0031ddf2f1dcde2858132dd886d61032c9b2d4a99f0490e80ee4` |
+| IDarkCrossHook | `ResidualFilled(uint256 indexed batchId, address indexed user, uint256 shares, uint256 baseFee, uint256 skewFee)` | `0x81f5f1b66c00855ddef3c64751971a20c3bd22236bf938cd957689a26e1f816b` |
 | IDarkCrossHook | `ResidualSkipped(uint256 indexed batchId, address indexed trader, bytes reason)` | `0xc85180a1b3169714c77f3582c5ef222e60d51f5846a365e8cf4a13a0c5a22a01` |
 | IDarkCrossHook | `RevealRejected(uint256 indexed batchId, address indexed trader, uint8 reason)` | `0x5f7d0c3a3c086232797f6a9cdef85b4c6c823e780889bb5720e950bdd3c9871d` |
-| IDarkCrossHook | `Revealed(uint256 indexed batchId, address indexed trader, bool sellBase, uint256 amountIn, uint256 limitPriceX18, bool routeResidual)` | `0x49b87e398756018e4521c2d4e3ca5366e380ca28626bacdd1e3a943ed553a8f2` |
+| IDarkCrossHook | `Revealed(uint256 indexed batchId, address indexed trader, bool sellBase, uint256 amountIn, uint256 limitPriceX18, address recipient)` | `0xa74706b900b53fcc1d4301d13045df588d754526783f83e4198b85e21a0a8eea` |
+| IDarkCrossHook | `Unfilled(uint256 indexed batchId, address indexed user, uint256 sharesRefunded)` | `0xc73e74fd574cdb7569ed0c699069b9ae36a17c5621828795c6f1347675541d62` |
 | IDarkCrossHook | `Withdrawn(address indexed account, address indexed token, uint256 amount)` | `0xd1c19fbcd4551a5edfb66d43d2e337c04837afda3482b42bdf569a8fccdae5fb` |
 | IEligibility | `DemoModeSet(bool enabled, address indexed setBy)` | `0x8a2dd1602e01058d2ced0ff32dcbe3a5f8e0e80f1bba26755fdf1e741e02f106` |
 | IEligibility | `EligibilityDenied(address indexed account, address indexed caller, uint8 indexed reason, bytes32 attestationUid)` | `0x8939d28f9ab6dc11a7e853547f0e5020ab59f18ac034eb7948472982ab3d1b48` |
@@ -2474,6 +2498,14 @@ Coverage: every §2 event lands in exactly one table (`raw_logs` additionally jo
 `IssuerAdded`/`IssuerRemoved`/`IssuerPaused`→`registry_events`; `KeeperSet`/`TrustedRouterSet`/`PusherSet`/
 `HolidaySet`/`EarlyCloseSet`/`AdapterPaused`/`TransfersPaused`→`admin_events`.
 
+
+**Final fee model (onchain, 2026-09-26) — events awaiting a backend projection.** No table yet; the indexer must add
+them: `Converted` (ParityHook fills: asset, from, to, sender, recipient, amountIn, sharesOut, baseFee, skewFee,
+postSkew), `CrossFilled` (per-trader dark fill), `ResidualFilled` and `Unfilled` (dark residual outcome), `BaseFeeSet`,
+`ProtocolFeeRecipientSet`. `Crossed` is now a per-batch summary (batchId, asset, matchedShares, midpoint, protocolFee).
+Removed from the contracts and to be dropped by the backend: `FeeQuoted`, `FeesSwept`, `ResidualRouted`, the
+`closedPips`/`marketOpen` fee fields, `feesAccrued`, `routeResidual`.
+
 ## 7. Crank contract
 
 One process (`services/crank`), signer = `DEMO_MNEMONIC` index 4 (anvil: `0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65`;
@@ -2639,36 +2671,36 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
   "parityFill": {
     "account": "demo", "tokenIn": "mcbAAPL", "tokenOut": "mAAPLx", "kind": "exactIn",
     "amountSpecified": "-100000000", "amountIn": "100000000", "shares": "101250000000000000000",
-    "grossOut": "101250000000000000000", "skewPips": 260
+    "grossOut": "101250000000000000000", "skewPips": 300
   },
   "dark": {
     "oracleMidX18": "1012500000000000000",
-    "crossFeePips": 500,
+    "crossFeePips": 100,
     "orders": {
       "counterpartyA": { "sellBase": true, "lockToken": "mcbAAPL", "amountIn": "60000000", "limitPriceX18": "1010000000000000000", "routeResidual": true },
       "counterpartyB": { "sellBase": false, "lockToken": "mAAPLx", "amountIn": "50625000000000000000", "limitPriceX18": "1015000000000000000", "routeResidual": false }
     },
     "crossedBase": "50000000",
     "crossedQuote": "50625000000000000000",
-    "crossFees": { "counterpartyA": "25312500000000000", "counterpartyB": "25000" },
-    "crossOut": { "counterpartyA": "50599687500000000000", "counterpartyB": "49975000" },
+    "crossFees": { "counterpartyA": "5062500000000000", "counterpartyB": "5000" },
+    "crossOut": { "counterpartyA": "50619937500000000000", "counterpartyB": "49995000" },
     "residual": {
       "account": "counterpartyA", "tokenIn": "mcbAAPL", "tokenOut": "mAAPLx", "amountIn": "10000000",
-      "shares": "10125000000000000000", "grossOut": "10125000000000000000", "minOut": "10100000000000000000", "skewPips": 247
+      "shares": "10125000000000000000", "grossOut": "10125000000000000000", "minOut": "10100000000000000000", "skewPips": 285
     }
   },
   "variants": {
     "anvil": {
       "network": "anvil", "chainId": 31337, "warpTimestamp": 1790692200, "marketOpen": true,
-      "parityFill": { "feePips": 460, "feeBps": "4.60", "feeAmount": "46575000000000000", "amountOut": "101203425000000000000" },
-      "residual": { "feePips": 447, "feeBps": "4.47", "feeAmount": "4525875000000000", "amountOut": "10120474125000000000" },
-      "end": { "demoMAAPLx": "601203425000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60720161625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "51100875000000000" }
+      "parityFill": { "feePips": 200, "feeBps": "2.00", "feeAmount": "20250000000000000", "amountOut": "101229750000000000000" },
+      "residual": { "feePips": 200, "feeBps": "2.00", "feeAmount": "2025000000000000", "amountOut": "10122975000000000000" },
+      "end": { "demoMAAPLx": "601229750000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60742912500000000000", "counterpartyBEscrowMcbAAPL": "49995000", "hookFeesMAAPLx": "22275000000000000" }
     },
     "unichain-sepolia": {
       "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200, "seedBlock": 63580006, "label": "Seed state at deploy block 63580006, market closed", "seedInventory": {"mcbAAPL": "8888888889", "mAAPLx": "11000000000000000000000"},
-      "parityFill": { "feePips": 330, "feeBps": "3.30", "feeAmount": "33412500000000000", "amountOut": "101216587500000000000" },
-      "residual": { "feePips": 317, "feeBps": "3.17", "feeAmount": "3209625000000000", "amountOut": "10121790375000000000" },
-      "end": { "demoMAAPLx": "601216587500000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60721477875000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "36622125000000000" }
+      "parityFill": { "feePips": 200, "feeBps": "2.00", "feeAmount": "20250000000000000", "amountOut": "101229750000000000000" },
+      "residual": { "feePips": 200, "feeBps": "2.00", "feeAmount": "2025000000000000", "amountOut": "10122975000000000000" },
+      "end": { "demoMAAPLx": "601229750000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60742912500000000000", "counterpartyBEscrowMcbAAPL": "49995000", "hookFeesMAAPLx": "22275000000000000" }
     }
   }
 }
@@ -2708,11 +2740,11 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
 | The hook is the settlement engine | `IParityHook` `beforeSwapReturnDelta` inventory fill; `IDarkCrossHook.settle` routes residuals into the ParityHook pool inside one `unlock` (`ResidualRouted`) |
 | Eligibility: Coinbase Verified Country (non-US) EAS, demoMode retained | `IEASEligibility` (`schemaUid`, `trustedAttester`, `restrictedCountry = "US"`), `IEligibility.demoMode/setDemoMode` + `DemoModeSet`; hooks revert `NotEligible` / commit returns false |
 | Demo video on local anvil with NYSE warped to OPEN | §10 Variant ANVIL `warpTimestamp = 1790692200`; `INyseCalendar.isOpen(block.timestamp)`; API `/nyse` `source: "chain"` |
-| Live Unichain Sepolia on real clock; off-hours premium (15 bps · \|post-trade skew\|, skew-increasing trades only) shown as a feature | `IParityHook.OFF_HOURS_MAX_FEE_PIPS = 1500`, `FeeBreakdown.closedPips/marketOpen`, `FeeQuoted`; §10 Variant UNICHAIN-SEPOLIA; `/fees`, `/nyse` |
+| Skew fee only on imbalance-increasing trades (cheap direction pays the 2 bps base only) | `IParityHook.quote(asset, from, to, amountIn)` → `reducesImbalance`, `FeeBreakdown.skewPips/postSkewX18`, `Converted` |
 | PoolKey sorted, DYNAMIC_FEE_FLAG, hooks = ParityHook | `beforeInitialize` `DynamicFeeRequired`; `Deployment.pool.key` rule (fee 8388608, hooks = parityHook) |
 | Inventory = hook-owned ERC-6909 claims, keeper deposit/withdraw | `IParityHook.depositInventory/withdrawInventory/isKeeper/setKeeper`, `inventory`, `InventoryChanged` |
 | All-or-nothing fill, else zero-delta fall-through; afterSwap 50 bps peg guard | `Quote.fillable`, `InventoryFill` vs `FallThrough`, `PEG_GUARD_BPS = 50`, `PegGuardTripped`, `pegStatus`, `checkPeg`/`PegGuardStatus` |
-| Fee = 2 + 13·\|skew\| + (closed and skew-increasing ? 15·\|post-trade skew\| : 0), cap 25 bps, skew in canonical shares | `BASE_FEE_PIPS/SKEW_FEE_PIPS/OFF_HOURS_MAX_FEE_PIPS/MAX_FEE_PIPS`, `FeeBreakdown`, `CanonicalShares.skewPips/offHoursPips/totalFeePips` |
+| Fee = base 2 bps (owner-settable) + min(15·\|post-trade skew\|, 50) bps on \|skew\|-increasing trades, fees to the LP | `baseFeePips/SKEW_FEE_PIPS/SKEW_FEE_CAP_PIPS`, `FeeBreakdown`, `CanonicalShares.skewFeePips/increasesImbalance` |
 | Rounding favours the hook; exact-in and exact-out with pinned sign convention | §1.7 quote rules, `CanonicalShares` Down/Up pairs, `IParityHook.quote(key, zeroForOne, int256 amountSpecified)` |
 | Adapters expose ratio (18-dec) and staleness/health | `IWrapperAdapter.sharesPerToken/ratio/health`, `AdapterUnhealthy`, `IIssuerRegistry.active` |
 | DarkCrossHook commit-reveal at IPriceOracle mid, residual into ParityHook pool in the same unlock | `IDarkCrossHook.commit/reveal/settle`, `IPriceOracle.getMid`, `ORACLE_MAX_AGE`, `ResidualRouted`, `parityPoolKey` |
@@ -2740,9 +2772,9 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 /// @title IWrapSwapRouter
 /// @notice Thin single-pool swap router over the v4 PoolManager with user-side slippage and deadline protection.
 /// @dev Payment is a plain ERC-20 allowance from msg.sender to the router (no Permit2). The router is a trusted
-///      router of the eligibility module, so it only forwards ParityHook hookData v1 naming msg.sender as swapper:
-///      empty hookData is replaced with abi.encode(uint8(1), msg.sender, bytes32(0)); any other hookData must be
-///      exactly that layout with swapper == msg.sender and is passed through unchanged (attestationUid preserved).
+///      router of the eligibility module, so it only ever names msg.sender as swapper: it forwards ParityHook hookData
+///      v2 abi.encode(uint8(2), msg.sender, attestationUid, recipient). Caller hookData is optional and, if given,
+///      must be v1 abi.encode(uint8(1), msg.sender, attestationUid) (only the uid is used). Output goes to recipient.
 interface IWrapSwapRouter {
     struct ExactInputParams {
         PoolKey key;

@@ -6,31 +6,33 @@ import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId} from "v4-core/src/types/PoolId.sol";
 import {Currency} from "v4-core/src/types/Currency.sol";
 import {IIssuerRegistry} from "./IIssuerRegistry.sol";
-import {INyseCalendar} from "./INyseCalendar.sol";
 import {IEligibility} from "./IEligibility.sol";
 
 /// @title IParityHook
 /// @notice Settlement engine for pools of two real issuer tokens of the same underlying security.
 /// @dev Pool: currency0/currency1 = the two issuer tokens (sorted), fee = DYNAMIC_FEE_FLAG, hooks = this.
 ///      Hook permissions: beforeInitialize | beforeSwap | afterSwap | beforeSwapReturnDelta (flags 0x20C8).
-///      Inventory = ERC-6909 claims owned by this hook in the PoolManager, excluding feesAccrued.
+///      Inventory = ERC-6909 claims owned by this hook in the PoolManager; fees stay in it (100% to the LP).
 ///      beforeSwap fills all-or-nothing from inventory via BeforeSwapDelta; otherwise returns ZERO_DELTA and the
 ///      swap falls through to concentrated liquidity on the same pool, after which afterSwap enforces the peg guard.
-///      Fees are pips (1e-6): total = min(BASE + ceil(SKEW * |skew|) + (open ? 0 : offHours), MAX), skew pre-trade.
-///      offHours = ceil(OFF_HOURS_MAX * |post-trade skew|) if the trade increases |skew|, else 0 (rebalancing lag:
-///      issuers cannot mint/redeem until the open). Post-trade skew moves the trade's canonical shares one-for-one
-///      (exact input: input shares; exact output: net output shares). FeeBreakdown.closedPips carries offHours;
-///      feeBreakdown(key) reports it for a marginal skew-increasing trade, quote() for the actual trade.
+///      Fees are pips (1e-6): total = baseFeePips + skewPips. baseFeePips is owner-settable (default 200 = 2 bps).
+///      skewPips = min(ceil(SKEW_FEE_PIPS * |post-trade skew|), SKEW_FEE_CAP_PIPS) when the trade increases |skew|,
+///      else 0. skew = (inv0Shares - inv1Shares) / (inv0Shares + inv1Shares) in canonical shares. The post-trade skew
+///      moves the trade's canonical shares one-for-one (exact input: input shares; exact output: net output shares).
 ///      amountSpecified < 0 = exact input, > 0 = exact output (pinned v4-core convention).
+///      hookData: empty, or abi.encode(uint8 1, address swapper, bytes32 uid) (96 bytes), or
+///      abi.encode(uint8 2, address swapper, bytes32 uid, address recipient) (128 bytes; recipient reported in Converted).
 interface IParityHook {
     struct FeeBreakdown {
         uint24 basePips;
         uint24 skewPips;
-        uint24 closedPips;
         uint24 totalPips;
-        /// @dev (inv0Shares - inv1Shares) * 1e18 / (inv0Shares + inv1Shares), truncated toward zero; 0 if empty.
+        /// @dev Pre-trade (inv0Shares - inv1Shares) * 1e18 / (inv0Shares + inv1Shares), truncated toward zero; 0 if empty.
         int256 skewX18;
-        bool marketOpen;
+        /// @dev Post-trade skew, same definition (equals skewX18 in the trade-less feeBreakdown view).
+        int256 postSkewX18;
+        /// @dev true when the trade does not increase |skew| (skewPips == 0).
+        bool reducesImbalance;
     }
 
     struct Quote {
@@ -60,15 +62,21 @@ interface IParityHook {
     event PoolRegistered(
         PoolId indexed poolId, address indexed currency0, address indexed currency1, bytes32 underlying, int24 tickSpacing
     );
-    event FeeQuoted(
-        PoolId indexed poolId,
-        uint24 totalPips,
-        uint24 basePips,
-        uint24 skewPips,
-        uint24 closedPips,
-        int256 skewX18,
-        bool marketOpen
+    /// @notice One inventory fill. Amounts: amountIn in `from` raw units; sharesOut, baseFee, skewFee in canonical
+    ///         shares (1e18) with sharesIn = sharesOut + baseFee + skewFee; postSkew 1e18 signed.
+    event Converted(
+        bytes32 indexed asset,
+        address indexed from,
+        address indexed to,
+        address sender,
+        address recipient,
+        uint256 amountIn,
+        uint256 sharesOut,
+        uint256 baseFee,
+        uint256 skewFee,
+        int256 postSkew
     );
+    event BaseFeeSet(uint24 basePips);
     event InventoryFill(
         PoolId indexed poolId,
         address indexed swapper,
@@ -95,7 +103,6 @@ interface IParityHook {
     event InventoryChanged(
         address indexed currency, address indexed actor, uint8 indexed reason, int256 delta, uint256 inventoryAfter
     );
-    event FeesSwept(address indexed currency, address indexed to, uint256 amount);
     event PegGuardStatus(
         PoolId indexed poolId, bool tripped, uint256 poolPriceX18, uint256 parityPriceX18, uint256 deviationBps
     );
@@ -110,34 +117,42 @@ interface IParityHook {
     error InsufficientInventory(address currency, uint256 available, uint256 requested);
     error InvalidHookData();
     error ZeroAmount();
+    error BaseFeeTooHigh(uint24 basePips, uint24 max);
 
-    function BASE_FEE_PIPS() external view returns (uint24);
+    function DEFAULT_BASE_FEE_PIPS() external view returns (uint24);
+    function MAX_BASE_FEE_PIPS() external view returns (uint24);
     function SKEW_FEE_PIPS() external view returns (uint24);
-    function OFF_HOURS_MAX_FEE_PIPS() external view returns (uint24);
-    function MAX_FEE_PIPS() external view returns (uint24);
+    function SKEW_FEE_CAP_PIPS() external view returns (uint24);
     function PEG_GUARD_BPS() external view returns (uint256);
     function HOOK_DATA_VERSION() external view returns (uint8);
 
     function poolManager() external view returns (IPoolManager);
     function registry() external view returns (IIssuerRegistry);
-    function calendar() external view returns (INyseCalendar);
     function eligibility() external view returns (IEligibility);
+
+    function baseFeePips() external view returns (uint24);
+    /// @notice Owner-only. basePips <= MAX_BASE_FEE_PIPS.
+    function setBaseFeePips(uint24 basePips) external;
 
     function isKeeper(address account) external view returns (bool);
     function setKeeper(address keeper, bool allowed) external;
 
     /// @notice Keeper-only. Pulls ERC20 from msg.sender and mints ERC-6909 claims to this hook.
     function depositInventory(Currency currency, uint256 amount) external;
-    /// @notice Keeper-only. Burns claims and sends ERC20 to `to`. Cannot touch feesAccrued.
+    /// @notice Keeper-only. Burns claims and sends ERC20 to `to` (inventory includes retained fees).
     function withdrawInventory(Currency currency, uint256 amount, address to) external;
-    /// @notice Owner-only. Burns fee claims and sends ERC20 to `to`.
-    function sweepFees(Currency currency, address to) external returns (uint256 amount);
 
     function inventory(Currency currency) external view returns (uint256);
     function inventoryShares(Currency currency) external view returns (uint256);
-    function feesAccrued(Currency currency) external view returns (uint256);
 
+    /// @notice Trade-less view: the fee a marginal |skew|-increasing trade pays now (skew at the current skew).
     function feeBreakdown(PoolKey calldata key) external view returns (FeeBreakdown memory);
+    /// @notice Exact-input Convert quote from inventory for `amountIn` of `fromWrapper` into `toWrapper` (both registered
+    ///         for `asset`). sharesOut, baseFee, skewFee in canonical shares (sharesIn = sharesOut + baseFee + skewFee).
+    function quote(bytes32 asset, address fromWrapper, address toWrapper, uint256 amountIn)
+        external
+        view
+        returns (uint256 sharesOut, uint256 baseFee, uint256 skewFee, int256 postSkew, bool reducesImbalance);
     function quote(PoolKey calldata key, bool zeroForOne, int256 amountSpecified)
         external
         view

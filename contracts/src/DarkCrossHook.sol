@@ -17,13 +17,18 @@ import {IDarkCrossHook} from "./interfaces/IDarkCrossHook.sol";
 import {IParityHook} from "./interfaces/IParityHook.sol";
 import {IPriceOracle} from "./interfaces/IPriceOracle.sol";
 import {IEligibility} from "./interfaces/IEligibility.sol";
+import {IWrapperAdapter} from "./interfaces/IWrapperAdapter.sol";
+import {IIssuerRegistry} from "./interfaces/IIssuerRegistry.sol";
+import {CanonicalShares} from "./libraries/CanonicalShares.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title DarkCrossHook
-/// @notice Commit-reveal batch crossing of one issuer pair at an IPriceOracle midpoint. Residuals are swapped
-///         exact-input into the ParityHook pool of the same pair inside the settlement unlock.
-/// @dev Not a pool hook (no permission flags, deployed with plain CREATE). No owner: everything is fixed at
-///      construction. Cross fees and forfeits are credited to the treasury's escrow balance.
-contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
+/// @notice Commit-reveal batch crossing of one issuer pair at an IPriceOracle midpoint (<= 30 minutes old). Residuals
+///         fall through, exact-input and capped at available inventory, into the ParityHook pool of the same pair
+///         inside the settlement unlock; the unfilled part is returned to the committer.
+/// @dev Not a pool hook (no permission flags, deployed with plain CREATE). The owner can only change the
+///      protocolFeeRecipient, which receives the 1 bp cross fees and unrevealed-commit forfeits (credited to its escrow).
+contract DarkCrossHook is IDarkCrossHook, IUnlockCallback, Ownable {
     using PoolIdLibrary for PoolKey;
     using SafeERC20 for IERC20;
 
@@ -31,9 +36,9 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
     uint256 public constant COMMIT_BLOCKS = 12;
     uint256 public constant REVEAL_BLOCKS = 6;
     uint256 public constant MAX_PARTICIPANTS = 64;
-    uint24 public constant CROSS_FEE_PIPS = 500;
+    uint24 public constant CROSS_FEE_PIPS = 100;
     uint256 public constant FORFEIT_BPS = 10;
-    uint64 public constant ORACLE_MAX_AGE = 900;
+    uint64 public constant ORACLE_MAX_AGE = 1800;
     /// @notice Minimum lock per commit in raw units: makes every unrevealed forfeit non-zero (>= 10 raw units).
     uint256 public constant MIN_LOCK = 10_000;
 
@@ -55,6 +60,7 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
     error Reentrancy();
     error TransferAmountMismatch(uint256 expected, uint256 received);
     error ResidualBelowMinOut(uint256 amountOut, uint256 minOut);
+    error ResidualNotFillable();
 
     IPoolManager public immutable poolManager;
     IParityHook public immutable parityHook;
@@ -62,8 +68,9 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
     IEligibility public immutable eligibility;
     address public immutable baseToken;
     address public immutable quoteToken;
-    address public immutable treasury;
+    bytes32 public immutable asset;
     uint256 public immutable batchOrigin;
+    address public protocolFeeRecipient;
     uint256 internal immutable baseUnit;
     uint256 internal immutable quoteUnit;
 
@@ -90,11 +97,14 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
         address baseToken_,
         address quoteToken_,
         PoolKey memory parityKey,
-        address treasury_
-    ) {
+        address protocolFeeRecipient_,
+        address owner_
+    ) Ownable(owner_) {
         (address lo, address hi) = baseToken_ < quoteToken_ ? (baseToken_, quoteToken_) : (quoteToken_, baseToken_);
+        bytes32 underlying = parityHook_.registry().underlyingOf(baseToken_);
         if (
-            baseToken_ == quoteToken_ || lo == address(0) || treasury_ == address(0)
+            baseToken_ == quoteToken_ || lo == address(0) || protocolFeeRecipient_ == address(0)
+                || underlying == bytes32(0) || underlying != parityHook_.registry().underlyingOf(quoteToken_)
                 || address(parityKey.hooks) != address(parityHook_) || Currency.unwrap(parityKey.currency0) != lo
                 || Currency.unwrap(parityKey.currency1) != hi || parityKey.fee != LPFeeLibrary.DYNAMIC_FEE_FLAG
         ) revert InvalidConfig();
@@ -104,11 +114,19 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
         eligibility = eligibility_;
         baseToken = baseToken_;
         quoteToken = quoteToken_;
-        treasury = treasury_;
+        asset = underlying;
+        protocolFeeRecipient = protocolFeeRecipient_;
+        emit ProtocolFeeRecipientSet(protocolFeeRecipient_);
         batchOrigin = block.number;
         baseUnit = 10 ** IERC20Metadata(baseToken_).decimals();
         quoteUnit = 10 ** IERC20Metadata(quoteToken_).decimals();
         _parityPoolKey = parityKey;
+    }
+
+    function setProtocolFeeRecipient(address recipient) external onlyOwner {
+        if (recipient == address(0)) revert InvalidConfig();
+        protocolFeeRecipient = recipient;
+        emit ProtocolFeeRecipientSet(recipient);
     }
 
     // ---------------------------------------------------------------- views
@@ -132,13 +150,11 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
         bool sellBase,
         uint256 amountIn,
         uint256 limitPriceX18,
-        bool routeResidual,
+        address recipient,
         bytes32 salt
     ) public view returns (bytes32) {
         return keccak256(
-            abi.encode(
-                block.chainid, address(this), batchId, trader, sellBase, amountIn, limitPriceX18, routeResidual, salt
-            )
+            abi.encode(block.chainid, address(this), batchId, trader, sellBase, amountIn, limitPriceX18, recipient, salt)
         );
     }
 
@@ -209,7 +225,7 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
         return true;
     }
 
-    function reveal(bool sellBase, uint256 amountIn, uint256 limitPriceX18, bool routeResidual, bytes32 salt)
+    function reveal(bool sellBase, uint256 amountIn, uint256 limitPriceX18, address recipient, bytes32 salt)
         external
         nonReentrant
     {
@@ -218,7 +234,7 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
         Order storage o = _orders[batchId][msg.sender];
         if (o.commitHash == bytes32(0)) revert UnknownCommit(batchId, msg.sender);
         if (o.revealed) revert AlreadyRevealed(batchId, msg.sender);
-        if (o.commitHash != commitHashOf(batchId, msg.sender, sellBase, amountIn, limitPriceX18, routeResidual, salt))
+        if (o.commitHash != commitHashOf(batchId, msg.sender, sellBase, amountIn, limitPriceX18, recipient, salt))
         {
             revert CommitMismatch(batchId, msg.sender);
         }
@@ -226,7 +242,7 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
         o.sellBase = sellBase;
         o.amountIn = amountIn;
         o.limitPriceX18 = limitPriceX18;
-        o.routeResidual = routeResidual;
+        o.recipient = recipient == address(0) ? msg.sender : recipient;
 
         uint8 reason;
         if (o.lockToken != (sellBase ? baseToken : quoteToken)) reason = REJECT_WRONG_LOCK_TOKEN;
@@ -238,7 +254,7 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
             return;
         }
         o.valid = true;
-        emit Revealed(batchId, msg.sender, sellBase, amountIn, limitPriceX18, routeResidual);
+        emit Revealed(batchId, msg.sender, sellBase, amountIn, limitPriceX18, o.recipient);
     }
 
     // ---------------------------------------------------------------- settlement
@@ -287,36 +303,47 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
         for (uint256 i; i < ps.length; i++) {
             address trader = ps[i];
             Order storage o = _orders[batchId][trader];
-            if (!o.valid || !o.routeResidual || o.residualIn == 0) continue;
-            try this.executeResidual(batchId, trader) {}
-            catch (bytes memory reason) {
-                emit ResidualSkipped(batchId, trader, reason);
+            if (!o.valid || o.residualIn == 0) continue;
+            uint256 fillIn = _fillableIn(o);
+            uint256 filled;
+            if (fillIn != 0) {
+                try this.executeResidual(batchId, trader, fillIn) returns (uint256 amountIn, uint256) {
+                    filled = amountIn;
+                } catch (bytes memory reason) {
+                    emit ResidualSkipped(batchId, trader, reason);
+                }
             }
+            if (filled < o.residualIn) emit Unfilled(batchId, trader, _shares(_inToken(o), o.residualIn - filled));
         }
         return "";
     }
 
-    /// @notice Self-call only, while settling: swaps one residual exact-input into the ParityHook pool naming the
-    ///         trader as swapper, enforces the trader's limit as minimum output, and settles the deltas.
-    function executeResidual(uint256 batchId, address trader) external returns (uint256 amountIn, uint256 amountOut) {
+    /// @notice Self-call only, while settling: fills `fillIn` of one residual exact-input from the ParityHook pool's
+    ///         inventory (never the AMM: reverts if the hook would not fill), naming the trader as swapper and the
+    ///         order's recipient, at no worse than the trader's limit; settles the deltas and delivers the output.
+    function executeResidual(uint256 batchId, address trader, uint256 fillIn)
+        external
+        returns (uint256 amountIn, uint256 amountOut)
+    {
         if (msg.sender != address(this) || _tload(SETTLING_SLOT) == 0) revert Unauthorized(msg.sender);
         Order storage o = _orders[batchId][trader];
         PoolKey memory key = _parityPoolKey;
         (address tokenIn, address tokenOut) = o.sellBase ? (baseToken, quoteToken) : (quoteToken, baseToken);
         bool zeroForOne = tokenIn == Currency.unwrap(key.currency0);
-        uint256 r = o.residualIn;
+        if (!parityHook.quote(key, zeroForOne, -int256(fillIn)).fillable) revert ResidualNotFillable();
+        (, uint256 baseFee, uint256 skewFee,,) = parityHook.quote(asset, tokenIn, tokenOut, fillIn);
         uint256 minOut = o.sellBase
-            ? FullMath.mulDiv(r, o.limitPriceX18 * quoteUnit, 1e18 * baseUnit)
-            : FullMath.mulDiv(r, 1e18 * baseUnit, o.limitPriceX18 * quoteUnit);
+            ? FullMath.mulDiv(fillIn, o.limitPriceX18 * quoteUnit, 1e18 * baseUnit)
+            : FullMath.mulDiv(fillIn, 1e18 * baseUnit, o.limitPriceX18 * quoteUnit);
 
         BalanceDelta d = poolManager.swap(
             key,
             SwapParams({
                 zeroForOne: zeroForOne,
-                amountSpecified: -int256(r),
+                amountSpecified: -int256(fillIn),
                 sqrtPriceLimitX96: zeroForOne ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1
             }),
-            abi.encode(uint8(1), trader, o.attestationUid)
+            abi.encode(uint8(2), trader, o.attestationUid, o.recipient)
         );
         (int128 dIn, int128 dOut) = zeroForOne ? (d.amount0(), d.amount1()) : (d.amount1(), d.amount0());
         amountIn = uint256(uint128(-dIn));
@@ -326,17 +353,17 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
         _resolve(key.currency1, d.amount1());
 
         _balances[trader][tokenIn].locked -= amountIn;
-        _balances[trader][tokenOut].available += amountOut;
+        _deliver(trader, o.recipient, tokenOut, amountOut);
         _residualUsed[batchId][trader] = amountIn;
         BatchResult storage res = _results[batchId];
         if (o.sellBase) res.residualBaseIn += amountIn;
         else res.residualQuoteIn += amountIn;
-        emit ResidualRouted(batchId, trader, key.toId(), o.sellBase, amountIn, amountOut);
+        emit ResidualFilled(batchId, trader, _shares(tokenIn, amountIn), baseFee, skewFee);
     }
 
     // ---------------------------------------------------------------- internals
 
-    /// @dev Steps 1-4 of INTERFACES.md §1.8. Returns whether any valid order has a routable residual.
+    /// @dev Steps 1-4 of INTERFACES.md §1.8. Returns whether any valid order has a residual.
     function _cross(uint256 batchId, uint256 mid, BatchResult storage r) internal returns (bool anyResidual) {
         address[] storage ps = _participants[batchId];
         uint256 n = ps.length;
@@ -359,6 +386,7 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
         uint256[2] memory prevAlloc;
         uint256[2] memory cumCrossed;
         uint256[2] memory prevGross;
+        uint256[2] memory fees;
         for (uint256 i; i < n; i++) {
             address trader = ps[i];
             Order storage o = _orders[batchId][trader];
@@ -380,24 +408,67 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
             }
             o.crossedIn = crossedIn;
             o.residualIn = o.amountIn - crossedIn;
-            if (o.routeResidual && o.residualIn != 0) anyResidual = true;
-            if (crossedIn != 0 || gross != 0) _creditCross(batchId, trader, o, crossedIn, gross, mid);
+            if (o.residualIn != 0) anyResidual = true;
+            if (crossedIn != 0 || gross != 0) {
+                uint256 fee = _creditCross(batchId, trader, o, crossedIn, gross);
+                fees[o.sellBase ? 1 : 0] += fee; // [0] base-token fees (quote sellers), [1] quote-token fees
+            }
+        }
+        if (crossedBase != 0) {
+            emit Crossed(
+                batchId, asset, _shares(baseToken, crossedBase), mid, _shares(baseToken, fees[0]) + _shares(quoteToken, fees[1])
+            );
         }
     }
 
-    function _creditCross(uint256 batchId, address trader, Order storage o, uint256 crossedIn, uint256 gross, uint256 mid)
+    function _creditCross(uint256 batchId, address trader, Order storage o, uint256 crossedIn, uint256 gross)
         internal
+        returns (uint256 fee)
     {
         address outToken = o.sellBase ? quoteToken : baseToken;
-        uint256 fee = FullMath.mulDivRoundingUp(gross, CROSS_FEE_PIPS, 1e6);
+        fee = FullMath.mulDivRoundingUp(gross, CROSS_FEE_PIPS, 1e6);
         uint256 amountOut = gross - fee;
         _balances[trader][o.lockToken].locked -= crossedIn;
-        _balances[trader][outToken].available += amountOut;
-        _balances[treasury][outToken].available += fee;
-        emit Crossed(batchId, trader, o.sellBase, crossedIn, amountOut, fee, mid);
+        _deliver(trader, o.recipient, outToken, amountOut);
+        _balances[protocolFeeRecipient][outToken].available += fee;
+        emit CrossFilled(batchId, trader, o.recipient, o.sellBase, crossedIn, amountOut, fee);
     }
 
-    /// @dev Step 6: forfeit unrevealed commits to the treasury, then unlock everything that remains.
+    /// @dev Proceeds to the committer stay in its escrow (withdrawable); to anyone else they are transferred.
+    function _deliver(address trader, address recipient, address token, uint256 amount) internal {
+        if (amount == 0) return;
+        if (recipient == trader) _balances[trader][token].available += amount;
+        else IERC20(token).safeTransfer(recipient, amount);
+    }
+
+    /// @dev Largest exact input whose parity gross output fits the hook's inventory of the output token:
+    ///      fromSharesDown(toSharesDown(inventoryOut)) of the input, capped at the residual.
+    function _fillableIn(Order storage o) internal view returns (uint256) {
+        (address tokenIn, address tokenOut) = o.sellBase ? (baseToken, quoteToken) : (quoteToken, baseToken);
+        (uint256 sptOut, uint8 decOut) = _ratio(tokenOut);
+        (uint256 sptIn, uint8 decIn) = _ratio(tokenIn);
+        uint256 maxShares = CanonicalShares.toSharesDown(parityHook.inventory(Currency.wrap(tokenOut)), sptOut, decOut);
+        uint256 maxIn = CanonicalShares.fromSharesDown(maxShares, sptIn, decIn);
+        return o.residualIn < maxIn ? o.residualIn : maxIn;
+    }
+
+    function _inToken(Order storage o) internal view returns (address) {
+        return o.sellBase ? baseToken : quoteToken;
+    }
+
+    function _shares(address token, uint256 amount) internal view returns (uint256) {
+        (uint256 spt, uint8 dec) = _ratio(token);
+        return CanonicalShares.toSharesDown(amount, spt, dec);
+    }
+
+    function _ratio(address token) internal view returns (uint256 spt, uint8 decimals) {
+        IWrapperAdapter adapter = IWrapperAdapter(parityHook.registry().adapterOf(token));
+        (spt,) = adapter.ratio();
+        decimals = adapter.tokenDecimals();
+    }
+
+    /// @dev Step 6: forfeit unrevealed commits to the protocolFeeRecipient, then unlock everything that remains
+    ///      (including any unfilled residual) back to the committer.
     function _release(uint256 batchId) internal {
         address[] storage ps = _participants[batchId];
         for (uint256 i; i < ps.length; i++) {
@@ -409,7 +480,7 @@ contract DarkCrossHook is IDarkCrossHook, IUnlockCallback {
                 uint256 penalty = o.locked * FORFEIT_BPS / 1e4;
                 remaining -= penalty;
                 b.locked -= penalty;
-                _balances[treasury][o.lockToken].available += penalty;
+                _balances[protocolFeeRecipient][o.lockToken].available += penalty;
                 emit Forfeited(batchId, trader, o.lockToken, penalty);
             }
             b.locked -= remaining;

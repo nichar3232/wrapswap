@@ -37,7 +37,7 @@ contract TestShareFaucetTest is Test {
         faucet.claim();
         vm.warp(block.timestamp + 1 days - 1);
         vm.prank(judge);
-        vm.expectRevert(abi.encodeWithSelector(TestShareFaucet.CooldownActive.selector, block.timestamp + 1));
+        vm.expectRevert(abi.encodeWithSelector(TestShareFaucet.CooldownActive.selector, 1)); // seconds remaining
         faucet.claim();
         vm.warp(block.timestamp + 1);
         assertEq(faucet.nextClaimAt(judge), 0);

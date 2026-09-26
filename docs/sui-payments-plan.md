@@ -137,7 +137,6 @@ New: `contracts/src/ShareVault.sol`.
 deposit(address issuerToken, uint256 amount, bytes32 suiRecipientTag) -> uint256 uMinted
 settleWithdrawals(Withdrawal[] calldata ws, bytes calldata auth)
 reserves() -> (uint256 uHeld, uint256 suiTotalMirror)
-sweepFees(Currency, address)
 ```
 
 `Withdrawal = (bytes32 commitment, address recipient, address targetIssuerToken, uint256 shares, uint256 maxFeeBps)`.
@@ -155,7 +154,7 @@ Per-withdrawal isolation, following the `ResidualSkipped` precedent: a single fa
 
 Eligibility: before delivering a gated wrapper, verify the recipient's EAS attestation against the trusted attester, exactly as `DarkCrossHook` does, with `demoMode` to disable locally. An ineligible recipient is skipped with a legible reason, not silently dropped.
 
-Off-hours: `NyseCalendar` does not block a withdrawal. ParityHook's off-hours fee component applies instead, so payments settle on weekends at a wider fee.
+Market hours: nothing blocks a withdrawal on weekends; ParityHook's fee (2 bps base + a skew fee only when the conversion deepens inventory imbalance) applies at all hours.
 
 ## 7. Flows
 

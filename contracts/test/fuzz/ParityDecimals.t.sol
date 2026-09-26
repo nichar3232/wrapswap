@@ -16,7 +16,6 @@ import {LPFeeLibrary} from "v4-core/src/libraries/LPFeeLibrary.sol";
 import {TransientStateLibrary} from "v4-core/src/libraries/TransientStateLibrary.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {IssuerRegistry} from "../../src/IssuerRegistry.sol";
-import {NyseCalendar} from "../../src/NyseCalendar.sol";
 import {EASEligibility} from "../../src/EASEligibility.sol";
 import {ParityHook} from "../../src/ParityHook.sol";
 import {StaticAdapter} from "../../src/adapters/StaticAdapter.sol";
@@ -35,7 +34,6 @@ contract ParityDecimalsTest is Test {
     IPoolManager manager;
     PoolSwapTest router;
     IssuerRegistry registry;
-    NyseCalendar calendar;
     EASEligibility eligibility;
 
     function setUp() public {
@@ -43,7 +41,6 @@ contract ParityDecimalsTest is Test {
         manager = IPoolManager(address(new PoolManager(address(this))));
         router = new PoolSwapTest(manager);
         registry = new IssuerRegistry(address(this));
-        calendar = new NyseCalendar(address(this));
         eligibility = new EASEligibility(address(this), address(0), address(0), bytes32(0), address(0), "US");
         eligibility.setDemoMode(true);
     }
@@ -65,7 +62,7 @@ contract ParityDecimalsTest is Test {
         registry.add(address(new StaticAdapter(atB, "X", "static", sptB, address(this))));
         deployCodeTo(
             "ParityHook.sol:ParityHook",
-            abi.encode(address(manager), address(registry), address(calendar), address(eligibility), address(this)),
+            abi.encode(address(manager), address(registry), address(eligibility), address(this)),
             HOOK_ADDR
         );
         c.hook = ParityHook(HOOK_ADDR);
@@ -102,7 +99,7 @@ contract ParityDecimalsTest is Test {
         assertGe(q.feeAmount * 1e6, q.grossOut * pips, "fee ceil");
 
         tIn.mint(address(this), q.amountIn);
-        uint256 feesBefore = c.hook.feesAccrued(Currency.wrap(address(tOut)));
+        uint256 invOutBefore = c.hook.inventory(Currency.wrap(address(tOut)));
         BalanceDelta d = router.swap(
             c.key,
             SwapParams(z, amt, z ? TickMath.MIN_SQRT_PRICE + 1 : TickMath.MAX_SQRT_PRICE - 1),
@@ -111,11 +108,11 @@ contract ParityDecimalsTest is Test {
         );
         assertEq(z ? d.amount0() : d.amount1(), -int128(int256(q.amountIn)), "exact in delta");
         assertEq(z ? d.amount1() : d.amount0(), int128(int256(q.amountOut)), "exact out delta");
-        assertEq(c.hook.feesAccrued(Currency.wrap(address(tOut))) - feesBefore, q.feeAmount);
+        assertEq(invOutBefore - c.hook.inventory(Currency.wrap(address(tOut))), q.amountOut, "fee stays in inventory");
         assertEq(manager.getNonzeroDeltaCount(), 0);
         for (uint256 i; i < 2; i++) {
             Currency cc = i == 0 ? c.key.currency0 : c.key.currency1;
-            assertEq(manager.balanceOf(HOOK_ADDR, cc.toId()), c.hook.inventory(cc) + c.hook.feesAccrued(cc));
+            assertEq(manager.balanceOf(HOOK_ADDR, cc.toId()), c.hook.inventory(cc));
         }
     }
 

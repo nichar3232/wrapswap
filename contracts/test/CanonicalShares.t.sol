@@ -35,16 +35,16 @@ contract CanonicalSharesHarness {
         return CanonicalShares.skewPips(a, b, f);
     }
 
-    function totalFeePips(uint256 a, uint256 b, uint256 p0, uint256 p1, bool open) external pure returns (uint24) {
-        return CanonicalShares.totalFeePips(a, b, p0, p1, open);
+    function skewFeePips(uint256 a, uint256 b, uint256 p0, uint256 p1) external pure returns (uint24) {
+        return CanonicalShares.skewFeePips(a, b, p0, p1);
     }
 
-    function offHoursPips(uint256 a, uint256 b, uint256 p0, uint256 p1) external pure returns (uint24) {
-        return CanonicalShares.offHoursPips(a, b, p0, p1);
+    function increasesImbalance(uint256 a, uint256 b, uint256 p0, uint256 p1) external pure returns (bool) {
+        return CanonicalShares.increasesImbalance(a, b, p0, p1);
     }
 
-    function marginalOffHoursPips(uint256 a, uint256 b) external pure returns (uint24) {
-        return CanonicalShares.marginalOffHoursPips(a, b);
+    function capSkewFee(uint24 pips) external pure returns (uint24) {
+        return CanonicalShares.capSkewFee(pips);
     }
 
     function postTradeShares(uint256 a, uint256 b, bool zeroForOne, uint256 shares)
@@ -100,17 +100,17 @@ contract CanonicalSharesTest is Test {
         assertEq(h.skewX18(0, 0), 0);
         assertEq(h.skewPips(8100e18, 12150e18, 1300), 260);
         assertEq(h.skewPips(0, 0, 1300), 0);
-        // Fees. The §10 parity fill (101.25 shares of mcbAAPL in) reduces |skew| 0.20 -> 0.19: no off-hours premium.
-        assertEq(h.totalFeePips(8100e18, 12150e18, 8201.25e18, 12048.75e18, true), 460);
-        assertEq(h.totalFeePips(8100e18, 12150e18, 8201.25e18, 12048.75e18, false), 460);
-        // The same size the other way increases |skew| to 0.21: + ceil(1500 * 0.21) = 315 pips off-hours.
-        assertEq(h.totalFeePips(8100e18, 12150e18, 7998.75e18, 12251.25e18, true), 460);
-        assertEq(h.totalFeePips(8100e18, 12150e18, 7998.75e18, 12251.25e18, false), 775);
-        assertEq(h.marginalOffHoursPips(8100e18, 12150e18), 300);
-        assertEq(h.totalFeePips(0, 0, 0, 0, true), 200);
-        assertEq(h.feeOnGross(101.25e18, 460), 46575000000000000);
-        assertEq(h.feeOnGross(101.25e18, 775), 78468750000000000);
-        assertEq(h.grossForNet(101.25e18 - 46575000000000000, 460), 101.25e18);
+        // Skew fee. The §10 parity fill (101.25 shares of mcbAAPL in) reduces |skew| 0.20 -> 0.19: skew fee 0.
+        assertEq(h.skewFeePips(8100e18, 12150e18, 8201.25e18, 12048.75e18), 0);
+        assertFalse(h.increasesImbalance(8100e18, 12150e18, 8201.25e18, 12048.75e18));
+        // The same size the other way increases |skew| to 0.21: ceil(1500 * 0.21) = 315 pips.
+        assertEq(h.skewFeePips(8100e18, 12150e18, 7998.75e18, 12251.25e18), 315);
+        assertTrue(h.increasesImbalance(8100e18, 12150e18, 7998.75e18, 12251.25e18));
+        assertEq(h.skewFeePips(0, 0, 0, 0), 0);
+        // Base fee 200 pips on the §10 gross.
+        assertEq(h.feeOnGross(101.25e18, 200), 20250000000000000);
+        assertEq(h.feeOnGross(101.25e18, 515), 52143750000000000);
+        assertEq(h.grossForNet(101.25e18 - 20250000000000000, 200), 101.25e18);
         assertEq(h.grossForNet(0, 460), 0);
         // Pool price: exact floor (reference computed with arbitrary precision) and within 1 bps of parity.
         uint256 p = h.poolPriceX18(SQRT_MCB_C0, 6, 18);
@@ -252,48 +252,38 @@ contract CanonicalSharesTest is Test {
         h.deviationBps(1, 0);
     }
 
-    function test_totalFeeCappedAt2500() public view {
-        // |skew| 0.90 -> 0.95 off-hours: 200 + 1170 + 1425 = 2795, capped.
-        assertEq(h.totalFeePips(950e18, 50e18, 975e18, 25e18, false), 2500);
-        assertEq(h.totalFeePips(950e18, 50e18, 975e18, 25e18, true), 1370);
-        // Fully one-sided: |skew| cannot grow, so off-hours adds nothing; base + skew = 1500.
-        assertEq(h.totalFeePips(1e18, 0, 2e18, 0, false), 1500);
-        assertEq(h.totalFeePips(type(uint128).max, 0, type(uint128).max, 0, false), 1500);
-        // From an empty book any fill is maximally skewing.
-        assertEq(h.offHoursPips(0, 0, 1e18, 0), 1500);
+    function test_skewFeeCap() public view {
+        // min(15 bps * |post skew|, 50 bps): the cap clamps any value above 5000 pips ...
+        assertEq(h.capSkewFee(5000), 5000);
+        assertEq(h.capSkewFee(5001), 5000);
+        assertEq(h.capSkewFee(type(uint24).max), 5000);
+        assertEq(h.capSkewFee(1500), 1500);
+        // ... but |skew| <= 1 bounds the uncapped fee at 1500 pips (15 bps), reached only at a one-sided book.
+        assertEq(h.skewFeePips(0, 0, 1e18, 0), 1500);
+        assertEq(h.skewFeePips(1e18, 1e18, 2e18, 0), 1500);
+        // Already one-sided: |skew| cannot grow, so no skew fee.
+        assertEq(h.skewFeePips(1e18, 0, 2e18, 0), 0);
     }
 
-    function test_offHoursBalancedPoolIsNearBase() public view {
-        // 100 shares into a balanced 10k/10k book: |post skew| = 0.01 -> ceil(15) pips; total 2.15 bps.
-        assertEq(h.offHoursPips(10000e18, 10000e18, 10100e18, 9900e18), 15);
-        assertEq(h.totalFeePips(10000e18, 10000e18, 10100e18, 9900e18, false), 215);
-        assertEq(h.totalFeePips(10000e18, 10000e18, 10100e18, 9900e18, true), 200);
-        assertEq(h.marginalOffHoursPips(10000e18, 10000e18), 0);
+    function test_skewFeeBalancedPoolIsNearZero() public view {
+        // 100 shares into a balanced 10k/10k book: |post skew| = 0.01 -> ceil(15) pips (0.15 bps).
+        assertEq(h.skewFeePips(10000e18, 10000e18, 10100e18, 9900e18), 15);
+        assertEq(h.skewFeePips(10000e18, 10000e18, 9900e18, 10100e18), 15);
     }
 
-    function test_offHoursImbalanceIncreasing() public view {
-        // |skew| 0.10 -> 0.12 (share-for-share move of 200 out of 20k): premium ceil(1500 * 0.12) = 180.
-        assertEq(h.offHoursPips(11000e18, 9000e18, 11200e18, 8800e18), 180);
-        assertEq(h.totalFeePips(11000e18, 9000e18, 11200e18, 8800e18, false), 200 + 130 + 180);
-        // Mirror orientation pays the same.
-        assertEq(h.totalFeePips(9000e18, 11000e18, 8800e18, 11200e18, false), 510);
+    function test_skewFeeImbalanceIncreasing() public view {
+        // |skew| 0.10 -> 0.12 (share-for-share move of 200 out of 20k): ceil(1500 * 0.12) = 180, either orientation.
+        assertEq(h.skewFeePips(11000e18, 9000e18, 11200e18, 8800e18), 180);
+        assertEq(h.skewFeePips(9000e18, 11000e18, 8800e18, 11200e18), 180);
     }
 
-    function test_offHoursRebalancingPaysNothing() public view {
-        // |skew| 0.10 -> 0.08, and a trade that crosses through balance to a smaller |skew| (0.10 -> 0.05).
-        assertEq(h.offHoursPips(11000e18, 9000e18, 10800e18, 9200e18), 0);
-        assertEq(h.offHoursPips(11000e18, 9000e18, 9500e18, 10500e18), 0);
-        assertEq(h.totalFeePips(11000e18, 9000e18, 10800e18, 9200e18, false), 330);
+    function test_skewFeeRebalancingPaysNothing() public view {
+        // |skew| 0.10 -> 0.08, and through balance to a smaller |skew| (0.10 -> 0.05).
+        assertEq(h.skewFeePips(11000e18, 9000e18, 10800e18, 9200e18), 0);
+        assertEq(h.skewFeePips(11000e18, 9000e18, 9500e18, 10500e18), 0);
         // Crossing to an equal |skew| on the other side is not an increase; beyond it is.
-        assertEq(h.offHoursPips(11000e18, 9000e18, 9000e18, 11000e18), 0);
-        assertEq(h.offHoursPips(11000e18, 9000e18, 8999e18, 11001e18), 151);
-    }
-
-    function test_marketOpenUnchanged() public view {
-        // Open market: base + pre-trade skew only, whatever the trade does.
-        assertEq(h.totalFeePips(8100e18, 12150e18, 7998.75e18, 12251.25e18, true), 460);
-        assertEq(h.totalFeePips(1e18, 0, 1e18, 0, true), 1500);
-        assertEq(h.totalFeePips(1, 1, 2, 0, true), 200);
+        assertEq(h.skewFeePips(11000e18, 9000e18, 9000e18, 11000e18), 0);
+        assertEq(h.skewFeePips(11000e18, 9000e18, 8999e18, 11001e18), 151);
     }
 
     function test_postTradeShares() public view {
@@ -308,23 +298,19 @@ contract CanonicalSharesTest is Test {
         assertEq(b, 0);
     }
 
-    function testFuzz_totalFeeBounds(uint256 s0, uint256 s1, uint256 size, bool zeroForOne, bool open) public view {
+    function testFuzz_skewFeeOnlyOnIncrease(uint256 s0, uint256 s1, uint256 size, bool zeroForOne) public view {
         s0 = bound(s0, 0, 1 << 120);
         s1 = bound(s1, 0, 1 << 120);
         size = bound(size, 0, 1 << 120);
         (uint256 p0, uint256 p1) = h.postTradeShares(s0, s1, zeroForOne, size);
-        uint24 off = h.offHoursPips(s0, s1, p0, p1);
-        uint24 t = h.totalFeePips(s0, s1, p0, p1, open);
-        assertLe(off, 1500);
-        assertLe(t, 2500);
-        assertGe(t, 200);
-        uint256 raw = 200 + uint256(h.skewPips(s0, s1, 1300)) + (open ? 0 : off);
-        assertEq(t, raw > 2500 ? 2500 : raw);
-        // A premium is only ever charged when |skew| strictly grows (cross-multiplied, exact).
+        uint24 fee = h.skewFeePips(s0, s1, p0, p1);
+        assertLe(fee, 1500);
         uint256 d = s0 > s1 ? s0 - s1 : s1 - s0;
         uint256 pd = p0 > p1 ? p0 - p1 : p1 - p0;
-        if (off > 0 && s0 + s1 > 0) assertGt(pd * (s0 + s1), d * (p0 + p1));
-        if (pd * (s0 + s1) <= d * (p0 + p1) && s0 + s1 > 0) assertEq(off, 0);
+        bool up = s0 + s1 == 0 ? pd > 0 : pd * (s0 + s1) > d * (p0 + p1);
+        assertEq(h.increasesImbalance(s0, s1, p0, p1), up);
+        if (!up) assertEq(fee, 0);
+        else assertEq(fee, h.skewPips(p0, p1, 1500));
     }
 
     // ---------------------------------------------------------------- reference

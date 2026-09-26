@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# One full Dark Cross batch on Unichain Sepolia (final manifest shape) with the §10 orders: counterparty A (index 2)
+# sells 60 base, B (index 3) sells 50.625 quote delivering to index 1 as recipient -> 50 base crossed at the mid, A's
+# 10 base residual falls through to ParityHook. cast (not forge) because 1 s blocks leave a 12 s commit / 6 s reveal
+# window. Env: DEMO_MNEMONIC, DEPLOYER_PRIVATE_KEY (oracle pusher), CRANK_PRIVATE_KEY. Arg: asset index (default 0 = AAPL).
+cd "$(dirname "$0")/../.."; I=${1:-0}
+R=https://sepolia.unichain.org; M=deployments/unichain-sepolia.json
+DK=$(jq -r ".assets[$I].darkCross" $M); A=$(jq -r ".assets[$I].wrappers[0].token" $M); X=$(jq -r ".assets[$I].wrappers[1].token" $M)
+pk() { cast wallet private-key --mnemonic "$DEMO_MNEMONIC" --mnemonic-index "$1"; }
+addr() { cast wallet address --mnemonic "$DEMO_MNEMONIC" --mnemonic-index "$1"; }
+PK2=$(pk 2); PK3=$(pk 3); A2=$(addr 2); A3=$(addr 3); REC=$(addr 1)
+Z=0x0000000000000000000000000000000000000000
+ZB=0x0000000000000000000000000000000000000000000000000000000000000000
+echo "fund escrow"
+avail() { cast call $DK 'balances(address,address)(uint256,uint256)' $1 $2 -r $R | head -1 | awk '{print $1}'; }
+lt() { awk -v a="$1" -v b="$2" 'BEGIN{exit !(a+0 < b+0)}'; }
+if lt "$(avail $A2 $A)" 60000000; then
+  cast send $A 'approve(address,uint256)' $DK 60000000 --private-key $PK2 -r $R >/dev/null; sleep 3
+  cast send $DK 'fund(address,uint256)' $A 60000000 --private-key $PK2 -r $R >/dev/null; sleep 3
+fi
+if lt "$(avail $A3 $X)" 50625000000000000000; then
+  cast send $X 'approve(address,uint256)' $DK 50625000000000000000 --private-key $PK3 -r $R >/dev/null; sleep 3
+  cast send $DK 'fund(address,uint256)' $X 50625000000000000000 --private-key $PK3 -r $R >/dev/null; sleep 3
+fi
+echo "escrow A2 $(avail $A2 $A) A3 $(avail $A3 $X)"
+phase() { cast call $DK 'currentBatch()(uint256,uint8,uint256)' -r $R | awk '{print $1}' | tr '\n' ' '; }
+for i in $(seq 1 120); do read b p e <<<"$(phase)"; h=$(cast block-number -r $R); [[ $p == 0 && $((e-h)) -ge 8 ]] && break; sleep 0.5; done
+echo "commit batch $b (ends $e, head $h)"
+S2=$(cast to-uint256 2); S3=$(cast to-uint256 3)
+H2=$(cast call $DK 'commitHashOf(uint256,address,bool,uint256,uint256,address,bytes32)(bytes32)' $b $A2 true 60000000 1010000000000000000 $Z $S2 -r $R)
+H3=$(cast call $DK 'commitHashOf(uint256,address,bool,uint256,uint256,address,bytes32)(bytes32)' $b $A3 false 50625000000000000000 1015000000000000000 $REC $S3 -r $R)
+cast send $DK 'commit(bytes32,address,uint256,bytes32)' $H2 $A 60000000 $ZB --private-key $PK2 -r $R >/dev/null &
+cast send $DK 'commit(bytes32,address,uint256,bytes32)' $H3 $X 50625000000000000000 $ZB --private-key $PK3 -r $R >/dev/null &
+wait
+for i in $(seq 1 200); do read b2 p e <<<"$(phase)"; [[ $p == 1 ]] && break; sleep 0.3; done
+echo "reveal (phase $p)"
+cast send $DK 'reveal(bool,uint256,uint256,address,bytes32)' true 60000000 1010000000000000000 $Z $S2 --private-key $PK2 -r $R >/dev/null &
+cast send $DK 'reveal(bool,uint256,uint256,address,bytes32)' false 50625000000000000000 1015000000000000000 $REC $S3 --private-key $PK3 -r $R >/dev/null &
+wait
+ORACLE=$(cast call $DK 'oracle()(address)' -r $R)
+cast send $ORACLE 'setMid(address,address,uint256)' $A $X 1012500000000000000 --private-key $DEPLOYER_PRIVATE_KEY -r $R >/dev/null
+for i in $(seq 1 200); do read b3 p e <<<"$(phase)"; [[ $b3 -gt $b || $p == 2 ]] && break; sleep 0.5; done
+echo "settle batch $b"
+cast send $DK 'settle(uint256)' $b --private-key $CRANK_PRIVATE_KEY -r $R 2>&1 | grep -E '^status|^transactionHash'
+echo "BATCH=$b REC=$REC"

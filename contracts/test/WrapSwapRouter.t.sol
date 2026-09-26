@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {Vm} from "forge-std/Vm.sol";
 import {Fixture} from "./utils/Fixture.sol";
 import {WrapSwapRouter} from "../src/WrapSwapRouter.sol";
 import {IWrapSwapRouter} from "../src/interfaces/IWrapSwapRouter.sol";
@@ -66,6 +67,28 @@ abstract contract WrapSwapRouterBase is Fixture {
         assertEq(maaplx.balanceOf(payee), q.amountOut, "payee receives the output");
         assertEq(maaplx.balanceOf(demo), demoMaaplx, "payer receives nothing");
         assertEq(mcb.balanceOf(payee), 0);
+    }
+
+    function test_exactIn_recipientReportedInConverted() public {
+        address payee = makeAddr("payee");
+        IWrapSwapRouter.ExactInputParams memory p = exactIn(true, MCB_IN, 0, "");
+        p.recipient = payee;
+        vm.recordLogs();
+        vm.prank(demo);
+        router.swapExactIn(p);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool found;
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter == address(hook) && logs[i].topics[0] == IParityHook.Converted.selector) {
+                (address sender, address recipient, uint256 amountIn,,,,) =
+                    abi.decode(logs[i].data, (address, address, uint256, uint256, uint256, uint256, int256));
+                assertEq(sender, demo);
+                assertEq(recipient, payee);
+                assertEq(amountIn, MCB_IN);
+                found = true;
+            }
+        }
+        assertTrue(found);
     }
 
     function test_exactOut_deliversToArbitraryRecipient() public {

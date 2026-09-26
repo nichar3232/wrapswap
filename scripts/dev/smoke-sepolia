@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Read-only Unichain Sepolia smoke checks against deployments/unichain-sepolia.json.
-# Env: RPC_URL. Checks code at every address, ParityHook flag bits, every asset pool at parity with a mildly skewed inventory.
+# Read-only Unichain Sepolia smoke checks against deployments/unichain-sepolia.json (final shape:
+# {chainId, deployBlock, router, faucet, protocolFeeRecipient, assets[{symbol, wrappers[], pool, parityHook, darkCross}]}).
+# Env: RPC_URL. Per asset: code at every address, ParityHook flags, pool at parity (peg deviation), stocked inventory, skew.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${RPC_URL:?}"
@@ -9,30 +10,21 @@ fail=0
 ok() { printf 'PASS %s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1"; fail=1; }
 [[ $(cast chain-id --rpc-url "$RPC_URL") == 1301 ]] && ok 'chainId 1301' || bad 'chainId'
-for a in $(jq -r '[.contracts[], .tokens[].address, .tokens[].adapter, (.assets // [])[].wrappers[].token, (.assets // [])[].wrappers[].adapter, .faucet] | map(select(. != null)) | unique | .[]' "$m"); do
+for a in $(jq -r '[.router, .faucet, (.assets[] | .parityHook, .darkCross, (.wrappers[] | .token, .adapter))] | unique | .[]' "$m"); do
   [[ $(cast code "$a" --rpc-url "$RPC_URL") != 0x ]] && ok "code $a" || bad "code $a"
 done
-hook=$(jq -r .contracts.parityHook "$m")
-flags=$(printf '0x%04x' $(( $(cast to-dec "$hook") & 0x3fff )))
-[[ $flags == "$(jq -r .hooks.parityHook.flags "$m")" && $flags == 0x20c8 ]] && ok "hook flags $flags" || bad "hook flags $flags"
-pm=$(jq -r .contracts.poolManager "$m")
-# Every ParityHook pool (assets[]; the legacy .pool when absent): at parity, both sides stocked, mild |skew| (<= 0.2).
-for row in $(jq -r '(.assets // [{symbol:"AAPL",pool:.pool,wrappers:[{token:.tokens[0].address},{token:.tokens[1].address}]}])[]
-    | "\(.symbol):\(.pool.id):\(.pool.initSqrtPriceX96):\(.pool.key.currency0):\(.pool.key.currency1):\(.pool.key.hooks)"' "$m"); do
-  IFS=: read -r sym id init c0 c1 hk <<<"$row"
-  slot=$(cast keccak "$(cast concat-hex "$id" "$(cast to-uint256 6)")")
-  word=$(cast storage "$pm" "$slot" --rpc-url "$RPC_URL")
-  sqrt=$(cast to-dec "0x${word: -40}")
-  [[ $sqrt == "$init" ]] && ok "$sym pool at parity sqrtPriceX96=$sqrt" || bad "$sym pool sqrtPriceX96=$sqrt (init $init)"
+for row in $(jq -r '.assets[] | "\(.symbol):\(.parityHook):\(.darkCross):\(.wrappers[0].token):\(.wrappers[1].token)"' "$m"); do
+  IFS=: read -r sym hook dark w0 w1 <<<"$row"
+  flags=$(( $(cast to-dec "$hook") & 0x3fff ))
+  [[ $flags == $((0x20c8)) ]] && ok "$sym hook flags 0x20c8" || bad "$sym hook flags $flags"
+  c0=$w0 c1=$w1; [[ $(tr A-F a-f <<<"$w0") > $(tr A-F a-f <<<"$w1") ]] && { c0=$w1; c1=$w0; }
+  key="($c0,$c1,8388608,10,$hook)"
+  dev=$(cast call "$hook" 'pegStatus((address,address,uint24,int24,address))((uint256,uint256,uint256,bool))' "$key" --rpc-url "$RPC_URL" | tr -d '()' | awk -F', ' '{print $3}' | awk '{print $1}')
+  [[ $dev -le 50 ]] && ok "$sym pool within peg guard (deviation ${dev} bps)" || bad "$sym pool deviation ${dev} bps"
   i0=$(cast call "$hook" 'inventory(address)(uint256)' "$c0" --rpc-url "$RPC_URL" | awk '{print $1}')
   i1=$(cast call "$hook" 'inventory(address)(uint256)' "$c1" --rpc-url "$RPC_URL" | awk '{print $1}')
-  skew=$(cast call "$hook" 'feeBreakdown((address,address,uint24,int24,address))((uint24,uint24,uint24,uint24,int256,bool))' \
-    "($c0,$c1,8388608,10,$hk)" --rpc-url "$RPC_URL" | tr -d '()' | awk -F', ' '{print $5}' | awk '{print $1}')
-  [[ $i0 != 0 && $i1 != 0 ]] && awk -v k="$skew" 'BEGIN{a=k<0?-k:k; exit !(a >= 2e16 && a <= 2e17)}' \
-    && ok "$sym inventory $i0 / $i1, skewX18 $skew" || bad "$sym inventory $i0 / $i1, skewX18 $skew"
+  skew=$(cast call "$hook" 'feeBreakdown((address,address,uint24,int24,address))((uint24,uint24,uint24,int256,int256,bool))' "$key" --rpc-url "$RPC_URL" | tr -d '()' | awk -F', ' '{print $4}' | awk '{print $1}')
+  [[ $i0 != 0 && $i1 != 0 ]] && ok "$sym inventory $i0 / $i1, skewX18 $skew" || bad "$sym inventory $i0 / $i1"
+  [[ $(cast call "$dark" 'asset()(bytes32)' --rpc-url "$RPC_URL" | cast parse-bytes32-string) == "$sym" ]] && ok "$sym DarkCrossHook asset" || bad "$sym DarkCrossHook asset"
 done
-cal=$(jq -r .contracts.calendar "$m")
-ts=$(cast block latest --field timestamp --rpc-url "$RPC_URL")
-open=$(cast call "$cal" 'isOpen(uint256)(bool)' "$ts" --rpc-url "$RPC_URL")
-printf 'INFO NYSE open at chain time %s: %s\n' "$ts" "$open"
 exit $fail

@@ -18,7 +18,6 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {SafeERC20, IERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IParityHook} from "./interfaces/IParityHook.sol";
 import {IIssuerRegistry} from "./interfaces/IIssuerRegistry.sol";
-import {INyseCalendar} from "./interfaces/INyseCalendar.sol";
 import {IEligibility} from "./interfaces/IEligibility.sol";
 import {IWrapperAdapter} from "./interfaces/IWrapperAdapter.sol";
 import {CanonicalShares} from "./libraries/CanonicalShares.sol";
@@ -27,23 +26,26 @@ import {CanonicalShares} from "./libraries/CanonicalShares.sol";
 /// @notice Settlement engine for issuer/issuer pools of the same underlying: exact share-parity conversion from
 ///         hook-owned ERC-6909 inventory (custom accounting via beforeSwapReturnDelta), all-or-nothing, else a
 ///         zero-delta fall-through to the pool's concentrated liquidity under a 50 bps peg guard.
+///         Fee = owner-settable base + a skew fee charged only to trades that increase inventory imbalance; the
+///         whole fee stays in the hook's inventory (the LP's), the protocol takes nothing on Convert.
 contract ParityHook is IParityHook, IUnlockCallback, Ownable {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
-    uint24 public constant BASE_FEE_PIPS = CanonicalShares.BASE_FEE_PIPS;
+    uint24 public constant DEFAULT_BASE_FEE_PIPS = CanonicalShares.DEFAULT_BASE_FEE_PIPS;
+    uint24 public constant MAX_BASE_FEE_PIPS = CanonicalShares.MAX_BASE_FEE_PIPS;
     uint24 public constant SKEW_FEE_PIPS = CanonicalShares.SKEW_FEE_PIPS;
-    uint24 public constant OFF_HOURS_MAX_FEE_PIPS = CanonicalShares.OFF_HOURS_MAX_FEE_PIPS;
-    uint24 public constant MAX_FEE_PIPS = CanonicalShares.MAX_FEE_PIPS;
+    uint24 public constant SKEW_FEE_CAP_PIPS = CanonicalShares.SKEW_FEE_CAP_PIPS;
     uint256 public constant PEG_GUARD_BPS = 50;
-    uint8 public constant HOOK_DATA_VERSION = 1;
+    /// @dev Latest hookData version (2 adds the recipient); version 1 (no recipient) is still accepted.
+    uint8 public constant HOOK_DATA_VERSION = 2;
     int24 public constant TICK_SPACING = 10;
 
     /// @dev Transient swap context, one packed word: mode | reason << 8 | feePips << 16 | swapper << 40.
     bytes32 internal constant SWAP_SLOT = keccak256("wrapswap.parity.swap");
-    /// @dev Transient flag set only by depositInventory / withdrawInventory / sweepFees around their unlock.
+    /// @dev Transient flag set only by depositInventory / withdrawInventory around their unlock.
     bytes32 internal constant CALLBACK_SLOT = keccak256("wrapswap.parity.callback");
     uint256 internal constant MODE_FILL = 1;
     uint256 internal constant MODE_FALL = 2;
@@ -69,11 +71,10 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
 
     IPoolManager public immutable poolManager;
     IIssuerRegistry public immutable registry;
-    INyseCalendar public immutable calendar;
     IEligibility public immutable eligibility;
 
+    uint24 public baseFeePips;
     mapping(address => bool) public isKeeper;
-    mapping(Currency => uint256) public feesAccrued;
     mapping(PoolId => bool) public pegTripped;
 
     modifier onlyManager() {
@@ -89,14 +90,14 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
     constructor(
         IPoolManager poolManager_,
         IIssuerRegistry registry_,
-        INyseCalendar calendar_,
         IEligibility eligibility_,
         address owner_
     ) Ownable(owner_) {
         poolManager = poolManager_;
         registry = registry_;
-        calendar = calendar_;
         eligibility = eligibility_;
+        baseFeePips = DEFAULT_BASE_FEE_PIPS;
+        emit BaseFeeSet(DEFAULT_BASE_FEE_PIPS);
         isKeeper[owner_] = true;
         emit KeeperSet(owner_, true);
         Hooks.validateHookPermissions(IHooks(address(this)), getHookPermissions());
@@ -110,6 +111,12 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
     }
 
     // ---------------------------------------------------------------- keepers and inventory
+
+    function setBaseFeePips(uint24 basePips) external onlyOwner {
+        if (basePips > MAX_BASE_FEE_PIPS) revert BaseFeeTooHigh(basePips, MAX_BASE_FEE_PIPS);
+        baseFeePips = basePips;
+        emit BaseFeeSet(basePips);
+    }
 
     function setKeeper(address keeper, bool allowed) external onlyOwner {
         isKeeper[keeper] = allowed;
@@ -132,14 +139,6 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
         emit InventoryChanged(Currency.unwrap(currency), msg.sender, REASON_WITHDRAW, -int256(amount), available - amount);
     }
 
-    function sweepFees(Currency currency, address to) external onlyOwner returns (uint256 amount) {
-        amount = feesAccrued[currency];
-        if (amount == 0) return 0;
-        feesAccrued[currency] = 0;
-        _unlock(abi.encode(Action.WITHDRAW, currency, amount, to));
-        emit FeesSwept(Currency.unwrap(currency), to, amount);
-    }
-
     function unlockCallback(bytes calldata data) external onlyManager returns (bytes memory) {
         if (_tload(CALLBACK_SLOT) == 0) revert NotPoolManager();
         (Action action, Currency currency, uint256 amount, address who) =
@@ -158,7 +157,7 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
     }
 
     function inventory(Currency currency) public view returns (uint256) {
-        return poolManager.balanceOf(address(this), currency.toId()) - feesAccrued[currency];
+        return poolManager.balanceOf(address(this), currency.toId());
     }
 
     function inventoryShares(Currency currency) external view returns (uint256) {
@@ -182,6 +181,26 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
         (Side memory s0, Side memory s1) = _pair(key);
         _requireActive(s0.currency, s1.currency);
         q = _quote(s0, s1, zeroForOne, amountSpecified);
+    }
+
+    function quote(bytes32 asset, address fromWrapper, address toWrapper, uint256 amountIn)
+        external
+        view
+        returns (uint256 sharesOut, uint256 baseFee, uint256 skewFee, int256 postSkew, bool reducesImbalance)
+    {
+        if (amountIn == 0) revert ZeroAmount();
+        if (
+            fromWrapper == toWrapper || asset == bytes32(0) || registry.underlyingOf(fromWrapper) != asset
+                || registry.underlyingOf(toWrapper) != asset
+        ) revert UnsupportedPool(fromWrapper, toWrapper);
+        _requireActive(Currency.wrap(fromWrapper), Currency.wrap(toWrapper));
+        bool zeroForOne = fromWrapper < toWrapper;
+        (Side memory s0, Side memory s1) = zeroForOne
+            ? (_side(Currency.wrap(fromWrapper)), _side(Currency.wrap(toWrapper)))
+            : (_side(Currency.wrap(toWrapper)), _side(Currency.wrap(fromWrapper)));
+        Quote memory q = _quote(s0, s1, zeroForOne, -int256(amountIn));
+        (sharesOut, baseFee, skewFee) = _feeShares(q, zeroForOne ? s1 : s0);
+        return (sharesOut, baseFee, skewFee, q.fee.postSkewX18, q.fee.reducesImbalance);
     }
 
     function pegStatus(PoolKey calldata key) public view returns (PegStatus memory) {
@@ -229,13 +248,12 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         (Side memory s0, Side memory s1) = _pair(key);
-        address swapper = _checkSwapper(sender, hookData);
+        (address swapper, address recipient) = _checkSwapper(sender, hookData);
         _requireActive(s0.currency, s1.currency);
 
         PoolId id = key.toId();
         Quote memory q = _quote(s0, s1, params.zeroForOne, params.amountSpecified);
         FeeBreakdown memory fee = q.fee;
-        emit FeeQuoted(id, fee.totalPips, fee.basePips, fee.skewPips, fee.closedPips, fee.skewX18, fee.marketOpen);
         uint24 lpFeeOverride = fee.totalPips | LPFeeLibrary.OVERRIDE_FEE_FLAG;
         if (!q.fillable) {
             uint8 reason = (q.amountIn == 0 || q.amountOut == 0) ? FALL_DUST : FALL_INSUFFICIENT;
@@ -250,8 +268,8 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
         int128 inDelta = q.amountIn.toInt128();
         int128 outDelta = q.amountOut.toInt128();
         poolManager.mint(address(this), cIn.toId(), q.amountIn);
+        // Only the net output leaves: the fee stays in inventory (the LP's).
         poolManager.burn(address(this), cOut.toId(), q.amountOut);
-        feesAccrued[cOut] += q.feeAmount;
         _tstore(SWAP_SLOT, MODE_FILL);
 
         bool exactInput = params.amountSpecified < 0;
@@ -268,7 +286,8 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
             fee.totalPips
         );
         emit InventoryChanged(Currency.unwrap(cIn), swapper, REASON_FILL_IN, int256(q.amountIn), inventory(cIn));
-        emit InventoryChanged(Currency.unwrap(cOut), swapper, REASON_FILL_OUT, -int256(q.grossOut), inventory(cOut));
+        emit InventoryChanged(Currency.unwrap(cOut), swapper, REASON_FILL_OUT, -int256(q.amountOut), inventory(cOut));
+        _emitConverted(q, cIn, cOut, params.zeroForOne ? s1 : s0, swapper, recipient);
 
         BeforeSwapDelta delta =
             exactInput ? toBeforeSwapDelta(inDelta, -outDelta) : toBeforeSwapDelta(-outDelta, inDelta);
@@ -306,7 +325,7 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
 
     /// @dev Exact input (amountSpecified < 0) and exact output (> 0) per INTERFACES.md §1.7; every rounding step
     ///      favours the hook. Shared verbatim by quote() and beforeSwap() so the view equals execution.
-    ///      The fee depends on the trade: its off-hours part is evaluated at the post-trade skew. The trade's share
+    ///      The fee depends on the trade: its skew part is evaluated at the post-trade skew. The trade's share
     ///      size for that is fee-independent: the input's shares (exact input) or the net output's shares (exact output).
     function _quote(Side memory s0, Side memory s1, bool zeroForOne, int256 amountSpecified)
         internal
@@ -335,15 +354,19 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
         q.fillable = q.amountIn > 0 && q.amountOut > 0 && inventory(sOut.currency) >= q.grossOut;
     }
 
-    /// @dev Trade-less view (feeBreakdown): closedPips is the off-hours premium a marginal skew-increasing trade
-    ///      pays now, ceil(15 bps * |skew|); a skew-reducing trade pays 0. Exact per-trade figures come from quote().
+    /// @dev Trade-less view (feeBreakdown): the fee a marginal |skew|-increasing trade pays now, i.e. the skew fee at
+    ///      the current |skew|. Exact per-trade figures come from quote().
     function _feeBreakdown(Side memory s0, Side memory s1) internal view returns (FeeBreakdown memory fee) {
         (uint256 sh0, uint256 sh1) = _inventoryShares(s0, s1);
-        fee = _fee(sh0, sh1, calendar.isOpen(block.timestamp) ? 0 : CanonicalShares.marginalOffHoursPips(sh0, sh1));
+        uint24 skew = CanonicalShares.capSkewFee(CanonicalShares.skewPips(sh0, sh1, SKEW_FEE_PIPS));
+        fee = _fee(skew);
+        fee.skewX18 = CanonicalShares.skewX18(sh0, sh1);
+        fee.postSkewX18 = fee.skewX18;
+        fee.reducesImbalance = skew == 0;
     }
 
-    /// @dev Fee for a parity fill of `size` canonical shares: base + skew (pre-trade) + off-hours premium, the latter
-    ///      15 bps * |post-trade skew| and only when the trade increases |skew| (CanonicalShares.totalFeePips).
+    /// @dev Fee for a parity fill of `size` canonical shares: baseFeePips + skew fee, the latter 15 bps * |post-trade
+    ///      skew| (cap 50 bps) and only when the trade increases |skew| (CanonicalShares.skewFeePips).
     function _tradeFee(Side memory s0, Side memory s1, bool zeroForOne, uint256 size)
         internal
         view
@@ -351,17 +374,48 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
     {
         (uint256 sh0, uint256 sh1) = _inventoryShares(s0, s1);
         (uint256 post0, uint256 post1) = CanonicalShares.postTradeShares(sh0, sh1, zeroForOne, size);
-        fee = _fee(sh0, sh1, calendar.isOpen(block.timestamp) ? 0 : CanonicalShares.offHoursPips(sh0, sh1, post0, post1));
+        uint24 skew = CanonicalShares.skewFeePips(sh0, sh1, post0, post1);
+        fee = _fee(skew);
+        fee.skewX18 = CanonicalShares.skewX18(sh0, sh1);
+        fee.postSkewX18 = CanonicalShares.skewX18(post0, post1);
+        fee.reducesImbalance = !CanonicalShares.increasesImbalance(sh0, sh1, post0, post1);
     }
 
-    function _fee(uint256 sh0, uint256 sh1, uint24 offHours) internal view returns (FeeBreakdown memory fee) {
-        fee.marketOpen = calendar.isOpen(block.timestamp);
-        fee.basePips = BASE_FEE_PIPS;
-        fee.skewPips = CanonicalShares.skewPips(sh0, sh1, SKEW_FEE_PIPS);
-        fee.closedPips = offHours;
-        uint256 total = uint256(BASE_FEE_PIPS) + fee.skewPips + offHours;
-        fee.totalPips = total > MAX_FEE_PIPS ? MAX_FEE_PIPS : uint24(total);
-        fee.skewX18 = CanonicalShares.skewX18(sh0, sh1);
+    function _fee(uint24 skewPips) internal view returns (FeeBreakdown memory fee) {
+        fee.basePips = baseFeePips;
+        fee.skewPips = skewPips;
+        fee.totalPips = baseFeePips + skewPips;
+    }
+
+    /// @dev Splits a quote into canonical shares: sharesOut (net output), baseFee and skewFee, pro rata to the pips,
+    ///      with sharesIn = sharesOut + baseFee + skewFee exactly.
+    function _feeShares(Quote memory q, Side memory sOut)
+        internal
+        pure
+        returns (uint256 sharesOut, uint256 baseFee, uint256 skewFee)
+    {
+        sharesOut = CanonicalShares.toSharesDown(q.amountOut, sOut.spt, sOut.decimals);
+        uint256 feeShares = q.shares - sharesOut;
+        baseFee = q.fee.totalPips == 0 ? 0 : feeShares * q.fee.basePips / q.fee.totalPips;
+        skewFee = feeShares - baseFee;
+    }
+
+    function _emitConverted(Quote memory q, Currency cIn, Currency cOut, Side memory sOut, address swapper, address recipient)
+        internal
+    {
+        (uint256 sharesOut, uint256 baseFee, uint256 skewFee) = _feeShares(q, sOut);
+        emit Converted(
+            registry.underlyingOf(Currency.unwrap(cIn)),
+            Currency.unwrap(cIn),
+            Currency.unwrap(cOut),
+            swapper,
+            recipient,
+            q.amountIn,
+            sharesOut,
+            baseFee,
+            skewFee,
+            q.fee.postSkewX18
+        );
     }
 
     function _inventoryShares(Side memory s0, Side memory s1) internal view returns (uint256 sh0, uint256 sh1) {
@@ -377,24 +431,39 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
         p.tripped = p.deviationBps > PEG_GUARD_BPS;
     }
 
-    /// @dev hookData: empty => (sender, 0); exactly 96 bytes of abi.encode(uint8 1, address swapper, bytes32 uid)
-    ///      with clean words => resolveSwapper(sender, swapper); anything else => InvalidHookData.
-    function _checkSwapper(address sender, bytes calldata hookData) internal view returns (address swapper) {
+    /// @dev hookData: empty => (sender, uid 0, recipient sender); 96 bytes abi.encode(uint8 1, address swapper, bytes32 uid)
+    ///      or 128 bytes abi.encode(uint8 2, address swapper, bytes32 uid, address recipient), clean words =>
+    ///      swapper = resolveSwapper(sender, swapper), recipient (v1 or zero: the swapper); anything else => InvalidHookData.
+    function _checkSwapper(address sender, bytes calldata hookData)
+        internal
+        view
+        returns (address swapper, address recipient)
+    {
         bytes32 uid;
         if (hookData.length == 0) {
             swapper = sender;
         } else {
-            if (hookData.length != 96) revert InvalidHookData();
+            if (hookData.length != 96 && hookData.length != 128) revert InvalidHookData();
             uint256 version;
             uint256 claimed;
+            uint256 to;
             assembly ("memory-safe") {
                 version := calldataload(hookData.offset)
                 claimed := calldataload(add(hookData.offset, 32))
                 uid := calldataload(add(hookData.offset, 64))
             }
-            if (version != HOOK_DATA_VERSION || claimed >> 160 != 0) revert InvalidHookData();
+            if (hookData.length == 128) {
+                assembly ("memory-safe") {
+                    to := calldataload(add(hookData.offset, 96))
+                }
+            }
+            if (version != (hookData.length == 96 ? 1 : 2) || claimed >> 160 != 0 || to >> 160 != 0) {
+                revert InvalidHookData();
+            }
             swapper = eligibility.resolveSwapper(sender, address(uint160(claimed)));
+            recipient = address(uint160(to));
         }
+        if (recipient == address(0)) recipient = swapper;
         (bool eligible, uint8 reason) = eligibility.check(swapper, uid);
         if (!eligible) revert IEligibility.NotEligible(swapper, reason);
     }

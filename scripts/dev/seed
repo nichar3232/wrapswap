@@ -2,6 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 source scripts/dev/env
+# Unichain Sepolia is deployed and seeded by contracts/script/DeployFinal.s.sol; this only runs one dark batch there.
+if [[ $NETWORK == unichain-sepolia ]]; then exec scripts/dev/dark-batch-sepolia 0; fi
 : "${DEPLOYER_PK:=$(cast wallet private-key --mnemonic "$DEMO_MNEMONIC" --mnemonic-index 0)}"
 export DEPLOYER_PK
 mkdir -p logs/integration

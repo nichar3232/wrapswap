@@ -188,12 +188,11 @@ contract ParityHandler is Test {
         }
     }
 
-    function sweep(bool isMcb) external {
-        MockIssuerToken t = _tok(isMcb);
-        uint256 fees = hook.feesAccrued(Currency.wrap(address(t)));
+    /// @dev The owner re-prices the base fee within bounds (replaces the removed fee sweep).
+    function setBaseFee(uint24 pips) external {
+        pips = uint24(bound(pips, 0, hook.MAX_BASE_FEE_PIPS()));
         vm.prank(hook.owner());
-        uint256 got = hook.sweepFees(Currency.wrap(address(t)), address(this));
-        assertEq(got, fees);
+        hook.setBaseFeePips(pips);
     }
 
     function addLiquidity(uint256 halfWidthSeed, uint256 liquiditySeed) external {
@@ -272,11 +271,11 @@ abstract contract ParityHookInvariantBase is Fixture {
         assertFalse(handler.unexpectedRevert());
     }
 
-    function invariant_claimsEqualInventoryPlusFees() public view {
+    function invariant_claimsEqualInventory() public view {
         for (uint256 i; i < 2; i++) {
             Currency c = i == 0 ? cur(mcb) : cur(maaplx);
             uint256 claims = manager.balanceOf(address(hook), c.toId());
-            assertEq(claims, hook.inventory(c) + hook.feesAccrued(c));
+            assertEq(claims, hook.inventory(c), "fees stay in inventory");
             assertGe(MockIssuerToken(Currency.unwrap(c)).balanceOf(address(manager)), claims);
         }
     }

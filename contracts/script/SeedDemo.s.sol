@@ -136,7 +136,7 @@ contract SeedDemo is Script {
             vm.startBroadcast(vm.deriveKey(mnemonic, i));
             (uint256 available,) = dark.balances(account(i), address(token));
             if (available < amount) { token.approve(address(dark), amount - available); dark.fund(address(token), amount - available); }
-            require(dark.commit(dark.commitHashOf(batch, account(i), sell, amount, sell ? 101e16 : 1015e15, sell, bytes32(uint256(i))), address(token), amount, bytes32(0)), "commit rejected");
+            require(dark.commit(dark.commitHashOf(batch, account(i), sell, amount, sell ? 101e16 : 1015e15, address(0), bytes32(uint256(i))), address(token), amount, bytes32(0)), "commit rejected");
             vm.stopBroadcast();
         }
     }
@@ -147,7 +147,7 @@ contract SeedDemo is Script {
         for (uint32 i = 2; i <= 3; ++i) {
             if (dark.order(batch, account(i)).revealed) continue;
             vm.startBroadcast(vm.deriveKey(mnemonic, i));
-            dark.reveal(i == 2, i == 2 ? 60e6 : 50625e15, i == 2 ? 101e16 : 1015e15, i == 2, bytes32(uint256(i)));
+            dark.reveal(i == 2, i == 2 ? 60e6 : 50625e15, i == 2 ? 101e16 : 1015e15, address(0), bytes32(uint256(i)));
             vm.stopBroadcast();
         }
     }

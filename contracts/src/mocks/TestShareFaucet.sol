@@ -22,7 +22,8 @@ contract TestShareFaucet is Ownable {
     event TokenListed(address indexed token);
     event Claimed(address indexed account, uint256 timestamp);
 
-    error CooldownActive(uint256 nextClaimAt);
+    /// @dev secondsRemaining until the account can claim again.
+    error CooldownActive(uint256 secondsRemaining);
     error AlreadyListed(address token);
 
     constructor(address owner_, address[] memory tokens_) Ownable(owner_) {
@@ -45,7 +46,7 @@ contract TestShareFaucet is Ownable {
 
     function claim() external {
         uint256 next = nextClaimAt(msg.sender);
-        if (next != 0) revert CooldownActive(next);
+        if (next != 0) revert CooldownActive(next - block.timestamp);
         lastClaimAt[msg.sender] = block.timestamp;
         for (uint256 i; i < _tokens.length; ++i) {
             IERC20(_tokens[i]).safeTransfer(msg.sender, amountOf(_tokens[i]));
