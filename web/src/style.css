@@ -3334,3 +3334,29 @@ table.all-legs td {
     padding-bottom: 16px;
   }
 }
+
+/* Move: the ⇄ swap sits between the two wrappers (Convert and Dark Cross) */
+.pair {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+.pair .choices {
+  display: contents;
+}
+.pair .choices > .choice:first-child {
+  order: 1;
+}
+.pair > .flip {
+  order: 2;
+  justify-self: center;
+}
+.pair .choices > .choice:last-child {
+  order: 3;
+}
+.pair > .pair-line {
+  order: 4;
+}
+@media (max-width: 720px) {
+  .pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
