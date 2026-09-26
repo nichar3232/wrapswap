@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "network": "unichain-sepolia",
   "chainId": 1301,
-  "deployCommit": "d3e42ebf2f5857686c3b212c6302658c7fce6b7e",
+  "deployCommit": "6c3966f1c2ec0ca2789eb4cc46f3e5ffe08a0520",
   "deployedAt": "2026-09-26T16:06:14.000Z",
   "deployer": "0xFD42fC43855C9332051e9e2F05a75C8914073F9e",
   "startBlock": "63586346",
