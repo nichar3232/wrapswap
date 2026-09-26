@@ -61,10 +61,8 @@ Sui testnet (package published by `0xb07be57ee7e7d5ca43f681c6938cc8698fd892b42d1
 | Object | ID |
 | --- | --- |
 | Package `unison_pay` | [`0x2f18fa6d27e46235a4dcb9c0de62adbf612e3f60700ffeeac4e13d50ea4f452c`](https://suiscan.xyz/testnet/object/0x2f18fa6d27e46235a4dcb9c0de62adbf612e3f60700ffeeac4e13d50ea4f452c) (publish tx [`CNfNqe3P…`](https://suiscan.xyz/testnet/tx/CNfNqe3P3ni7NkpknM3p1KMhqhV2hBeS2WcoLKo4Ugdt)) |
-| Pool (90 s window) | [`0xcb16556e5c2b4f509aaff5a9a86a99308bbea2fa14447a57a52f9753d53ead53`](https://suiscan.xyz/testnet/object/0xcb16556e5c2b4f509aaff5a9a86a99308bbea2fa14447a57a52f9753d53ead53) |
-| OperatorCap | [`0xfe4dc7c97f6702742b69864b2e4f431b157f58aa57b13677cc0b4731b1717fa0`](https://suiscan.xyz/testnet/object/0xfe4dc7c97f6702742b69864b2e4f431b157f58aa57b13677cc0b4731b1717fa0) |
-| Retired pool (paired with the retired vault; 1:1 at 31.0407853 shares) | [`0xd04f7ee675e0c7c239532a2f59ec070ab3d26bbf8bc987067d4d45c9b049482c`](https://suiscan.xyz/testnet/object/0xd04f7ee675e0c7c239532a2f59ec070ab3d26bbf8bc987067d4d45c9b049482c) |
-| Retired pool (180 s, never credited) | [`0xa1e1a8262c772c99fab34f0a389cfec6ed6f966889d4c9b3674313ccc16007e7`](https://suiscan.xyz/testnet/object/0xa1e1a8262c772c99fab34f0a389cfec6ed6f966889d4c9b3674313ccc16007e7) |
+| Pool (90 s window) | [`0xf414bbcc050bb2c0407d76f482bc830323a6dd93195ef1b5fae855e939a12fe1`](https://suiscan.xyz/testnet/object/0xf414bbcc050bb2c0407d76f482bc830323a6dd93195ef1b5fae855e939a12fe1) |
+| OperatorCap | [`0x0c2376ef722f33b53b3df106ea1672bba5e931e8b23f6033506cdcddc145f12c`](https://suiscan.xyz/testnet/object/0x0c2376ef722f33b53b3df106ea1672bba5e931e8b23f6033506cdcddc145f12c) |
 | Seal probe package | [`0xebb8a7e3ae227d2b3bc9f52934a2b0003ad93da11cc66e018888412aef654d32`](https://suiscan.xyz/testnet/object/0xebb8a7e3ae227d2b3bc9f52934a2b0003ad93da11cc66e018888412aef654d32) |
 
 Seal key servers (testnet, open mode, threshold 2): mysten-testnet-1 `0x73d05d62…6db75`, mysten-testnet-2 `0xf5d14a81…623c8`, Ruby Nodes `0x6068c0ac…41da2` ([docs.sui.io/sui-stack/seal/pricing](https://docs.sui.io/sui-stack/seal/pricing)).
@@ -74,10 +72,9 @@ Unichain Sepolia (1301):
 
 | Contract | Address |
 | --- | --- |
-| ShareVault | [`0xd5010c7feC51c8765FE46c940A585C0Edd2Df3bC`](https://sepolia.uniscan.xyz/address/0xd5010c7feC51c8765FE46c940A585C0Edd2Df3bC#code) (verified; deploy [`0xcbcc826e…`](https://sepolia.uniscan.xyz/tx/0xcbcc826e2dcf5a6dc900daa315db089e4ba08dde693b14eb4a4475d5b52f9476), also `send.shareVault` in `deployments/unichain-sepolia.json`) |
-| Retired ShareVault (pre fee-model AAPL pool) | [`0x275C82B932D4703F0e8A104524bC24813a5c3187`](https://sepolia.uniscan.xyz/address/0x275C82B932D4703F0e8A104524bC24813a5c3187#code) |
-| WrapSwapRouter | [`0x9C4Fc24f99C2E0212F6d6562b8A417952ef3Eba3`](https://sepolia.uniscan.xyz/address/0x9C4Fc24f99C2E0212F6d6562b8A417952ef3Eba3#code) |
-| ParityHook (fee model) | [`0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8`](https://sepolia.uniscan.xyz/address/0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8#code) |
+| ShareVault | [`0x76B1661dB3858b5455Ae4371291c954fa248Bd5d`](https://sepolia.uniscan.xyz/address/0x76B1661dB3858b5455Ae4371291c954fa248Bd5d#code) (verified; deploy [`0xb227e5b1…`](https://sepolia.uniscan.xyz/tx/0xb227e5b1e10323530a5895a00f793e086d4b6d6c561c3c5c4a45e99d1cc97ef3); `send.shareVault` in `deployments/unichain-sepolia.json`) |
+| WrapSwapRouter | [`0x49d7eA31c619E80785Fa31CBc5bE052ED4EC40Cb`](https://sepolia.uniscan.xyz/address/0x49d7eA31c619E80785Fa31CBc5bE052ED4EC40Cb#code) |
+| ParityHook (final fee model, all assets) | [`0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8`](https://sepolia.uniscan.xyz/address/0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8#code) |
 | mcbAAPL (mock, 6 dec, 1.0125 shares/token) | [`0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c`](https://sepolia.uniscan.xyz/address/0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c) |
 | mAAPLx (mock, 18 dec, 1.0 share/token) | [`0x433DAfF77AD96b9319957D83d9d422E70c996C45`](https://sepolia.uniscan.xyz/address/0x433DAfF77AD96b9319957D83d9d422E70c996C45) |
 
@@ -111,11 +108,11 @@ Secrets come from `~/wrapswap-run/env/onchain.env` (`DEPLOYER_PRIVATE_KEY` is th
 
 ### Scripted end-to-end run
 
-Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T15:53:23.616Z (DEMO_CHECK=1), Sui testnet + Unichain Sepolia, ShareVault `0xd501…f3bC`. Full log: `~/wrapswap-run/logs/sui-demo-pass-v2.log`.
+Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T17:41:57.969Z (DEMO_CHECK=1), Sui testnet + Unichain Sepolia, final fee-model deployment, ShareVault `0x76B1…Bd5d`. Full log: `~/wrapswap-run/logs/sui-demo-pass-final.log`.
 
 - Sui package: [`0x2f18fa6d27…`](https://suiscan.xyz/testnet/object/0x2f18fa6d27e46235a4dcb9c0de62adbf612e3f60700ffeeac4e13d50ea4f452c)
-- Pool: [`0xcb16556e5c…`](https://suiscan.xyz/testnet/object/0xcb16556e5c2b4f509aaff5a9a86a99308bbea2fa14447a57a52f9753d53ead53)
-- ShareVault: [`0xd5010c7feC…`](https://sepolia.uniscan.xyz/address/0xd5010c7feC51c8765FE46c940A585C0Edd2Df3bC)
+- Pool: [`0xf414bbcc05…`](https://suiscan.xyz/testnet/object/0xf414bbcc050bb2c0407d76f482bc830323a6dd93195ef1b5fae855e939a12fe1)
+- ShareVault: [`0x76B1661dB3…`](https://sepolia.uniscan.xyz/address/0x76B1661dB3858b5455Ae4371291c954fa248Bd5d)
 - Wallet A: sui 0xb07be57ee7e7d5ca43f681c6938cc8698fd892b42d1b33f613909ae585c741c7 / evm 0x90d2d9C4966e81D1D8c50f3aaD51b3F9299f7612
 - Wallet B: sui 0x490aca12124d8cc2bdf1eb007a9cca8fa0dfe60ffed4908c3cbf8a990fdfc4c9 / evm 0x588e53E014c69df42a0adbc5d65009e5CBff0f1A
 
@@ -125,26 +122,24 @@ Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T15:53:23.616Z (DEMO_CHECK=1
   - suiTotalShares: 0.000000
   - vaultSharesOutstanding: 0.000000
   - vaultSharesHeld: 0.000000
-  - checkedBlock: 63585576
+  - checkedBlock: 63592090
 - **PASS** Sui total_shares == ShareVault.sharesOutstanding (before)
 - **PASS** ShareVault shares held >= outstanding (before)
 
 **2. Deposits on Unichain Sepolia (issuer tokens into ShareVault custody)**
 
 - A deposits 2 mcbAAPL -> credit to Sui 0xb07be57e…
-  - unichain: [`0x3e0446bd96…`](https://sepolia.uniscan.xyz/tx/0x3e0446bd96c832b7d0677bb24274bc71eb2f793defb2a48ab515352b35faf6f4)
-- mint 8 mAAPLx to 0x588e53E014c69df42a0adbc5d65009e5CBff0f1A (mock issuer)
-  - unichain: [`0xdcea75b339…`](https://sepolia.uniscan.xyz/tx/0xdcea75b3393e06fa400caf677262dd9679cca7c6dd812b6d90019d4b90d9de51)
+  - unichain: [`0xbb0dce3f9f…`](https://sepolia.uniscan.xyz/tx/0xbb0dce3f9fb6e8471e02f7f700112ae024c595c99be1309713aa71e00ba5fed3)
 - B deposits 8.00 mAAPLx -> credit to Sui 0x490aca12…
-  - unichain: [`0x1911ccea74…`](https://sepolia.uniscan.xyz/tx/0x1911ccea74450b8314b7c838c55bdbad6e17bc37a169def079702c9602bdedcd)
+  - unichain: [`0xa36555c376…`](https://sepolia.uniscan.xyz/tx/0xa36555c376a953e454e58f4e0edfbddb329bccb38744121d947b8eb79e759f82)
 - keeper credit_deposit (2.0250 shares)
-  - sui: [`6yx1soQnk1o3…`](https://suiscan.xyz/testnet/tx/6yx1soQnk1o3hnqSURFrT1aKrGWjW1pkeo2BQBd6HiFN)
-  - evm: [`0x3e0446bd96…`](https://sepolia.uniscan.xyz/tx/0x3e0446bd96c832b7d0677bb24274bc71eb2f793defb2a48ab515352b35faf6f4)
-  - walrusManifest: [`pOYY4wOSUJ15…`](https://walruscan.com/testnet/blob/pOYY4wOSUJ15GNW6X_alUb2lssiwcDVzp_sSJ2S3S0U)
+  - sui: [`8WJ7vbF1c6vd…`](https://suiscan.xyz/testnet/tx/8WJ7vbF1c6vdayQSYPEJ2xBQqEvpsE16JVabsHxZdVyR)
+  - evm: [`0xbb0dce3f9f…`](https://sepolia.uniscan.xyz/tx/0xbb0dce3f9fb6e8471e02f7f700112ae024c595c99be1309713aa71e00ba5fed3)
+  - walrusManifest: [`VmpaHJAOKrCz…`](https://walruscan.com/testnet/blob/VmpaHJAOKrCz0JHUKqtiqE6nEUGzZbFrq6VXE_Hh54o)
 - keeper credit_deposit (8.0000 shares)
-  - sui: [`RCWRx7nRvPN1…`](https://suiscan.xyz/testnet/tx/RCWRx7nRvPN1c2ZLEKtuK4NESpcPHiRMSSDRrCwvPB4)
-  - evm: [`0x1911ccea74…`](https://sepolia.uniscan.xyz/tx/0x1911ccea74450b8314b7c838c55bdbad6e17bc37a169def079702c9602bdedcd)
-  - walrusManifest: [`6Py_AVj0ycTx…`](https://walruscan.com/testnet/blob/6Py_AVj0ycTxQHDrCAnS40KpfvL9tUtu7USD3mVzdJA)
+  - sui: [`9DPRTisopKwt…`](https://suiscan.xyz/testnet/tx/9DPRTisopKwtLmcrj1K2pPbC8fxJKDok6XmUDi1pUPuE)
+  - evm: [`0xa36555c376…`](https://sepolia.uniscan.xyz/tx/0xa36555c376a953e454e58f4e0edfbddb329bccb38744121d947b8eb79e759f82)
+  - walrusManifest: [`xRkp_B2HJzzg…`](https://walruscan.com/testnet/blob/xRkp_B2HJzzglu-2y2H6G8gEz5Y8AQseh8Xka7OJGB4)
 - **PASS** both deposits attested on Sui
 - balances decrypted client-side via Seal (seal_approve_leaf) and Merkle-verified
   - A: 2.0250 shares, proof verified
@@ -154,7 +149,7 @@ Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T15:53:23.616Z (DEMO_CHECK=1
   - suiTotalShares: 10.025000
   - vaultSharesOutstanding: 10.025000
   - vaultSharesHeld: 10.025000
-  - checkedBlock: 63585617
+  - checkedBlock: 63592126
 - **PASS** Sui total_shares == ShareVault.sharesOutstanding (after deposits)
 - **PASS** ShareVault shares held >= outstanding (after deposits)
 
@@ -164,35 +159,35 @@ Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T15:53:23.616Z (DEMO_CHECK=1
   - target: mcbAAPL
   - shares: 3.0000
   - direct: false
-  - feePips: 450
-  - sharesDebited: 3.001349
+  - feePips: 482
+  - sharesDebited: 3.001445
 - **PASS** cross-issuer withdrawal must convert (custody lacks enough mcbAAPL)
 - A submits encrypted payment (1 share to B)
-  - sui: [`B7bQPcJ1mpvk…`](https://suiscan.xyz/testnet/tx/B7bQPcJ1mpvkKaVfNW5rS36TCu1xECCEErjXKscimoqg)
-  - walrus: [`N_jW1JSkmnA_…`](https://walruscan.com/testnet/blob/N_jW1JSkmnA_jf3SwQ5iEY79hn5B_RuUMKuZLbhkZ1Q)
-  - commitment: 0x99b0265a88a854f3bbe4e38d297b7a8bb7aa7e371ad9e06c155762f012135519
-  - batch: [`0x33f15f13d6…`](https://suiscan.xyz/testnet/object/0x33f15f13d61ac6c55b3daf6a3dd1572f22bacb492b8141a6fb197e33d8b473fc)
+  - sui: [`H8zn1DrFtYjT…`](https://suiscan.xyz/testnet/tx/H8zn1DrFtYjTfevCQroVkgaVS1eqJv9PwJzfFAJ12XbW)
+  - walrus: [`WUsa0Ez3aEMF…`](https://walruscan.com/testnet/blob/WUsa0Ez3aEMFC76pc5_NFGb22WHbC88r7Zr9DxTIRbw)
+  - commitment: 0x7c1f68820b94be22a38f6961c526d89936e89095b95aeb4ff7ed413c76c8326a
+  - batch: [`0xe5fd0bbc97…`](https://suiscan.xyz/testnet/object/0xe5fd0bbc978da8c5fa43133879fc9d64d0b1d528975243b83f4da37d0f8de642)
 - A submits a second payment exceeding the remaining balance (must be rejected)
-  - sui: [`2ivuJtYndDaJ…`](https://suiscan.xyz/testnet/tx/2ivuJtYndDaJwpcjZin9Fh1RPHrysRGRztsLp175xDzj)
-  - walrus: [`qVI-fvoiA_pD…`](https://walruscan.com/testnet/blob/qVI-fvoiA_pDXQkTUEmkGx57XK8dakGnWB2_Lz-oTM4)
-  - commitment: 0xb524072d089a60f1ff5284863e553cc52ec8e17c999dc7cf4ec662be4a61aa74
-  - batch: [`0x33f15f13d6…`](https://suiscan.xyz/testnet/object/0x33f15f13d61ac6c55b3daf6a3dd1572f22bacb492b8141a6fb197e33d8b473fc)
-- B submits withdrawal of 3.00 shares into mcbAAPL (max fee 25 bps)
-  - sui: [`6c5LHWhT3MxM…`](https://suiscan.xyz/testnet/tx/6c5LHWhT3MxMDZg3bf61oaN7tMsWQjtFFajfkZd9MmQt)
-  - walrus: [`ZZAz84dQUQYh…`](https://walruscan.com/testnet/blob/ZZAz84dQUQYhHe-i385pDXAQs50a4Zy6eS_iYcm4CqI)
-  - commitment: 0x9927214d7e3747f62d0cfa9fdc59b389f96fd78ad598e32d03f54ad2157d04ee
-  - batch: [`0x33f15f13d6…`](https://suiscan.xyz/testnet/object/0x33f15f13d61ac6c55b3daf6a3dd1572f22bacb492b8141a6fb197e33d8b473fc)
+  - sui: [`9hTQvWRhCJZG…`](https://suiscan.xyz/testnet/tx/9hTQvWRhCJZGWw1hBmY6DSvrXfDTp43gaeU5Pqz3RgC3)
+  - walrus: [`9n6SIvaWSz5q…`](https://walruscan.com/testnet/blob/9n6SIvaWSz5qK9ZFYjwIe71eT4bATVTFOcULtLhi_kc)
+  - commitment: 0xbebf6240d9fa22f3f28ab6a5661dad58c54f9fd39e2c62c6f1d1a78d29619119
+  - batch: [`0xe5fd0bbc97…`](https://suiscan.xyz/testnet/object/0xe5fd0bbc978da8c5fa43133879fc9d64d0b1d528975243b83f4da37d0f8de642)
+- B submits withdrawal of 3.00 shares into mcbAAPL (max fee 100 bps)
+  - sui: [`2XGN6J4zQKDS…`](https://suiscan.xyz/testnet/tx/2XGN6J4zQKDSN3YbVHow6xnxv8wChftrKFmZ7soe1HU1)
+  - walrus: [`26LBohBJhnsN…`](https://walruscan.com/testnet/blob/26LBohBJhnsNwrXpGm8UlBk6qJuquAkK6R0rUrLSJIs)
+  - commitment: 0xe7dbb8c71af21480b46a00277d510b99ff692fcadb4d50d331177255dc757565
+  - batch: [`0xe5fd0bbc97…`](https://suiscan.xyz/testnet/object/0xe5fd0bbc978da8c5fa43133879fc9d64d0b1d528975243b83f4da37d0f8de642)
 - B submits withdrawal of 3.00 shares into mcbAAPL with max fee 1 bps (below the live fee: must skip)
-  - sui: [`CQA6CbUustHa…`](https://suiscan.xyz/testnet/tx/CQA6CbUustHaZFjQdLpRs9TYG5358qgwif6vm1m57N7o)
-  - walrus: [`cDwnJaYJd_1g…`](https://walruscan.com/testnet/blob/cDwnJaYJd_1gFg-GwstIpd6bnZpaHFiOEPP93A-ZSs8)
-  - commitment: 0x4c8533321b7d3c5eb48d05fa6cb34143a95c697c1d633f0131c62c243049865e
-  - batch: [`0x33f15f13d6…`](https://suiscan.xyz/testnet/object/0x33f15f13d61ac6c55b3daf6a3dd1572f22bacb492b8141a6fb197e33d8b473fc)
-- window closes at 2026-09-26T15:55:50.417Z (seq 1, 4 envelopes)
+  - sui: [`9ZN6yTF6TXUy…`](https://suiscan.xyz/testnet/tx/9ZN6yTF6TXUyr8nkEJFZqTUET51mHoTb5FzpPCXdZ6C8)
+  - walrus: [`A17mpTEViyWW…`](https://walruscan.com/testnet/blob/A17mpTEViyWWppS0CNnmefk6rFaj2Urgy7vPDjr256E)
+  - commitment: 0xfdda3d6ced57b4a1947b7373f9080e6efa882c8252c81298e70a106feeefc6af
+  - batch: [`0xe5fd0bbc97…`](https://suiscan.xyz/testnet/object/0xe5fd0bbc978da8c5fa43133879fc9d64d0b1d528975243b83f4da37d0f8de642)
+- window closes at 2026-09-26T17:44:12.656Z (seq 1, 4 envelopes)
 - **PASS** Seal denies the keeper before the window closes (NoAccessError)
 - keeper apply_batch seq 1
-  - sui: [`HaVNfEGYBVGB…`](https://suiscan.xyz/testnet/tx/HaVNfEGYBVGBFD2e1mTWat9YeU8qiLXSajFk85A6F6r4)
-  - walrusManifest: [`IMokrH5_Tyn7…`](https://walruscan.com/testnet/blob/IMokrH5_Tyn7MHqLzggvaihj_N3IP4JqmH2GmTt9te8)
-  - root: 0xbc932e7caea5060b40e711fa679728d44cf78c8cc9c1019f1938cd34162773fc
+  - sui: [`mfr63QPuVr2P…`](https://suiscan.xyz/testnet/tx/mfr63QPuVr2PbWSmRBuEGoDHG8HND24EXyFwumB9CYU)
+  - walrusManifest: [`RFdjdH871QSu…`](https://walruscan.com/testnet/blob/RFdjdH871QSuF8P6EnNOLkhLNVt0_qU79Rau6gfwtSM)
+  - root: 0x3ddb40821ee4f65b632601a4515cafcbc993b5e23fbc3e4f11f2906f7becf175
   - #0 applied pay
   - #1 rejected (overdraft)
   - #2 escrowed withdraw
@@ -204,11 +199,11 @@ Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T15:53:23.616Z (DEMO_CHECK=1
 **4. Withdrawal settlement on Unichain (WrapSwapRouter -> ParityHook) and debit on Sui**
 
 - keeper settleWithdrawals + debit_withdrawal
-  - unichain: [`0x302cb33da6…`](https://sepolia.uniscan.xyz/tx/0x302cb33da6d8c51b87b83c1101bcc8a4c353b2fb9b4c2b417550b44f82003e28)
-  - sui: [`Ez9oPVpzyvQv…`](https://suiscan.xyz/testnet/tx/Ez9oPVpzyvQv6BVkYEgtBTPHEvvVzdv34twz5JH3vhNc)
-  - walrusManifest: [`Bq9268Kr9qqT…`](https://walruscan.com/testnet/blob/Bq9268Kr9qqTqt03kTULcBEshviwOvVXN3MusVerUBU)
-  - 0x9927214d… settled debited 3.001349
-  - 0x4c853332… skipped restored 3.000310
+  - unichain: [`0x55e6802406…`](https://sepolia.uniscan.xyz/tx/0x55e68024068cf5fbaf112d12e487f4ac8c54f4b74ae4bffde96c3d5393dd7c54)
+  - sui: [`3QmwHs1B2F7s…`](https://suiscan.xyz/testnet/tx/3QmwHs1B2F7s9ba87nAGP5FB7EAx7kKuvG3q4mS89vQR)
+  - walrusManifest: [`H0Qz1Fs9Srom…`](https://walruscan.com/testnet/blob/H0Qz1Fs9SrommO1D_sVdkMRnRbd6RntnqfaLirMKzXA)
+  - 0xe7dbb8c7… settled debited 3.001445
+  - 0xfdda3d6c… skipped restored 3.000310
 - B received mcbAAPL (the other issuer's wrapper)
   - amount: 2.962962 mcbAAPL
   - faceValue: 2.962962 mcbAAPL
@@ -216,7 +211,7 @@ Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T15:53:23.616Z (DEMO_CHECK=1
 - **PASS** fee-capped withdrawal emitted WithdrawalSkipped
 - balances after, decrypted via Seal
   - A: 1.0250 (expected 1.0250)
-  - B: 5.9986 (expected 5.9986: skipped credit restored, unused fee reservation refunded)
+  - B: 5.9985 (expected 5.9985: skipped credit restored, unused fee reservation refunded)
 - **PASS** A debited exactly the payment
 - **PASS** B = before + payment - settled debit; WithdrawalSkipped restored its credit
 - **PASS** leaf Merkle proofs verify after settlement
@@ -224,37 +219,35 @@ Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T15:53:23.616Z (DEMO_CHECK=1
 **5. Reserves after**
 
 - reserves after
-  - suiTotalShares: 7.023650
-  - vaultSharesOutstanding: 7.023650
-  - vaultSharesHeld: 7.023650
-  - checkedBlock: 63585760
+  - suiTotalShares: 7.023554
+  - vaultSharesOutstanding: 7.023554
+  - vaultSharesHeld: 7.023554
+  - checkedBlock: 63592272
 - **PASS** Sui total_shares == ShareVault.sharesOutstanding (after)
 - **PASS** ShareVault shares held >= outstanding (after)
 
 **DEMO PASS**
 
-### Browser click-through: Send panel, fee-model vault
+### Browser click-through: Send panel, final deployment
 
-Run on 2026-09-26 (~16:05 UTC) in the app's **Send** panel (`/app?tab=send`) against live Sui testnet and Unichain Sepolia, with ShareVault `0xd501…f3bC` and the keeper running as `pnpm dev:sui-keeper`. Nine screenshots are in `~/wrapswap-run/status/sui-shots/send-live/`; a demo-mode run (no wallet, simulated states, live numbers) is in `send-demo/`.
+Run on 2026-09-26 (~17:50 UTC) in the app's **Send** panel (`/app?tab=send`) against live Sui testnet and Unichain Sepolia on the final fee-model deployment (router `0x49d7…40Cb`, ParityHook `0x484b…e0c8`, ShareVault `0x76B1…Bd5d`), with the keeper running as `pnpm dev:sui-keeper`. Nine screenshots are in `~/wrapswap-run/status/sui-shots/send-live/`; a demo-mode run (no wallet, simulated states, live numbers) is in `send-demo/`.
 
 How it was driven: headless Chromium can't operate the Slush or MetaMask extensions, so the harness (`services/crank/sui/clickthrough.ts`) injects stand-ins that sign with the same demo keys. One is an EIP-1193 provider behind the app's own Connect button; the other is a wallet-standard Sui wallet that dapp-kit lists as "Demo Wallet (test harness)". Everything else is real: the page, both chains, Seal, Walrus and the keeper. To do it by hand, import the two Sui keys into Slush and `DEMO_MNEMONIC` index 1 into MetaMask.
 
 | # | Step | Chain | Tx |
 | --- | --- | --- | --- |
-| 1 | Payer deposits 5 mAAPLx (xStocks) into ShareVault | Unichain | [`0xf58db617…`](https://sepolia.uniscan.xyz/tx/0xf58db6179468a23d2464970897d93a10b0349bb1fc5c6438e9e530d95ee30db4) |
-| 2 | Keeper credits 5 shares (`credit_deposit`) | Sui | [`DfVRLCue13…`](https://suiscan.xyz/testnet/tx/DfVRLCue13HSeh67hGuD3CbE4RnApZsgHoVhQPG6wZ2u) |
+| 1 | Payer deposits 5 mAAPLx (xStocks) into ShareVault | Unichain | [`0xb1d818df…`](https://sepolia.uniscan.xyz/tx/0xb1d818df53f0ab92de3d89e115e3ec16a6e6739fbe8a6716a172485582ae8b81) |
+| 2 | Keeper credits 5 shares (`credit_deposit`) | Sui | [`9D9u3gLh5v…`](https://suiscan.xyz/testnet/tx/9D9u3gLh5vfrsiMSLXtBcvw7AQR2a3PzPtaRGnabiAFo) |
 | 3 | Payer decrypts their balance in the browser (Seal `seal_approve_leaf`, Merkle proof checked) | Sui (read) | `03-deposit-credited.png` |
-| 4 | Payer sends 3 shares, sealed to batch 2 (confidential: amount and payee encrypted) | Sui | [`9mpHossDSy…`](https://suiscan.xyz/testnet/tx/9mpHossDSyLaYkVEL5Fqpn4M9zo3V2rcpNPB2UUb7x8q) |
-| 5 | Window closes; keeper applies batch 2, total unchanged | Sui | [`AHjYiXGWTL…`](https://suiscan.xyz/testnet/tx/AHjYiXGWTLewJZXXGjveB4uUF2Av71KTYGwSnGPeUrv5) |
+| 4 | Payer sends 3 shares, sealed to batch 2 (amount and payee encrypted) | Sui | [`Cd9YepBeMf…`](https://suiscan.xyz/testnet/tx/Cd9YepBeMfAPQcnFcQGiTqoK3fwXFQTKALvYDmexhFWu) |
+| 5 | Window closes; keeper applies batch 2, total unchanged | Sui | [`4dtHGYtxgW…`](https://suiscan.xyz/testnet/tx/4dtHGYtxgWesaYVhDWoFb1bZpWDL2kT7Z6BUmPQ4yUzz) |
 | 6 | Payee decrypts their own leaf, which includes the 3 shares | Sui (read) | `06-recipient-balance.png` |
-| 7 | Payee withdraws 5 shares to Coinbase (mcbAAPL, the other issuer), sealed | Sui | [`cLGVr27yXm…`](https://suiscan.xyz/testnet/tx/cLGVr27yXm4ipD5aikAQK5bdwMi4tG77qQmTfNsAR3g) |
-| 8 | Keeper applies batch 3 (withdrawal moved to escrow) | Sui | [`8C3hfVjScT…`](https://suiscan.xyz/testnet/tx/8C3hfVjScT9PoCzrbDtQka44DnHcR5xf3ovpKMGm9jNP) |
-| 9 | ShareVault converts mAAPLx → mcbAAPL through WrapSwapRouter → ParityHook and delivers **4.938271 mcbAAPL** (= 5 shares ÷ 1.0125) | Unichain | [`0x38c217b6…`](https://sepolia.uniscan.xyz/tx/0x38c217b6fad1e497a63c37adaed68ba195c9eef08dc5e8352fabae5d87048104) |
-| 10 | Keeper debits 5.0022410625 shares (Convert fee grossed up; unused reservation refunded) | Sui | [`4aiUD9xkCi…`](https://suiscan.xyz/testnet/tx/4aiUD9xkCiKX7MMi8o89HAaMuwkJsviH9mAC4GkV8kHF) |
+| 7 | Payee withdraws 5 shares to Coinbase (mcbAAPL, the other issuer), sealed | Sui | [`71m6E9Eb9g…`](https://suiscan.xyz/testnet/tx/71m6E9Eb9g2TEVSp7HriUJLdYPPFaai1JF8tyBgjKLkL) |
+| 8 | Keeper applies batch 3 (withdrawal moved to escrow) | Sui | [`ERNPGq8LzE…`](https://suiscan.xyz/testnet/tx/ERNPGq8LzEVT8RAmp5rbXsV3EGh1X8SyT4hPQJNY1YoH) |
+| 9 | ShareVault converts mAAPLx → mcbAAPL through WrapSwapRouter → ParityHook and delivers **4.938271 mcbAAPL** (= 5 shares ÷ 1.0125) | Unichain | [`0x635b4c36…`](https://sepolia.uniscan.xyz/tx/0x635b4c364390866199ca8f025e02d9fd0ed9d886f0f0aa9801521db8a0cf949d) |
+| 10 | Keeper debits 5.0023807875 shares (Convert fee grossed up; unused reservation refunded) | Sui | [`2CdgAK4GFq…`](https://suiscan.xyz/testnet/tx/2CdgAK4GFqj9fhDneTjUJWdVMMrwNwVZk5kjC4f7S2mC) |
 
-After the run, `GET /pay/reserves` returned `suiTotalShares == vaultShares == vaultSharesHeld == 7.0214092375`, with `invariant: true` and `solvent: true`.
-
-Earlier runs on the retired vault (`0x275C…3187`, pre fee-model pool) passed the same flow; their screenshots remain in `~/wrapswap-run/status/sui-shots/` and the logs in `~/wrapswap-run/logs/`.
+After the run, `GET /pay/reserves` returned `suiTotalShares == vaultShares == vaultSharesHeld == 7.021173325`, with `invariant: true` and `solvent: true`.
 
 ## Tests
 
@@ -269,7 +262,7 @@ Earlier runs on the retired vault (`0x275C…3187`, pre fee-model pool) passed t
 2. **Operator visibility.** Tier B hides amounts from the public, not from the keeper, which must read amounts to stop overdrafts. The keeper's plaintext ledger lives off-repo. Nautilus (decrypt and apply inside an attested enclave) would remove this; this version does not include it. This is not zero-knowledge.
 3. **Confidential, not anonymous.** Payments are unlinkable to the public, but deposits and withdrawals are ordinary ERC-20 movements on Unichain, and the anonymity set at the boundary is the withdrawal batch. The Walrus manifest lists which Sui addresses hold a leaf, though not their balances; every leaf is re-encrypted with a fresh nonce each root, so unchanged balances can't be told from changed ones.
 4. **Single relayer.** One keeper attests deposits and settles withdrawals, optimistically. It enforces `Sui total_shares ≤ ShareVault custody`: it refuses any credit that would exceed custody and pauses the pool if the invariant ever breaks. `/pay/reserves` publishes the same check (`solvent`). It can still censor or delay.
-5. **Vault redeploy.** Onchain's fee-model redeploy moved the AAPL pool to a new ParityHook, and the vault's pool key is immutable, so ShareVault was redeployed (`0xd501…f3bC`) with a fresh Sui pool. The retired vault/pool pair ended 1:1 at 31.0407853 shares of mock tokens; its custody stays where it is. The new vault re-quotes the exact-input trade it executes (post-trade-skew fee) and tops up the input so the payee always gets face value.
+5. **Vault redeploys.** ShareVault's pool key is immutable, so each onchain redeploy of the AAPL pool meant a new vault and a fresh Sui pool. The active pair is ShareVault `0x76B1…Bd5d` on the final fee model with Sui pool `0xf414…2fe1`; earlier pairs ended 1:1 on mock tokens and are listed only in `deployments/sui-testnet.json`. The vault re-quotes the exact-input trade it executes and tops up the input so the payee always gets face value.
 6. **No share bridge.** Shares never cross chains. Only credits (Sui) and issuer conversions (Unichain) move.
 7. **Transfer restrictions unverified.** Native issuer behaviour on a generic node returned `OpcodeNotFound`, including an attempted holder transfer; that doesn't prove transfers are allowlisted. Mocks are used. Delivering a gated wrapper to an arbitrary recipient may fail in production, and in that case the withdrawal skips and the credit is restored.
 8. **Testnet only.** Walrus has no public mainnet publisher, the Seal servers used are testnet open-mode servers, and the issuer tokens are mocks.
