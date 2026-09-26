@@ -32,7 +32,8 @@ if [[ $NETWORK == anvil ]]; then
   cast rpc --rpc-url "$RPC_URL" evm_setNextBlockTimestamp 1790692200 >/dev/null
   cast rpc --rpc-url "$RPC_URL" evm_mine >/dev/null
 fi
-run 'run()'
+# SEED_DARK_ONLY=1: pools already seeded (e.g. by UpgradeFees.s.sol); only fund, commit, reveal a dark batch.
+[[ -n ${SEED_DARK_ONLY:-} ]] || run 'run()'
 # On Unichain Sepolia fund escrow first so only the two commit txs must land inside the commit window.
 if [[ $NETWORK == unichain-sepolia ]]; then run 'fundEscrow()'; fi
 phase() { cast call "$dark" 'currentBatch()(uint256,uint8,uint256)' --rpc-url "$RPC_URL"; }

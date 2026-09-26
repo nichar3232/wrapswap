@@ -156,11 +156,12 @@ test("Pool: stats, inventory, fee-curve sliders drawn with the contract formula,
   await expect(page.getByText("8,000 tokens · 8,100 shares")).toBeVisible();
   await expect(page.getByLabel("Inventory skew", { exact: true })).toHaveAttribute("value", "-0.2");
   const readout = page.locator(".curve-readout");
-  await expect(readout).toContainText(`${v.parityFill.feeBps} bps`);
+  // Off-hours the curve shows the skew-increasing side: + 15 bps x |skew| (0.2 -> 3 bps); the demo fill itself reduces skew.
+  await expect(readout).toContainText(v.marketOpen ? `${v.parityFill.feeBps} bps` : "7.60 bps");
   await expect(page.locator(".live-marker")).toBeVisible();
   const slider = page.getByLabel("Inventory skew (percent)");
   await slider.fill("0");
-  await expect(readout).toContainText(v.marketOpen ? "2.00 bps" : "12.00 bps");
+  await expect(readout).toContainText("2.00 bps"); // balanced: no off-hours premium, open or closed
   await page.getByRole("button", { name: "Market open" }).click();
   await expect(readout).toContainText("2.00 bps");
   await slider.fill("100");

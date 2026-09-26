@@ -926,7 +926,7 @@ export const schemas = {
         "type": "integer"
       },
       "formula": {
-        "const": "min(200 + ceil(1300*|skew|) + (open ? 0 : 1000), 2500) pips"
+        "const": "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips"
       }
     }
   },
@@ -2135,7 +2135,7 @@ export type FeesResponse = {
   "poolId": Bytes32;
   "fee": FeeBreakdown;
   "maxFeePips": number;
-  "formula": "min(200 + ceil(1300*|skew|) + (open ? 0 : 1000), 2500) pips";
+  "formula": "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips";
 };
 
 export type FillKind = "PARITY" | "FALL-THROUGH" | "DARK-CROSS" | "DARK-RESIDUAL";

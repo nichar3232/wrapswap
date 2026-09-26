@@ -1417,7 +1417,7 @@ reasons visible in the fields (it never 503s). `addresses.tokens` is keyed by sy
     "poolId": { "$ref": "Bytes32" },
     "fee": { "$ref": "FeeBreakdown" },
     "maxFeePips": { "type": "integer" },
-    "formula": { "const": "min(200 + ceil(1300*|skew|) + (open ? 0 : 1000), 2500) pips" }
+    "formula": { "const": "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips" }
   }
 }
 ```
