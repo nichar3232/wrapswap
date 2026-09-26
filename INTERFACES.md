@@ -1072,11 +1072,13 @@ that cannot be read is an error, never a default. Chain-read values carry the `b
   { "name": "route", "method": "GET", "path": "/route", "query": "RouteQuery", "response": "RouteResponse", "backing": "chain: IEligibility.check, ParityHook.quote, V4Quoter simulation, DarkCrossHook.currentBatch, IPriceOracle.getMid; table: eligibility_checks (insert)" },
   { "name": "nyse", "method": "GET", "path": "/nyse", "query": null, "response": "NyseResponse", "backing": "chain: latest block timestamp, NyseCalendar.isOpen, nextTransition" },
   { "name": "currentBatch", "method": "GET", "path": "/batches/current", "query": null, "response": "CurrentBatchResponse", "backing": "chain: DarkCrossHook.currentBatch, participants, IPriceOracle.getMid" },
-  { "name": "batches", "method": "GET", "path": "/batches", "query": "PageQuery", "response": "BatchListResponse", "backing": "view: v_dark_batches" },
+  { "name": "batches", "method": "GET", "path": "/batches", "query": "BatchesQuery", "response": "BatchListResponse", "backing": "view: v_dark_batches" },
   { "name": "batch", "method": "GET", "path": "/batches/:batchId", "query": null, "response": "BatchDetailResponse", "backing": "view: v_dark_batches, v_dark_orders, v_fills; table: dark_forfeits, dark_residual_skips" },
   { "name": "orders", "method": "GET", "path": "/orders/:address", "query": "PageQuery", "response": "OrderListResponse", "backing": "view: v_dark_orders" },
   { "name": "fills", "method": "GET", "path": "/fills", "query": "FillsQuery", "response": "FillListResponse", "backing": "view: v_fills" },
   { "name": "eligibility", "method": "GET", "path": "/eligibility/:address", "query": "EligibilityQuery", "response": "EligibilityResponse", "backing": "chain: IEligibility.check, demoMode; table: eligibility_checks (insert), eligibility_denials" },
+  { "name": "assets", "method": "GET", "path": "/assets", "query": null, "response": "AssetsResponse", "backing": "file: deployments/${NETWORK}.json (tokens, pool/pools, dark); chain: IWrapperAdapter.ratio, IssuerRegistry.active" },
+  { "name": "stats", "method": "GET", "path": "/stats", "query": "StatsQuery", "response": "StatsResponse", "backing": "view: v_fills; chain: IWrapperAdapter.sharesPerToken" },
   { "name": "crankStatus", "method": "GET", "path": "/status", "query": null, "response": "CrankStatusResponse", "backing": "crank process on CRANK_HEALTH_PORT (§7), not the API" }
 ]
 ```
@@ -1625,6 +1627,182 @@ Route decision, first match wins:
   "properties": {
     "items": { "type": "array", "items": { "$ref": "FillView" } },
     "nextCursor": { "type": ["string", "null"] }
+  }
+}
+```
+
+`GET /batches?settled=true` lists settled batches only (`false`: unsettled only); otherwise as `PageQuery`.
+
+```json wrapswap:schema BatchesQuery
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "settled": { "enum": ["true", "false"] },
+    "limit": { "type": "string", "pattern": "^([1-9]|[1-9][0-9]|1[0-9][0-9]|200)$" },
+    "cursor": { "type": "string", "pattern": "^[0-9]+:[0-9]+$" }
+  }
+}
+```
+
+`GET /stats`: aggregate conversion stats from the indexer (`v_fills`), up to `indexedBlock`. Share figures are
+1e18-scaled canonical shares: each fill's `amountIn` converted with its input token's on-chain
+`IWrapperAdapter.sharesPerToken` (rounded down). `feesEarned` counts inventory fees only (PARITY and DARK-RESIDUAL
+fills; the fee is charged in `tokenOut`), not dark-cross treasury fees or fall-through LP fees. With `?address=`,
+`wallet` repeats the counts for that account and lists its 10 most recent fills; otherwise `wallet` is null.
+`byAsset` groups the same totals by the fills' `underlying` asset (tokens as in `GET /assets`).
+
+```json wrapswap:schema StatsQuery
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": { "address": { "$ref": "Address" } }
+}
+```
+
+```json wrapswap:schema StatsResponse
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["indexedBlock", "fills", "byKind", "sharesVolume", "byAsset", "feesEarned", "wallet"],
+  "properties": {
+    "indexedBlock": { "$ref": "UInt" },
+    "fills": { "type": "integer" },
+    "byKind": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["PARITY", "FALL-THROUGH", "DARK-CROSS", "DARK-RESIDUAL"],
+      "properties": {
+        "PARITY": { "type": "integer" },
+        "FALL-THROUGH": { "type": "integer" },
+        "DARK-CROSS": { "type": "integer" },
+        "DARK-RESIDUAL": { "type": "integer" }
+      }
+    },
+    "sharesVolume": { "$ref": "UInt" },
+    "byAsset": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset", "fills", "sharesVolume", "feesEarnedShares"],
+        "properties": {
+          "asset": { "type": "string" },
+          "fills": { "type": "integer" },
+          "sharesVolume": { "$ref": "UInt" },
+          "feesEarnedShares": { "$ref": "UInt" }
+        }
+      }
+    },
+    "feesEarned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalShares", "tokens"],
+      "properties": {
+        "totalShares": { "$ref": "UInt" },
+        "tokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["symbol", "address", "amount", "shares"],
+            "properties": {
+              "symbol": { "type": "string" },
+              "address": { "$ref": "Address" },
+              "amount": { "$ref": "UInt" },
+              "shares": { "$ref": "UInt" }
+            }
+          }
+        }
+      }
+    },
+    "wallet": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["address", "fills", "sharesVolume", "recent"],
+      "properties": {
+        "address": { "$ref": "Address" },
+        "fills": { "type": "integer" },
+        "sharesVolume": { "$ref": "UInt" },
+        "recent": { "type": "array", "items": { "$ref": "FillView" } }
+      }
+    }
+  }
+}
+```
+
+`GET /assets`: every asset in the deployment, grouped by the tokens' `underlying`. Platforms are the issuer tokens
+of that asset with their adapter ratio read on chain (`sharesPerTokenX18`; `healthy` = adapter ratio healthy and IssuerRegistry `active`); `pools`
+are the deployment's ParityHook pools whose currencies both belong to the asset; `darkCross` is set when the
+DarkCrossHook pair belongs to it. The UI builds its asset/platform pickers from this response.
+
+```json wrapswap:schema AssetsResponse
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["network", "chainId", "block", "assets"],
+  "properties": {
+    "network": { "type": "string" },
+    "chainId": { "type": "integer" },
+    "block": { "$ref": "UInt" },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset", "platforms", "pools", "darkCross"],
+        "properties": {
+          "asset": { "type": "string" },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["issuer", "symbol", "name", "address", "decimals", "adapter", "adapterKind", "sharesPerTokenX18", "healthy", "mock"],
+              "properties": {
+                "issuer": { "type": "string" },
+                "symbol": { "type": "string" },
+                "name": { "type": "string" },
+                "address": { "$ref": "Address" },
+                "decimals": { "type": "integer" },
+                "adapter": { "$ref": "Address" },
+                "adapterKind": { "type": "string" },
+                "sharesPerTokenX18": { "$ref": "UInt" },
+                "healthy": { "type": "boolean" },
+                "mock": { "type": "boolean" }
+              }
+            }
+          },
+          "pools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["poolId", "currency0", "currency1", "fee", "tickSpacing", "hooks"],
+              "properties": {
+                "poolId": { "$ref": "Bytes32" },
+                "currency0": { "$ref": "Address" },
+                "currency1": { "$ref": "Address" },
+                "fee": { "type": "integer" },
+                "tickSpacing": { "type": "integer" },
+                "hooks": { "$ref": "Address" }
+              }
+            }
+          },
+          "darkCross": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["hook", "baseToken", "quoteToken", "batchBlocks"],
+            "properties": {
+              "hook": { "$ref": "Address" },
+              "baseToken": { "$ref": "Address" },
+              "quoteToken": { "$ref": "Address" },
+              "batchBlocks": { "type": "integer" }
+            }
+          }
+        }
+      }
+    }
   }
 }
 ```
