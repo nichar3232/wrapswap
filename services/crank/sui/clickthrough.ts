@@ -171,8 +171,11 @@ try {
   if (await wd.getByText(/^Skipped/).count()) throw new Error('withdrawal was skipped on Unichain, not delivered');
   await q.waitForTimeout(3_000);
   await shot(q, 'withdraw-delivered', 'ShareVault settled on Unichain through WrapSwapRouter -> ParityHook');
+  // Wait for the keeper's debit on Sui: reserves back to 1:1, then re-decrypt the payee's new leaf.
+  await q.getByTestId('reserves').filter({ hasText: /Reserves 1:1/ }).waitFor(T);
   await pay2.getByRole('button', { name: /Refresh/ }).click();
-  await q.waitForTimeout(8_000);
+  await pay2.getByText(/Merkle proof verified/).waitFor(T);
+  await q.waitForTimeout(3_000);
   await shot(q, 'payee-after', 'payee balance after withdrawal; reserves badge still 1:1');
   console.log('CLICK-THROUGH PASS');
 } catch (e) {
