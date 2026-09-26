@@ -12,15 +12,15 @@ Placeholders referenced: `{{URL:repo}}`, `{{URL:video}}`, `{{URL:feedback-md}}`,
 
 ## 1. Record Part A on the local anvil stack (≈15 min)
 
-- [ ] Start the recording stack with the integration lane's command, `scripts/dev/record-ready` (path from INTERFACES.md §8 `scripts/dev/`; see INTEGRATION.md for options). It must use `NETWORK=anvil`, warp to `1790692200` (NYSE OPEN), seed §10 balances and inventory, and stop before any swap.
-- [ ] Check the Convert quote for 100 mcbAAPL → mAAPLx: **PARITY**, **4.60 bps**, **101.203425 mAAPLx**. If it doesn't match, re-run `record-ready`. Don't record.
+- [ ] Start the recording stack with the integration lane's command, `scripts/dev/record-ready` (path from INTERFACES.md §8 `scripts/dev/`; see INTEGRATION.md for options). It must use `NETWORK=anvil`, warp to `1790692200`, seed §10 balances and inventory, and stop before any swap.
+- [ ] Check the Move → Convert quote for 100 mcbAAPL → mAAPLx: **PARITY**, **2.00 bps** (base only, skew fee 0), **101.22975 mAAPLx**. If it doesn't match, re-run `record-ready`. Don't record.
 - [ ] Record blocks A1–A4 of `submission/demo-script.md` (0:00–2:20), at 1080p or at least 720p, with a screen recorder and your own voice.
-- [ ] Before cutting, check the Dark Cross batch shows crossed 50 mcbAAPL ↔ 50.625 mAAPLx and residual 10 mcbAAPL → 10.120474125 mAAPLx.
+- [ ] Before cutting, check the Dark Cross batch shows crossed 50 mcbAAPL ↔ 50.625 mAAPLx and residual 10 mcbAAPL → 10.122975 mAAPLx at 2.00 bps.
 
 ## 2. Record Part B on the live site (≈10 min)
 
 - [ ] Open `https://sepolia.uniscan.xyz/address/0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8#code` and confirm the "verified" check shows (block B1).
-- [ ] Run `scripts/dev/live-up` (Funnel serves it, DEMO.md §3) and open `https://nichars-mac-mini.tail43cacc.ts.net/app`, Convert tab. Check chain 1301 and asset AAPL. At time of writing the 100 mcbAAPL → mAAPLx quote was **2.00 bps** / **101.22975 mAAPLx** (skew-reducing: base fee only; the reverse direction was 4.97 bps); read the live figures off the screen. **Only quote; don't execute a swap before recording.**
+- [ ] Run `scripts/dev/live-up` (Funnel serves it, DEMO.md §3) and open `https://nichars-mac-mini.tail43cacc.ts.net/app`, Move → Convert. Check chain 1301 and asset AAPL. At time of writing the 100 mcbAAPL → mAAPLx quote was **2.00 bps** / **101.22975 mAAPLx** (skew-reducing: base fee only; the reverse direction was 4.97 bps); read the live figures off the screen. **Only quote; don't execute a swap before recording.**
 - [ ] Open `{{URL:repo-readme-integrations}}` (block B3).
 - [ ] Record blocks B1–B3 (2:20–3:00).
 
