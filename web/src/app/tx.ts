@@ -1,5 +1,17 @@
 import { useCallback, useRef, useState } from "react";
-import type { Hash } from "viem";
+import {
+  BaseError,
+  ContractFunctionRevertedError,
+  UserRejectedRequestError,
+  decodeErrorResult,
+  parseAbi,
+  type Abi,
+  type Hash,
+  type Hex,
+} from "viem";
+import { abis } from "@wrapswap/types";
+import { duration } from "../lib/format";
+import { RelayError } from "../relay";
 import { WalletError } from "../wallet";
 
 export type TxState<R = unknown> =
@@ -9,49 +21,129 @@ export type TxState<R = unknown> =
   | { step: "confirmed"; label: string; hash?: Hash; simulated: boolean; result: R }
   | { step: "failed"; label: string; reason: string; hash?: Hash };
 
-/** Contract custom errors and wallet codes, in plain words. Order matters: first match wins. */
-const REASONS: [RegExp, string][] = [
-  [/4001|user rejected|user denied|rejected the request|denied transaction/i, "You rejected the request in your wallet. Nothing was sent."],
-  [/TooLittleReceived|slippage|amountOutMin/i, "The price moved past your 0.5% slippage limit before the swap landed. Retry to requote."],
-  [/PegGuardTripped|peg/i, "Peg guard: the pool drifted more than 50 bps from NAV parity, so conversions are paused until it recovers."],
-  [/InsufficientInventory/i, "Hook inventory is short for this size. Try a smaller amount, or retry to route it through the pool."],
-  [/DeadlineExpired/i, "The quote expired before the transaction confirmed. Retry to requote."],
-  [/closed|off-?hours/i, "The off-hours fee changed while you were signing. Review the wider fee and retry."],
-  [/WrongChain/i, "Your wallet is on another network. Switch to Unichain Sepolia and retry."],
-  [/insufficient funds|exceeds balance|transfer amount exceeds/i, "Not enough balance (or ETH for gas) in this wallet."],
-  [/Ineligible|eligib|Unauthorized|SwapperMismatch/i, "This wallet isn't eligible for issuer conversions (no valid attestation)."],
-  [/WrongPhase/i, "The batch moved to its next phase. Refresh the batch and try the current step."],
-  [/OracleStale/i, "The oracle midpoint is stale, so settlement is paused until the next update."],
-  [/AlreadyCommitted|AlreadyRevealed|AlreadySettled/i, "That step is already done for this batch."],
-  [/CommitNotAccepted/i, "The commit wasn't accepted. Your funded tokens stay in escrow; check eligibility and retry."],
-  [/RevealNotValid|CommitMismatch/i, "The reveal didn't match your commitment. Keep this browser's saved order and retry."],
-  [/BatchNotSettleable/i, "This batch can't settle yet. Wait for the settle window."],
+/** Contract custom errors (by decoded name) in plain words. Unknown errors are shown by their own name. */
+const ERRORS: Record<string, string> = {
+  TooLittleReceived: "The output fell below your 0.5% minimum before the swap landed. Retry to requote.",
+  PegGuardTripped: "Peg guard: the pool drifted more than 50 bps from NAV parity, so conversions are paused until it recovers.",
+  InsufficientInventory: "Hook inventory is short for this size. Try a smaller amount.",
+  DeadlineExpired: "The quote expired before the transaction confirmed. Retry to requote.",
+  NotEligible: "This wallet isn't eligible for issuer conversions (no valid attestation).",
+  SwapperMismatch: "The swapper in the hook data doesn't match this wallet.",
+  WrongPhase: "The batch moved to its next phase. Refresh the batch and try the current step.",
+  OracleStale: "The oracle midpoint is older than 30 minutes, so settlement waits for the next update.",
+  AlreadyCommitted: "This wallet already has an order in this batch.",
+  AlreadyRevealed: "This order is already revealed.",
+  AlreadySettled: "This batch is already settled.",
+  UnknownCommit: "No sealed order from this wallet in this batch.",
+  BatchFull: "This batch is full. Commit in the next batch.",
+  BatchNotSettleable: "This batch can't settle yet. Wait for the settle window.",
+  CommitMismatch: "The reveal didn't match your commitment. Keep this browser's saved order and retry.",
+  InsufficientEscrow: "Not enough funded balance in the Dark Cross escrow.",
+  ResidualBelowMinOut: "The residual couldn't fill at your limit, so it stays in escrow.",
+  AdapterUnhealthy: "An issuer adapter reports unhealthy, so conversions of this wrapper are paused.",
+  TokenPaused: "The issuer paused this token.",
+  ZeroAmount: "Enter an amount above zero.",
+  CooldownActive: "The faucet cooldown hasn't passed yet.",
+  ERC20InsufficientBalance: "Not enough token balance in this wallet.",
+  ERC20InsufficientAllowance: "The approval hasn't reached the chain yet. Retry in a moment.",
+};
+/** Failures that happen before or around the contract (wallet, balance, network, our own checks). */
+const OTHER: [RegExp, string][] = [
+  [/WrongChain/, "Your wallet is on another network. Switch to Unichain Sepolia and retry."],
+  [/CommitNotAccepted/, "The commit wasn't accepted (eligibility denied). Your funded tokens stay in escrow."],
+  [/RevealNotValid/, "The reveal didn't match your commitment. Keep this browser's saved order and retry."],
   [/NoRouter/, "Conversions are unavailable on this deployment (no WrapSwapRouter)."],
-  [/timeout|network|fetch|RPC/i, "The network didn't respond. Check your connection and retry."],
+  [/NoRelay/, "The demo signer is unavailable. Connect a wallet to transact."],
+  [/insufficient funds for gas|exceeds the balance of the account/i, "Not enough ETH for gas in this wallet."],
+  [/transfer amount exceeds balance|ERC20InsufficientBalance/i, "Not enough token balance in this wallet."],
+  [/ERC20InsufficientAllowance|allowance/i, "The approval hasn't reached the chain yet. Retry in a moment."],
+  [/HTTP request failed|fetch failed|network|timed? ?out/i, "The network didn't respond. Check your connection and retry."],
 ];
 
+/**
+ * Every custom error the deployment can raise (all contract ABIs), plus v4's PoolManager wrapper: a revert inside a
+ * hook reaches the router as WrappedError(target, selector, reason, details), with the hook's own error in `reason`.
+ */
+const ERROR_ABI: Abi = [
+  ...Object.values(abis).flatMap((a) => (a as Abi).filter((x) => x.type === "error")),
+  ...parseAbi([
+    "error WrappedError(address target, bytes4 selector, bytes reason, bytes details)",
+    "error CooldownActive(uint256 secondsRemaining)",
+    "error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed)",
+    "error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed)",
+  ]),
+];
+function decodeRaw(data: Hex, depth = 0): { name?: string; text?: string } | undefined {
+  try {
+    const r = decodeErrorResult({ abi: ERROR_ABI, data });
+    if (r.errorName === "WrappedError" && depth < 3) return decodeRaw((r.args as readonly Hex[])[2], depth + 1) ?? { text: "WrappedError" };
+    const args = r.args?.length ? `(${r.args.map(String).join(", ")})` : "";
+    return { name: r.errorName, text: r.errorName === "Error" ? String(r.args?.[0]) : r.errorName + args };
+  } catch {
+    return undefined;
+  }
+}
+
+/** The decoded revert reason of a viem error: custom error name (with args), require() string, or panic. */
+export function revertReason(e: unknown): { name?: string; text?: string } | undefined {
+  if (!(e instanceof BaseError)) return undefined;
+  const reverted = e.walk((x) => x instanceof ContractFunctionRevertedError) as ContractFunctionRevertedError | null;
+  if (!reverted) return undefined;
+  if (reverted.raw && reverted.raw !== "0x") {
+    const decoded = decodeRaw(reverted.raw);
+    if (decoded) return decoded;
+  }
+  if (reverted.data?.errorName) {
+    const args = reverted.data.args?.length ? `(${reverted.data.args.map(String).join(", ")})` : "";
+    return { name: reverted.data.errorName, text: reverted.data.errorName + args };
+  }
+  if (reverted.reason) return { text: reverted.reason };
+  if (reverted.signature) return { text: `unknown error ${reverted.signature}` };
+  return { text: reverted.shortMessage };
+}
+
+/** Revert data carried by a raw provider error (e.g. MetaMask: { data: { originalError: { data: "0x…" } } }). */
+function providerRevertData(e: unknown, depth = 0): Hex | undefined {
+  if (!e || typeof e !== "object" || depth > 5) return undefined;
+  const o = e as Record<string, unknown>;
+  if (typeof o.data === "string" && /^0x[0-9a-fA-F]{8,}$/.test(o.data)) return o.data as Hex;
+  for (const k of ["data", "originalError", "error", "cause"]) {
+    const found = providerRevertData(o[k], depth + 1);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function humanize(e: unknown): string {
+  if (e instanceof RelayError)
+    return e.status === 429
+      ? `Demo limit reached: ${e.message}. Next action in ${duration(e.retryAfter ?? 600)}.`
+      : e.code === "BUSY"
+        ? "A Sui send is already in progress on the demo relay. Retry in a few minutes."
+        : e.code === "OVER_LIMIT"
+          ? "The demo relay moves at most 100 shares per action."
+          : e.code === "UNAVAILABLE"
+            ? "The demo relay didn't respond. Retry, or connect a wallet."
+            : `The demo relay refused: ${e.message}.`;
   if (e instanceof WalletError)
     return e.kind === "no-wallet"
       ? "No browser wallet found. Install MetaMask (or another injected wallet) to sign."
       : "Your wallet didn't return an account. Unlock it and retry.";
-  const parts: string[] = [];
-  const walk = (x: unknown, depth = 0) => {
-    if (!x || depth > 5) return;
-    if (typeof x === "string") return void parts.push(x);
-    const o = x as Record<string, unknown>;
-    for (const k of ["code", "name", "message", "shortMessage", "details", "reason", "errorName"])
-      if (o[k] !== undefined) parts.push(String(o[k]));
-    const data = o.data as Record<string, unknown> | undefined;
-    if (data?.errorName) parts.push(String(data.errorName));
-    walk(o.cause, depth + 1);
-    walk(o.error, depth + 1);
-    walk(data?.originalError, depth + 1);
-  };
-  walk(e);
-  const text = parts.join(" ");
-  for (const [re, reason] of REASONS) if (re.test(text)) return reason;
-  return "The transaction didn't go through. Nothing was lost; please retry.";
+  const code = (e as { code?: unknown })?.code;
+  if (
+    code === 4001 ||
+    (e instanceof BaseError && e.walk((x) => x instanceof UserRejectedRequestError)) ||
+    /user rejected|user denied|rejected the request/i.test(String((e as Error)?.message ?? e))
+  )
+    return "You rejected the request in your wallet. Nothing was sent.";
+  const raw = e instanceof BaseError ? undefined : providerRevertData(e);
+  const revert = revertReason(e) ?? (raw ? decodeRaw(raw) : undefined);
+  if (revert) return revert.name && ERRORS[revert.name] ? ERRORS[revert.name] : `The contract reverted: ${revert.text}.`;
+  // Not a decoded revert: match on the error's short text only (never on the calldata or argument names).
+  const text = e instanceof BaseError ? `${e.name} ${e.shortMessage} ${e.details ?? ""}` : String((e as Error)?.message ?? e);
+  for (const [re, reason] of OTHER) if (re.test(text)) return reason;
+  const short = e instanceof BaseError ? e.shortMessage : (e as Error)?.message;
+  return short ? `The transaction failed: ${short.split("\n")[0]}` : "The transaction didn't go through. Nothing was sent.";
 }
 
 type Runner<R> = (onHash: (hash: Hash) => void) => Promise<{ hash?: Hash; simulated: boolean; result: R }>;

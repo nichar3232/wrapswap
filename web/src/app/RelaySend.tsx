@@ -1,0 +1,173 @@
+import { useEffect, useState } from "react";
+import { isAddress, parseUnits } from "viem";
+import { fmtShares } from "../lib/format";
+import { relayAmount, relaySend, relaySendJob, relayStatus, type RelaySendJob } from "../relay";
+import { toShares, type Asset } from "./assets";
+import { RelayLimitNote, useRelayCooldown } from "./relayUi";
+import { useTx } from "./tx";
+import { CopyButton, Spinner, TxPanel, shortHex } from "./ui";
+import { useWallet } from "./wallet";
+
+const DONE = ["settled", "skipped", "failed"];
+const STATUS: Record<RelaySendJob["status"], string> = {
+  deposited: "Deposited on Unichain · waiting for the keeper to credit Sui",
+  credited: "Credited on Sui · sealing the payment",
+  paid: "Paid confidentially on Sui · submitting the withdrawal",
+  "withdraw-submitted": "Withdrawal sealed on Sui · waiting for settlement on Unichain",
+  settled: "Settled: the recipient received the other issuer's wrapper",
+  skipped: "The withdrawal was skipped by the keeper",
+  failed: "Failed",
+};
+
+/**
+ * Send with no wallet: POST {api}/demo/send runs the real Sui confidential path on the demo relay
+ * (ShareVault deposit on Unichain → sealed pay on Sui → withdraw into the other issuer on Unichain). Every step
+ * shown is a real transaction the relay returns; nothing here is simulated.
+ */
+export function RelaySend({ assets }: { assets: Asset[] }) {
+  const w = useWallet();
+  // Unison Pay's ShareVault holds AAPL wrappers only.
+  const asset = assets.find((a) => a.symbol === "AAPL");
+  const [fromSym, setFromSym] = useState<string>();
+  const [input, setInput] = useState("10");
+  const [recipient, setRecipient] = useState("");
+  const [job, setJob] = useState<RelaySendJob>();
+  const [busyNote, setBusyNote] = useState<string | null>(null);
+  const tx = useTx<unknown>();
+  const cooldown = useRelayCooldown(w.relay);
+
+  useEffect(() => {
+    if (!recipient && w.address) setRecipient(w.address);
+  }, [w.address, recipient]);
+  // One Sui send runs at a time on the relay: say so before the visitor spends an action.
+  useEffect(() => {
+    if (!w.relay) return;
+    let live = true;
+    const poll = async () => {
+      const s = await relayStatus();
+      if (live) setBusyNote(s?.sui?.busy && s.sui.busy !== job?.id ? s.sui.busy : null);
+    };
+    void poll();
+    const id = setInterval(poll, 8000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, [w.relay, job?.id]);
+  // Follow the job until it settles.
+  useEffect(() => {
+    if (!job || DONE.includes(job.status)) return;
+    const id = setInterval(() => {
+      relaySendJob(job.id).then(setJob, () => undefined);
+    }, 4000);
+    return () => clearInterval(id);
+  }, [job]);
+
+  if (!w.relay)
+    return (
+      <section className="card" aria-label="Send shares">
+        <p>Send needs a wallet here: the demo relay isn't available right now.</p>
+        <button className="primary" disabled={w.busy === "connect"} onClick={() => void w.connect()}>
+          Connect wallet
+        </button>
+        {w.notice && <p className="block-reason">{w.notice}</p>}
+      </section>
+    );
+  if (!asset) return null;
+  const from = asset.platforms.find((p) => p.token.symbol === fromSym) ?? asset.platforms[0];
+  const to = asset.platforms.find((p) => p !== from)!;
+  let raw = 0n;
+  try {
+    if (/^\d+(\.\d*)?$/.test(input)) raw = parseUnits(relayAmount(input), from.token.decimals);
+  } catch {
+    raw = 0n;
+  }
+  const shares = toShares(raw, from.token);
+  const blocked =
+    raw === 0n
+      ? "Enter an amount."
+      : shares > 100n * 10n ** 18n
+        ? "The demo relay moves at most 100 shares per action."
+        : !isAddress(recipient)
+          ? "Enter the recipient's 0x address."
+          : "";
+
+  const run = async () => {
+    const done = await tx.run("Send (demo relay)", async (onHash) => {
+      const j = await relaySend({ asset: asset.symbol, from: from.token.symbol, to: to.token.symbol, amount: relayAmount(input), recipient });
+      onHash(j.depositTx);
+      setJob(j);
+      return { hash: j.depositTx, simulated: false, result: "sent" };
+    });
+    if (done) tx.reset();
+  };
+
+  return (
+    <section className="card relay-send" aria-label="Send shares">
+      <h3 className="card-title">Send {asset.symbol} shares · demo relay</h3>
+      {job ? (
+        <>
+          <p className="review-line">
+            <strong>{fmtShares(BigInt(job.shares || "0") || shares)}</strong> {asset.symbol} shares · {job.from} → {job.to} · to{" "}
+            <span className="mono">{shortHex(job.recipient)}</span>
+          </p>
+          <p className={job.status === "failed" || job.status === "skipped" ? "block-reason" : "hint"} data-testid="relay-send-status">
+            {!DONE.includes(job.status) && <Spinner />} {STATUS[job.status]}
+            {job.error ? ` · ${job.error}` : ""}
+          </p>
+          <ol className="relay-steps" aria-label="Send transactions">
+            {job.steps.map((s) => (
+              <li key={s.tx}>
+                <span className="chip">{s.chain === "sui" ? "Sui" : "Unichain"}</span>
+                <span className="relay-step">{s.step}</span>
+                <span className="hex">
+                  <span className="mono" title={s.tx}>
+                    {shortHex(s.tx)}
+                  </span>
+                  <CopyButton value={s.tx} label="Copy transaction" />
+                  <a className="ext" href={s.url} target="_blank" rel="noreferrer" aria-label={`View on ${s.chain === "sui" ? "Suiscan" : "Uniscan"}`}>
+                    ↗
+                  </a>
+                </span>
+              </li>
+            ))}
+          </ol>
+          {DONE.includes(job.status) && (
+            <button type="button" className="ghost-btn" onClick={() => setJob(undefined)}>
+              New send
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="choices" role="radiogroup" aria-label="Send from wrapper">
+            {asset.platforms.map((p) => (
+              <button key={p.token.address} type="button" role="radio" aria-checked={p === from} className="choice" onClick={() => setFromSym(p.token.symbol)}>
+                <span className="choice-name">
+                  {p.name} → {asset.platforms.find((x) => x !== p)!.name}
+                </span>
+                <span className="choice-sub">{p.token.symbol}</span>
+              </button>
+            ))}
+          </div>
+          <div className="input-row big">
+            <input className="amount" inputMode="decimal" aria-label="Send amount" value={input} onChange={(e) => setInput(e.target.value)} />
+            <span className="unit">{from.token.symbol}</span>
+          </div>
+          <label className="field-label" htmlFor="relay-recipient">
+            Recipient on Unichain (receives {to.token.symbol})
+          </label>
+          <input id="relay-recipient" className="addr-input mono" spellCheck={false} value={recipient} onChange={(e) => setRecipient(e.target.value.trim())} />
+          {busyNote && <p className="hint">A Sui send is already running on the relay ({busyNote}); yours can start when it finishes.</p>}
+          {blocked && raw > 0n && <p className="block-reason">{blocked}</p>}
+          <button className="primary wide" disabled={!!blocked || tx.busy || cooldown > 0 || !!busyNote} onClick={() => void run()}>
+            {tx.busy && <Spinner />}
+            {tx.busy ? "Depositing on Unichain…" : "Send confidentially"}
+          </button>
+          <RelayLimitNote left={cooldown} />
+        </>
+      )}
+      <TxPanel tx={tx.state} onRetry={() => void run()} />
+    </section>
+  );
+}

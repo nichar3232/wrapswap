@@ -1,366 +1,636 @@
-import { useEffect, useState } from "react";
-import { encodeAbiParameters, keccak256, toHex } from "viem";
-import { DEMO, type Address, type BatchPhase, type Deployment } from "@wrapswap/types";
-import { RouteBadge, Tip } from "../components";
-import { config } from "../config";
-import { useApi } from "../hooks/useApi";
-import { amount } from "../lib/format";
-import { approve, darkSend, verifyOrder } from "../wallet";
-import { BatchTimeline } from "./BatchTimeline";
+import { useEffect, useRef, useState } from "react";
+import { encodeAbiParameters, formatUnits, keccak256, parseUnits, toHex, zeroAddress, type Hash } from "viem";
+import { canonical, type Address, type BatchPhase, type Deployment } from "@wrapswap/types";
+import { useApi, type Feed } from "../hooks/useApi";
+import { amount, duration, fmtShares } from "../lib/format";
+import { relayAmount, relayDarkCommit, relayStatus } from "../relay";
+import { approve, darkSend, escrowAvailable, verifyOrder } from "../wallet";
+import { RelayLimitNote, useRelayCooldown } from "./relayUi";
+import { toShares, type Asset, type Platform } from "./assets";
+import { pipsToBps } from "./fees";
 import { useTx } from "./tx";
-import { Empty, Hex, Skeleton, Spinner, TxPanel, Val } from "./ui";
+import type { MoveIntent } from "./types";
+import { Empty, Hex, Spinner, TxPanel, Val } from "./ui";
 import { useWallet } from "./wallet";
 
-type SavedOrder = {
-  chainId: number;
-  account: Address;
-  hook: Address;
-  batchId: string;
-  amount: string;
-  limit: string;
-  salt: Address;
-  confirmed: boolean;
-};
 const zero32 = toHex(new Uint8Array(32));
-const BLOCK_SECONDS = config.network === "unichain-sepolia" ? 1 : undefined;
+/** Default limit: 0.5% through the oracle midpoint, so a small mid move before settlement still crosses. */
+const LIMIT_BPS = 50n;
 
-export function DarkCross({ d }: { d: Deployment | undefined }) {
-  const w = useWallet();
-  const batch = useApi("currentBatch"),
-    history = useApi("batches"),
-    fills = useApi("fills", "kind=DARK-RESIDUAL");
-  const orders = useApi("orders", w.address || null);
-  const tx = useTx();
-  const storageKey = d && `wrapswap:${d.chainId}:${d.contracts.darkCrossHook}:${w.address}`;
-  const [saved, setSaved] = useState<SavedOrder>();
-  const [mockPhase, setMockPhase] = useState<BatchPhase>("COMMIT");
+type Stage = "committed" | "revealed" | "settled" | "missed";
+type Order = {
+  hook: Address;
+  asset: string;
+  account: Address;
+  batchId: string;
+  sellBase: boolean;
+  lockToken: Address;
+  amount: bigint;
+  limit: bigint;
+  salt: Hash;
+  stage: Stage;
+  simulated: boolean;
+  /** Committed by the demo relay, which also reveals it (the salt stays server-side). */
+  relayed?: boolean;
+  txs: { commit?: Hash; reveal?: Hash };
+};
+
+// The salt must survive a reload until the order is revealed, so the open order is kept in this browser.
+const storeKey = (hook: string, account: string) => `unison:dark:${hook.toLowerCase()}:${account.toLowerCase()}`;
+function loadOrder(hook: string, account: string): Order | undefined {
+  try {
+    const raw = localStorage.getItem(storeKey(hook, account));
+    if (!raw) return undefined;
+    const o = JSON.parse(raw);
+    return { ...o, amount: BigInt(o.amount), limit: BigInt(o.limit) };
+  } catch {
+    return undefined;
+  }
+}
+function saveOrder(o: Order | undefined, hook: string, account: string) {
+  try {
+    if (o) localStorage.setItem(storeKey(hook, account), JSON.stringify({ ...o, amount: String(o.amount), limit: String(o.limit) }));
+    else localStorage.removeItem(storeKey(hook, account));
+  } catch {
+    /* storage blocked: the order lives for this session only */
+  }
+}
+
+const PHASES: { key: BatchPhase; label: string }[] = [
+  { key: "COMMIT", label: "Commit" },
+  { key: "REVEAL", label: "Reveal" },
+  { key: "SETTLE", label: "Settle" },
+];
+
+/** Seconds left in the current phase, counting down between polls. */
+function useCountdown(batch: Feed<"currentBatch">) {
+  const [now, setNow] = useState(Date.now());
+  const at = useRef({ key: "", t: Date.now() });
+  const data = batch.data;
+  const key = data ? `${data.batchId}:${data.phase}:${data.blockNumber}` : "";
+  if (key !== at.current.key) at.current = { key, t: Date.now() };
   useEffect(() => {
-    if (!storageKey) return;
-    try {
-      const value = localStorage.getItem(storageKey);
-      setSaved(value ? JSON.parse(value) : undefined);
-    } catch {
-      setSaved(undefined);
-    }
-  }, [storageKey]);
-  const store = (o: SavedOrder | undefined) => {
-    try {
-      if (o) localStorage.setItem(storageKey!, JSON.stringify(o));
-      else localStorage.removeItem(storageKey!);
-    } catch {
-      /* storage blocked: the order lives for this page only */
-    }
-    setSaved(o);
+    const id = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, []);
+  if (!data) return undefined;
+  // Unichain Sepolia produces a block per second, so blocks left stand in when the API omits secondsRemaining.
+  const base = data.secondsRemaining ?? Math.max(0, Number(data.phaseEndsBlock) - Number(data.blockNumber));
+  return Math.max(0, base - (now - at.current.t) / 1000);
+}
+
+export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: Asset; batch: Feed<"currentBatch">; intent?: MoveIntent }) {
+  const w = useWallet();
+  const pair = asset.darkCross!;
+  const hook = pair.hook as Address;
+  const base = asset.platforms.find((p) => p.token.address.toLowerCase() === pair.baseToken.toLowerCase())!;
+  const quote = asset.platforms.find((p) => p.token.address.toLowerCase() === pair.quoteToken.toLowerCase())!;
+  const [fromAddr, setFromAddr] = useState<string>();
+  const [input, setInput] = useState("60");
+  const [order, setOrderState] = useState<Order>();
+  const tx = useTx<unknown>();
+  const left = useCountdown(batch);
+  const cooldown = useRelayCooldown(w.relay);
+
+  useEffect(() => {
+    if (intent) setFromAddr(intent.fromToken);
+  }, [intent]);
+  // Restore this wallet's open order for this asset.
+  useEffect(() => {
+    setOrderState(w.address ? loadOrder(hook, w.address) : undefined);
+  }, [hook, w.address]);
+  const setOrder = (o: Order | undefined) => {
+    setOrderState(o);
+    if (w.address) saveOrder(o, hook, w.address);
   };
 
-  const phase: BatchPhase | undefined = config.useMocks ? mockPhase : batch.data?.phase;
-  const realLeft = batch.data ? Math.max(0, Number(batch.data.phaseEndsBlock) - Number(batch.data.blockNumber)) : undefined;
-  const blocksLeft = config.useMocks && batch.data ? { COMMIT: realLeft!, REVEAL: 4, SETTLE: 1 }[mockPhase] : realLeft;
-  const a = d?.tokens.find((t) => t.address === d.dark.baseToken),
-    b = d?.tokens.find((t) => t.address === d.dark.quoteToken);
-  const orderAmount = DEMO.dark.orders.counterpartyA.amountIn,
-    limit = DEMO.dark.orders.counterpartyA.limitPriceX18;
-  const stale = !!batch.data?.oracle.stale;
-  const canAct = w.ready && w.eligible && !!batch.data && !tx.busy;
+  const from: Platform = [base, quote].find((p) => p?.token.address.toLowerCase() === fromAddr?.toLowerCase()) ?? base;
+  const to = from === base ? quote : base;
+  const sellBase = from === base;
+  const a = from.token;
+  let raw = 0n;
+  try {
+    if (/^\d+(\.\d*)?$/.test(input) && (input.split(".")[1]?.length || 0) <= a.decimals) raw = parseUnits(input, a.decimals);
+  } catch {
+    raw = 0n;
+  }
+  const balance = w.balances.values[a.address];
+  const overBalance = w.balances.status === "ok" && balance !== undefined && raw > balance;
 
-  const commit = () =>
-    tx.run("Commit", async (onHash) => {
-      const salt = toHex(crypto.getRandomValues(new Uint8Array(32)));
-      const o: SavedOrder = {
-        chainId: d!.chainId,
+  const b = batch.data;
+  const mid = b?.oracle.midX18 ? BigInt(b.oracle.midX18) : undefined;
+  // Selling base accepts no less than mid − 0.5%; buying base pays no more than mid + 0.5%.
+  const limit = mid ? (sellBase ? (mid * (10_000n - LIMIT_BPS)) / 10_000n : (mid * (10_000n + LIMIT_BPS)) / 10_000n) : 0n;
+  const atMid =
+    mid && raw > 0n
+      ? (() => {
+          const gross = sellBase
+            ? canonical.baseAsQuote(raw, mid, base.token.decimals, quote.token.decimals)
+            : canonical.quoteAsBase(raw, mid, base.token.decimals, quote.token.decimals);
+          const fee = canonical.crossFee(gross);
+          return { gross, fee, net: gross - fee };
+        })()
+      : undefined;
+
+  const commitHash = (o: { batchId: string; sellBase: boolean; amount: bigint; limit: bigint; salt: Hash }) =>
+    keccak256(
+      encodeAbiParameters(
+        [
+          { type: "uint256" },
+          { type: "address" },
+          { type: "uint256" },
+          { type: "address" },
+          { type: "bool" },
+          { type: "uint256" },
+          { type: "uint256" },
+          { type: "address" },
+          { type: "bytes32" },
+        ],
+        [BigInt(d.chainId), hook, BigInt(o.batchId), w.address!, o.sellBase, o.amount, o.limit, zeroAddress, o.salt],
+      ),
+    );
+
+  const commitViaRelay = async () => {
+    const done = await tx.run("Sealed commit (demo relay)", async (onHash) => {
+      // The relay funds escrow, waits for a commit window, commits, and reveals in the reveal phase.
+      const r = await relayDarkCommit({ asset: asset.symbol, from: a.symbol, amount: relayAmount(input) });
+      onHash(r.txHash);
+      setOrder({
+        hook,
+        asset: asset.symbol,
         account: w.address!,
-        hook: d!.contracts.darkCrossHook,
-        batchId: batch.data!.batchId,
-        amount: orderAmount.toString(),
-        limit: limit.toString(),
-        salt,
-        confirmed: false,
-      };
-      store(o);
-      await approve(d!, w.address!, a!.address, d!.contracts.darkCrossHook, orderAmount, { onHash });
-      await darkSend(d!, w.address!, "fund", [a!.address, orderAmount], { onHash });
-      const hash = keccak256(
-        encodeAbiParameters(
-          [
-            { type: "uint256" },
-            { type: "address" },
-            { type: "uint256" },
-            { type: "address" },
-            { type: "bool" },
-            { type: "uint256" },
-            { type: "uint256" },
-            { type: "bool" },
-            { type: "bytes32" },
-          ],
-          [BigInt(d!.chainId), d!.contracts.darkCrossHook, BigInt(o.batchId), w.address!, true, orderAmount, limit, true, salt],
-        ),
-      );
-      const sent = await darkSend(d!, w.address!, "commit", [hash, a!.address, orderAmount, w.uid || zero32], { onHash });
-      await verifyOrder(d!, w.address!, o.batchId, hash);
-      store({ ...o, confirmed: true });
-      if (config.useMocks) setMockPhase("REVEAL");
-      orders.refresh();
-      return { hash: sent.hash, simulated: sent.simulated, result: null };
+        batchId: r.batchId,
+        sellBase: r.side === "sellBase",
+        lockToken: a.address,
+        amount: BigInt(r.amountIn),
+        limit: BigInt(r.limitPriceX18),
+        salt: zero32,
+        stage: "committed",
+        simulated: false,
+        relayed: true,
+        txs: { commit: r.txHash },
+      });
+      return { hash: r.txHash, simulated: false, result: "committed" };
     });
-  const reveal = () =>
-    tx.run("Reveal", async (onHash) => {
-      const sent = await darkSend(
-        d!,
-        w.address!,
-        "reveal",
-        [true, BigInt(saved!.amount), BigInt(saved!.limit), true, saved!.salt],
-        { onHash },
-      );
-      await verifyOrder(d!, w.address!, saved!.batchId);
-      if (config.useMocks) setMockPhase("SETTLE");
-      orders.refresh();
-      return { hash: sent.hash, simulated: sent.simulated, result: null };
+    if (done) tx.reset();
+  };
+  const commit = async () => {
+    if (!b || !w.address) return;
+    if (w.relay) return commitViaRelay();
+    const salt = toHex(crypto.getRandomValues(new Uint8Array(32)));
+    const o = { batchId: b.batchId, sellBase, amount: raw, limit, salt };
+    const done = await tx.run("Sealed commit", async (onHash) => {
+      await approve(d, w.address!, a.address, hook, raw, { onHash });
+      await darkSend(d, hook, w.address!, "fund", [a.address, raw], { onHash });
+      const h = commitHash(o);
+      const sent = await darkSend(d, hook, w.address!, "commit", [h, a.address, raw, w.uid || zero32], { onHash });
+      await verifyOrder(hook, w.address!, o.batchId, h);
+      w.adjust(a.address, -raw);
+      setOrder({
+        ...o,
+        hook,
+        asset: asset.symbol,
+        account: w.address!,
+        lockToken: a.address,
+        stage: "committed",
+        simulated: sent.simulated,
+        txs: { commit: sent.hash },
+      });
+      return { hash: sent.hash, simulated: sent.simulated, result: "committed" };
     });
-  const settle = () =>
-    tx.run("Settlement", async (onHash) => {
-      const sent = await darkSend(d!, w.address!, "settle", [BigInt(batch.data!.batchId)], { onHash });
-      store(undefined);
-      history.refresh();
-      fills.refresh();
-      return { hash: sent.hash, simulated: sent.simulated, result: null };
-    });
+    if (done) tx.reset();
+  };
 
-  const steps: { label: string; phase: BatchPhase; run: () => void; enabled: boolean }[] = [
-    { label: "Approve, fund & commit", phase: "COMMIT", run: commit, enabled: canAct && phase === "COMMIT" && !saved?.confirmed },
-    {
-      label: "Reveal order",
-      phase: "REVEAL",
-      run: reveal,
-      enabled: canAct && phase === "REVEAL" && !!saved?.confirmed && saved.batchId === batch.data?.batchId,
-    },
-    { label: "Settle batch", phase: "SETTLE", run: settle, enabled: canAct && phase === "SETTLE" && !stale },
-  ];
-  const last = history.data?.items.find((h) => h.settled);
+  const revealing = useRef(false);
+  const reveal = async () => {
+    if (!order || revealing.current) return;
+    revealing.current = true;
+    const done = await tx.run("Reveal", async (onHash) => {
+      const sent = await darkSend(d, hook, w.address!, "reveal", [order.sellBase, order.amount, order.limit, zeroAddress, order.salt], { onHash });
+      await verifyOrder(hook, w.address!, order.batchId);
+      setOrder({ ...order, stage: "revealed", txs: { ...order.txs, reveal: sent.hash } });
+      return { hash: sent.hash, simulated: sent.simulated, result: "revealed" };
+    });
+    if (done) tx.reset();
+    revealing.current = false;
+  };
+
+  // Stage transitions from the live batch: reveal in the reveal window (automatic when the demo signs), missed if
+  // the batch moved on unrevealed, settled once the batch detail says so.
+  const current = b ? BigInt(b.batchId) : undefined;
+  const mine = order ? BigInt(order.batchId) : undefined;
+  useEffect(() => {
+    if (!order || current === undefined || mine === undefined || tx.busy) return;
+    if (order.relayed) return; // the relay reveals; tracked from /demo/status below
+    if (order.stage === "committed" && current === mine && b?.phase === "REVEAL" && w.demo) void reveal();
+    if (order.stage === "committed" && (current > mine || (current === mine && b?.phase === "SETTLE"))) setOrder({ ...order, stage: "missed" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.stage, current, b?.phase, w.demo]);
+  // Relay orders: the reveal tx appears in the relay's recent actions.
+  useEffect(() => {
+    if (!order?.relayed || order.stage !== "committed") return;
+    let live = true;
+    const poll = async () => {
+      const st = await relayStatus();
+      const hit = st?.recent.find((x) => x.action === "dark-reveal" && x.batchId === order.batchId && x.asset === order.asset);
+      if (live && hit?.txHash) setOrder({ ...order, stage: "revealed", txs: { ...order.txs, reveal: hit.txHash as Hash } });
+    };
+    void poll();
+    const id = setInterval(poll, 3000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.relayed, order?.stage, order?.batchId]);
+  const past = current !== undefined && mine !== undefined && (current > mine || (current === mine && b?.phase === "SETTLE"));
+  const waitingSettle = !!order && (order.stage === "revealed" || (!!order.relayed && order.stage === "committed")) && past;
+  const detail = useApi("batch", order && (waitingSettle || order.stage === "settled") ? `${order.batchId}?asset=${order.asset}` : null, 4000);
+  useEffect(() => {
+    if (order && order.stage !== "settled" && (order.stage === "revealed" || order.relayed) && detail.data?.batch.settled)
+      setOrder({ ...order, stage: "settled" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail.data?.batch.settled, order?.stage]);
+
+  const history = useApi("batches", `asset=${asset.symbol}&settled=true&limit=5`, 15000);
+
+  const blocked =
+    raw === 0n
+      ? "Enter a size."
+      : overBalance
+        ? `Not enough ${a.symbol} on ${from.name}.`
+        : b?.oracle.stale
+          ? "The oracle midpoint is stale; commits reopen after the next update."
+          : w.relay && toShares(raw, a) > 100n * 10n ** 18n
+            ? "The demo relay moves at most 100 shares per action."
+            : b && b.phase !== "COMMIT" && !w.relay // the relay waits for the next commit window itself
+            ? `Commits reopen with the next batch (${left !== undefined ? duration(left) : "—"} left in ${b.phase.toLowerCase()}).`
+            : "";
 
   return (
-    <div className="stack wide-stack">
-      <section className="card batch-card" aria-label="Current batch">
-        <div className="card-head">
-          <span className="label">
-            <Val status={batch.status} w="10em">
-              Batch #{batch.data?.batchId}
-              {phase && <span className={`phase phase-${phase.toLowerCase()}`}>{phase}</span>}
-            </Val>
-          </span>
-          <span className="route">
-            <RouteBadge route="DARK" />
-            <Tip text="Orders are committed sealed, revealed in the next phase, and crossed at the oracle's 30-minute midpoint. The unmatched residual routes into the ParityHook pool in the same transaction." />
-          </span>
-        </div>
-        <div className="batch-stats">
-          <div>
-            <span className="stat-k">Time left in phase</span>
-            <span className="stat-v" role="timer">
-              <Val status={batch.status} w="5em">
-                {blocksLeft} blocks
-                {BLOCK_SECONDS && <small> ≈ {blocksLeft! * BLOCK_SECONDS} s</small>}
-              </Val>
-            </span>
-          </div>
-          <div>
-            <span className="stat-k">Participants</span>
-            <span className="stat-v">
-              <Val status={batch.status} w="2em">
-                {batch.data?.participants}
-              </Val>
-            </span>
-          </div>
-          <div>
-            <span className="stat-k">
-              Oracle mid <Tip text="30-minute midpoint; a mock oracle on testnet." />
-            </span>
-            <span className="stat-v">
-              <Val status={batch.status} w="6em">
-                {batch.data?.oracle.midX18 ? (
-                  <>
-                    {amount(batch.data.oracle.midX18, 18, 6)} <small>{b?.symbol}/{a?.symbol}</small>
-                  </>
-                ) : (
-                  <span className="val-na">
-                    — <small>unavailable</small>
-                  </span>
-                )}
-              </Val>
-            </span>
-          </div>
-        </div>
-        {d ? (
-          <BatchTimeline phase={batch.data ? phase : undefined} blocksLeft={blocksLeft} dark={d.dark} />
-        ) : (
-          <Skeleton w="100%" h="64px" />
-        )}
-        {stale && (
-          <p role="alert" className="block-reason">
-            Oracle stale · settlement paused until the next midpoint update.
-          </p>
-        )}
-      </section>
+    <div className="dark">
+      <BatchStrip batch={batch} left={left} order={order} />
 
-      <section className="card order" aria-label="Your order">
-        <div className="card-head">
-          <span className="label">Your order</span>
-          <Tip text="The demo order: sell the base issuer token for the quote issuer token with a price limit. Commit hides it until reveal." />
-        </div>
-        <p className="metric">
-          {a ? (
-            <>
-              {amount(orderAmount, a.decimals)} <span className="unit">{a.symbol}</span>
-            </>
-          ) : (
-            <Skeleton w="5em" h="1em" />
-          )}
-        </p>
-        <p className="caption">
-          {b && a ? `Limit ${amount(limit, 18, 4)} ${b.symbol}/${a.symbol} · sealed until reveal` : <Skeleton w="12em" />}
-        </p>
-        {!w.address ? (
-          <button className="primary wide" disabled={!d || !!w.busy} onClick={() => void w.connect()}>
-            {w.busy === "connect" ? "Connecting…" : "Connect to trade"}
-          </button>
-        ) : w.wrongChain ? (
-          <button className="primary wide" disabled={!!w.busy} onClick={() => void w.switchChain()}>
-            Switch to {w.expected.name}
-          </button>
-        ) : (
-          <div className="actions steps" data-phase={phase}>
-            {steps.map((s) => {
-              const current = s.phase === phase;
-              const running = tx.busy && current;
+      {order ? (
+        <OrderCard
+          order={order}
+          asset={asset}
+          base={base}
+          quote={quote}
+          detail={detail}
+          phase={b?.phase}
+          currentBatch={b?.batchId}
+          onReveal={() => void reveal()}
+          busy={tx.busy}
+          demo={w.demo}
+          relayed={!!order.relayed}
+          onDone={() => setOrder(undefined)}
+          onWithdraw={async (tokens) => {
+            await tx.run("Withdraw", async (onHash) => {
+              const chain = await escrowAvailable(hook, w.address!, tokens.map((t) => t.token));
+              let last: { hash: Hash; simulated: boolean } | undefined;
+              for (const [i, t] of tokens.entries()) {
+                const amt = chain ? chain[i] : t.amount;
+                if (amt > 0n) {
+                  last = await darkSend(d, hook, w.address!, "withdraw", [t.token, amt], { onHash });
+                  w.adjust(t.token, amt);
+                }
+              }
+              setOrder(undefined);
+              return { hash: last?.hash, simulated: last?.simulated ?? true, result: "withdrawn" };
+            });
+          }}
+        />
+      ) : (
+        <>
+          <div className="choices" role="radiogroup" aria-label="Side">
+            {[base, quote].map((p) => {
+              const other = p === base ? quote : base;
               return (
-                <button
-                  key={s.label}
-                  className={current ? "primary" : ""}
-                  disabled={!s.enabled}
-                  aria-busy={running || undefined}
-                  onClick={s.run}
-                >
-                  {running && <Spinner />}
-                  {s.label}
+                <button key={p.token.address} type="button" role="radio" aria-checked={p === from} className="choice" onClick={() => setFromAddr(p.token.address)}>
+                  <span className="choice-name">
+                    {p.name} → {other.name}
+                  </span>
+                  <span className="choice-sub">
+                    {p === base ? "Sell" : "Buy"} {base.token.symbol}
+                    {w.balances.status === "ok" && w.balances.values[p.token.address] !== undefined &&
+                      ` · ${fmtShares(toShares(w.balances.values[p.token.address]!, p.token))} sh`}
+                  </span>
                 </button>
               );
             })}
           </div>
-        )}
-        {w.address && w.eligibility.data && !w.eligible && (
-          <p role="alert" className="block-reason">
-            This wallet isn't eligible for issuer conversions. A valid issuer eligibility attestation is required.
-          </p>
-        )}
-        {w.notice && (
-          <p role="alert" className="block-reason">
-            {w.notice}
-          </p>
-        )}
-        <TxPanel
-          tx={tx.state}
-          onRetry={tx.retry}
-          receipt={() =>
-            tx.state.step === "confirmed" && (
-              <p>
-                <span className="ok-dot" aria-hidden="true" />{" "}
-                {tx.state.label === "Commit"
-                  ? "Commit confirmed. Your reveal secret is saved in this browser; keep it until settlement."
-                  : tx.state.label === "Reveal"
-                    ? "Reveal confirmed. The residual will settle through ParityHook."
-                    : "Batch settled: matched issuer tokens crossed; residual routed through ParityHook."}
-                {config.useMocks ? " (simulated)" : ""}
-                {tx.state.hash && (
-                  <>
-                    {" "}
-                    <Hex value={tx.state.hash} kind="tx" simulated={config.useMocks} />
-                  </>
-                )}
-              </p>
-            )
-          }
-        />
-      </section>
-
-      <section className="card" aria-label="Your orders">
-        <div className="card-head">
-          <span className="label">Your orders</span>
-        </div>
-        {!w.address ? (
-          <Empty>Connect a wallet to see your committed and revealed orders.</Empty>
-        ) : orders.data ? (
-          orders.data.items.length ? (
-            <ul className="orders">
-              {orders.data.items.map((o) => (
-                <li key={o.batchId}>
-                  <span>Batch #{o.batchId}</span>
-                  <span className={`chip ${o.revealed ? (o.valid ? "good" : "warn") : ""}`}>
-                    {o.revealed ? (o.valid ? "Revealed · valid" : "Revealed · awaiting valid reveal") : "Committed · sealed"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Empty>
-              No orders yet.{" "}
-              {phase === "COMMIT" ? `Commit the order above to join batch #${batch.data?.batchId ?? ""}.` : "The next commit window opens with the next batch."}
-            </Empty>
-          )
-        ) : (
-          <Val status={orders.status} w="100%">
-            {null}
-          </Val>
-        )}
-      </section>
-
-      <section className="card quiet" aria-label="Last settlement">
-        <div className="card-head">
-          <span className="label">Last settled batch</span>
-        </div>
-        {last && a && b ? (
-          <>
-            <p className="metric">
-              {amount(last.crossedQuote, b.decimals, 6)} <span className="unit">{b.symbol}</span>
-            </p>
-            <p className="caption">Crossed at the oracle midpoint · batch #{last.batchId}</p>
-            <dl>
-              <dt>Base crossed</dt>
-              <dd>
-                {amount(last.crossedBase, a.decimals, 6)} {a.symbol}
-              </dd>
-              <dt>Residual to pool</dt>
-              <dd>
-                {amount(last.residualBaseIn, a.decimals, 6)} {a.symbol}
-              </dd>
-              {last.settledTx && (
-                <>
-                  <dt>Settle transaction</dt>
-                  <dd>
-                    <Hex value={last.settledTx} kind="tx" simulated={config.useMocks} />
-                  </dd>
-                </>
-              )}
+          <div className="input-row big">
+            <input className="amount" inputMode="decimal" aria-label="Size" value={input} onChange={(e) => setInput(e.target.value)} />
+            <span className="unit">{a.symbol}</span>
+            {balance !== undefined && balance > 0n && (
+              <button type="button" className="max" onClick={() => setInput(formatUnits(balance, a.decimals))}>
+                Max
+              </button>
+            )}
+          </div>
+          <section className="quote-card" aria-label="If fully crossed">
+            <div className="qc-row">
+              <span>Shares in</span>
+              <strong>{raw > 0n ? fmtShares(toShares(raw, a)) : "0.00"}</strong>
+            </div>
+            <dl className="fee-rows">
+              <div>
+                <dt>
+                  Venue fee <small>{pipsToBps(canonical.CROSS_FEE_PIPS).toFixed(2)} bp · protocol · crossed volume only</small>
+                </dt>
+                <dd>{atMid ? `${amount(atMid.fee, to.token.decimals, 6)} ${to.token.symbol}` : "—"}</dd>
+              </div>
+              <div>
+                <dt>
+                  Limit <small>midpoint {sellBase ? "−" : "+"}0.5%</small>
+                </dt>
+                <dd>
+                  <Val status={batch.status} w="5em">
+                    {mid ? `${amount(limit, 18, 6)} ${quote.token.symbol}/${base.token.symbol}` : "—"}
+                  </Val>
+                </dd>
+              </div>
             </dl>
-            {fills.data?.items
-              .filter((f) => f.kind === "DARK-RESIDUAL")
-              .slice(0, 1)
-              .map((f) => (
-                <p className="caption" key={f.txHash + f.logIndex}>
-                  Residual out{" "}
-                  <strong>
-                    {amount(f.amountOut, b.decimals, 6)} {b.symbol}
-                  </strong>{" "}
-                  · {f.feePips === null ? "—" : (f.feePips / 100).toFixed(2) + " bps"}
-                </p>
-              ))}
-          </>
-        ) : history.data ? (
-          <Empty>No batches yet. The first settlement will appear here with its transaction.</Empty>
-        ) : (
-          <Val status={history.status} w="100%" h="3em">
-            {null}
-          </Val>
-        )}
-      </section>
+            <div className="keep-tile">
+              <span className="tile-k">If fully crossed at the 30-min midpoint</span>
+              <span className="keep-v">
+                {atMid ? (
+                  <>
+                    {fmtShares(toShares(raw, a))} → <strong>{fmtShares(toShares(atMid.net, to.token))}</strong>
+                  </>
+                ) : (
+                  "—"
+                )}{" "}
+                <small>{asset.symbol} shares</small>
+              </span>
+              <span className="tile-s">Any residual converts through the pool (base + skew · LP); anything unfilled is refunded.</span>
+            </div>
+          </section>
+          <p className="parity-line">Hidden until matched. Public on-chain after settlement.</p>
+          {blocked && raw > 0n && (
+            <p role="alert" className="block-reason">
+              {blocked}
+            </p>
+          )}
+          {!w.address ? (
+            <button className="primary wide" disabled={w.busy === "connect"} onClick={() => void w.connect()}>
+              {w.busy === "connect" ? "Connecting…" : "Connect to commit"}
+            </button>
+          ) : (
+            <button className="primary wide" disabled={!!blocked || tx.busy || !mid || cooldown > 0} aria-busy={tx.busy || undefined} onClick={() => void commit()}>
+              {tx.busy && <Spinner />}
+              {tx.state.step === "signing"
+                ? w.relay
+                  ? "Demo relay: waiting for a commit window…"
+                  : "Confirm in wallet…"
+                : tx.busy
+                  ? "Sealing…"
+                  : w.relay
+                    ? "Commit sealed order (demo relay)"
+                    : `Commit sealed order · batch #${b?.batchId ?? "—"}`}
+            </button>
+          )}
+          <RelayLimitNote left={cooldown} />
+        </>
+      )}
+      <TxPanel tx={tx.state} onRetry={() => tx.retry()} />
+
+      <History asset={asset} base={base} history={history} />
     </div>
+  );
+}
+
+function BatchStrip({ batch, left, order }: { batch: Feed<"currentBatch">; left?: number; order?: Order }) {
+  const b = batch.data;
+  const ix = b ? PHASES.findIndex((p) => p.key === b.phase) : -1;
+  return (
+    <div className="batch-strip" aria-label="Current batch" data-phase={b?.phase ?? "loading"}>
+      <div className="bs-head">
+        <span className="tile-k">
+          <Val status={batch.status} w="5em">
+            Batch #{b?.batchId}
+          </Val>
+        </span>
+        <span className="bs-left" data-testid="batch-countdown">
+          {b && left !== undefined ? (
+            <>
+              {PHASES[ix]?.label} · <strong>{duration(left)}</strong> left
+            </>
+          ) : (
+            " "
+          )}
+        </span>
+      </div>
+      <ol className="bs-phases">
+        {PHASES.map((p, i) => (
+          <li key={p.key} className={i === ix ? "on" : i < ix ? "done" : ""} aria-current={i === ix ? "step" : undefined}>
+            {p.label}
+          </li>
+        ))}
+      </ol>
+      {b && (
+        <p className="bs-sub">
+          {b.participants} sealed order{b.participants === 1 ? "" : "s"} in this batch · midpoint{" "}
+          {b.oracle.midX18 ? amount(b.oracle.midX18, 18, 6) : "—"}
+          {b.oracle.stale ? " (stale)" : ""}
+          {order && order.stage !== "settled" && order.batchId !== b.batchId ? ` · your order: batch #${order.batchId}` : ""}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function OrderCard({
+  order,
+  asset,
+  base,
+  quote,
+  detail,
+  phase,
+  currentBatch,
+  onReveal,
+  busy,
+  demo,
+  relayed,
+  onDone,
+  onWithdraw,
+}: {
+  order: Order;
+  asset: Asset;
+  base: Platform;
+  quote: Platform;
+  detail: Feed<"batch">;
+  phase?: BatchPhase;
+  currentBatch?: string;
+  onReveal: () => void;
+  busy: boolean;
+  demo: boolean;
+  relayed: boolean;
+  onDone: () => void;
+  onWithdraw: (tokens: { token: Address; amount: bigint }[]) => void;
+}) {
+  const [inTok, outTok] = order.sellBase ? [base.token, quote.token] : [quote.token, base.token];
+  const steps: { key: Stage; label: string; tx?: Hash }[] = [
+    { key: "committed", label: "Sealed", tx: order.txs.commit },
+    { key: "revealed", label: "Revealed", tx: order.txs.reveal },
+    { key: "settled", label: "Settled", tx: detail.data?.batch.settledTx ?? undefined },
+  ];
+  const at = ["committed", "revealed", "settled"].indexOf(order.stage);
+  const me = order.account.toLowerCase();
+  const fills = detail.data?.fills.filter((f) => f.account.toLowerCase() === me) ?? [];
+  const cross = fills.find((f) => f.kind === "DARK-CROSS"),
+    res = fills.find((f) => f.kind === "DARK-RESIDUAL");
+  const crossedIn = cross ? BigInt(cross.amountIn) : 0n,
+    residualIn = res ? BigInt(res.amountIn) : 0n;
+  const unfilled = order.amount > crossedIn + residualIn ? order.amount - crossedIn - residualIn : 0n;
+  const sh = (x: bigint | string, t: typeof inTok) => fmtShares(toShares(BigInt(x), t));
+  const midX18 = detail.data?.batch.midX18;
+  return (
+    <section className="order-card" aria-label="Your sealed order">
+      <ol className="track-steps" aria-label="Sealed order progress">
+        {steps.map((s, i) => (
+          <li key={s.key} className={i < at ? "done" : i === at ? "on" : ""}>
+            {s.label}
+            {s.tx && <Hex value={s.tx} kind="tx" simulated={order.simulated} />}
+          </li>
+        ))}
+      </ol>
+      <p className="review-line">
+        <strong>{sh(order.amount, inTok)}</strong> {asset.symbol} shares · {order.sellBase ? "sell" : "buy"} {base.token.symbol} · batch #{order.batchId}
+      </p>
+      {order.stage === "committed" && (
+        <>
+          <p className="hint">
+            {currentBatch === order.batchId && phase === "COMMIT"
+              ? "Sealed. The reveal window opens when commits close."
+              : relayed
+                ? "The demo relay reveals this order in the reveal window."
+                : demo
+                ? "Revealing…"
+                : "Reveal window open: sign the reveal to enter the cross."}
+          </p>
+          {!demo && !relayed && phase === "REVEAL" && currentBatch === order.batchId && (
+            <button className="primary wide" disabled={busy} onClick={onReveal}>
+              Reveal now
+            </button>
+          )}
+        </>
+      )}
+      {order.stage === "revealed" && <p className="hint">Revealed. The batch settles after the reveal window closes.</p>}
+      {order.stage === "missed" && (
+        <>
+          <p className="block-reason">The reveal window closed before this order was revealed, so it didn't enter the cross. Its tokens stay in your escrow.</p>
+          <button className="primary wide" disabled={busy} onClick={() => onWithdraw([{ token: order.lockToken, amount: order.amount }])}>
+            Withdraw {amount(order.amount, inTok.decimals, 4)} {inTok.symbol}
+          </button>
+        </>
+      )}
+      {order.stage === "settled" && (
+        <div className="settled" data-testid="settled-result">
+          <dl className="result-rows">
+            <div>
+              <dt>
+                Crossed at the 30-min midpoint <small>1 bp venue fee · protocol</small>
+              </dt>
+              <dd>
+                {sh(crossedIn, inTok)} → {cross ? sh(cross.amountOut, outTok) : "0.00"} sh
+                {cross?.feeAmount && (
+                  <small>
+                    {" "}
+                    · fee {amount(cross.feeAmount, outTok.decimals, 6)} {outTok.symbol}
+                  </small>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>
+                Residual via Convert <small>base + skew · LP</small>
+              </dt>
+              <dd>
+                {sh(residualIn, inTok)} → {res ? sh(res.amountOut, outTok) : "0.00"} sh
+                {res?.feeAmount && (
+                  <small>
+                    {" "}
+                    · fee {amount(res.feeAmount, outTok.decimals, 6)} {outTok.symbol}
+                  </small>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Unfilled, refunded</dt>
+              <dd>{sh(unfilled, inTok)} sh</dd>
+            </div>
+          </dl>
+          {midX18 && <p className="hint">Midpoint {amount(midX18, 18, 6)} {quote.token.symbol}/{base.token.symbol}. Proceeds and refunds are in your Dark Cross escrow.</p>}
+          <div className="row-actions">
+            {relayed ? (
+              <span className="hint">Proceeds stay in the demo relay's Dark Cross escrow.</span>
+            ) : (
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  onWithdraw([
+                    { token: outTok.address, amount: (cross ? BigInt(cross.amountOut) : 0n) + (res ? BigInt(res.amountOut) : 0n) },
+                    { token: inTok.address, amount: unfilled },
+                  ])
+                }
+              >
+                Withdraw to wallet
+              </button>
+            )}
+            <button type="button" className="ghost-btn" onClick={onDone}>
+              New order
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function History({ asset, base, history }: { asset: Asset; base: Platform; history: Feed<"batches"> }) {
+  const items = history.data?.items.filter((x) => x.settled) ?? [];
+  return (
+    <section className="dark-history" aria-label="Settled batches">
+      <h3 className="card-title">Settled batches · {asset.symbol}</h3>
+      {history.data ? (
+        items.length ? (
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Batch</th>
+                  <th>Crossed</th>
+                  <th>Venue fee</th>
+                  <th>Residual</th>
+                  <th>Refunded</th>
+                  <th>Settlement</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((x) => (
+                  <tr key={x.batchId}>
+                    <td>#{x.batchId}</td>
+                    <td>{x.crossedShares ? fmtShares(x.crossedShares) : fmtShares(toShares(BigInt(x.crossedBase), base.token))} sh</td>
+                    <td>{x.protocolFeeShares ? `${fmtShares(x.protocolFeeShares, 4)} sh` : "—"}</td>
+                    <td>{x.residualFilled ? `${fmtShares(x.residualFilled.reduce((s, r) => s + toShares(BigInt(r.amountIn), asset.platforms.find((p) => p.token.address.toLowerCase() === r.tokenIn.toLowerCase())?.token ?? base.token), 0n))} sh` : "—"}</td>
+                    <td>{x.unfilledRefunded ? `${fmtShares(x.unfilledRefunded.shares)} sh` : "—"}</td>
+                    <td>{x.settledTx ? <Hex value={x.settledTx} kind="tx" simulated={import.meta.env.VITE_USE_MOCKS === "true"} /> : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty>No settled batches for {asset.symbol} yet.</Empty>
+        )
+      ) : (
+        <Val status={history.status} w="100%" h="4em">
+          {null}
+        </Val>
+      )}
+    </section>
   );
 }
