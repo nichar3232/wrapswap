@@ -10,9 +10,10 @@ const chainHex = network === "unichain-sepolia" ? "0x515" : "0x7a69";
 
 type Mutate = (name: string, value: any) => any;
 /** Serve fixtures for every route; a mutator returns "EMPTY" (200, empty body), "ERROR" (503) or a replacement value. */
-async function api(page: Page, mutate: Mutate = (_, v) => v) {
-  await injectTestWallet(page, { account: DEMO.accounts.demo.anvilAddress, chainId: chainHex, known: [chainHex] });
-  await page.route(/\/(api|crank)\//, async (route) => {
+async function api(page: Page, mutate: Mutate = (_, v) => v, opts: { wallet?: boolean } = {}) {
+  if (opts.wallet !== false) await injectTestWallet(page, { account: DEMO.accounts.demo.anvilAddress, chainId: chainHex, known: [chainHex] });
+  // Only the proxied API paths (not dev modules such as /services/crank/…).
+  await page.route(/^https?:\/\/[^/]+\/(api|crank)\//, async (route) => {
     const url = new URL(route.request().url()),
       path = url.pathname.replace(/^\/(api|crank)/, "");
     const r =
@@ -120,4 +121,72 @@ test("slow and malformed responses never produce blank screens or raw errors", a
   await tab(page, "Liquidity").click();
   await expect(page.getByText("LP economics")).toBeVisible();
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
+});
+
+// ---- Demo relay (no wallet): real actions through POST /api/demo/*, rate-limited per IP.
+const RELAY = "0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C";
+const status = { ok: true, address: RELAY, ethWei: "1", tokens: [], limits: { actionsPer10Min: 3, maxShares: "100" }, pendingReveals: [], recent: [] };
+const tx = (n: number) => "0x" + n.toString(16).padStart(64, "0");
+async function relay(page: Page, routes: Record<string, (r: import("@playwright/test").Route) => Promise<void>>) {
+  await page.route(/^https?:\/\/[^/]+\/api\/demo\//, async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/^\/api\/demo/, "");
+    const handler = routes[path] ?? (path.startsWith("/send/") ? routes["/send/:id"] : undefined);
+    if (path === "/status" && !handler) return route.fulfill({ json: status });
+    if (!handler) return route.fulfill({ status: 404, json: { error: { code: "NOT_FOUND", message: "Unknown route" } } });
+    await handler(route);
+  });
+}
+
+test("no wallet: the demo relay connects itself; a 429 shows a live countdown and blocks the action", async ({ page }) => {
+  await api(page, undefined, { wallet: false });
+  let posted: unknown;
+  await relay(page, {
+    "/convert": async (r) => {
+      posted = r.request().postDataJSON();
+      await r.fulfill({ status: 429, headers: { "retry-after": "125" }, json: { error: { code: "RATE_LIMITED", message: "3 demo actions per 10 minutes" } } });
+    },
+  });
+  await page.goto("/app?tab=move&asset=AAPL");
+  await expect(page.getByRole("button", { name: /^Account 0x8f2e/ })).toBeVisible();
+  await expect(page.locator("header").getByText("Demo", { exact: true })).toBeVisible();
+  await convert(page).getByLabel("Amount", { exact: true }).fill("10");
+  await convert(page).getByRole("button", { name: "Convert", exact: true }).click();
+  expect(posted).toEqual({ asset: "AAPL", from: expect.stringMatching(/^m/), to: expect.stringMatching(/^m/), amount: "10" });
+  await expect(convert(page).getByTestId("relay-cooldown")).toHaveText(/Demo limit: 3 actions per 10 minutes\. Next action in 2m \d\ds\./);
+  await expect(convert(page).getByText(/Demo limit reached/)).toBeVisible();
+  await expect(convert(page).getByRole("button", { name: "Convert", exact: true })).toBeDisabled();
+  await page.getByRole("tab", { name: "Dark Cross" }).click();
+  await expect(page.locator("#pane-dark").getByTestId("relay-cooldown")).toBeVisible(); // one limit for every action
+});
+
+test("no wallet: Send runs POST /api/demo/send and lists the real Unichain and Sui transactions", async ({ page }) => {
+  await api(page, undefined, { wallet: false });
+  const step = (n: number, chain: "unichain" | "sui", label: string) => ({
+    step: label,
+    at: "2026-09-26T18:00:00Z",
+    chain,
+    tx: chain === "sui" ? `Dig${n}estSuiXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX` : tx(n),
+    url: chain === "sui" ? `https://suiscan.xyz/testnet/tx/Dig${n}` : `https://sepolia.uniscan.xyz/tx/${tx(n)}`,
+  });
+  const job = { id: "send-1", status: "deposited", asset: "AAPL", from: "mcbAAPL", to: "mAAPLx", amountIn: "10000000", shares: "10125000000000000000", recipient: RELAY, depositTx: tx(1), steps: [step(1, "unichain", "deposit mcbAAPL into ShareVault")] };
+  let body: any;
+  await relay(page, {
+    "/send": async (r) => {
+      body = r.request().postDataJSON();
+      await r.fulfill({ json: { ...job, txHash: job.depositTx, path: "sui-confidential", track: "/demo/send/send-1" } });
+    },
+    "/send/:id": (r) =>
+      r.fulfill({ json: { ...job, status: "settled", steps: [...job.steps, step(2, "sui", "sealed pay A → B"), step(3, "sui", "sealed withdraw into mAAPLx"), step(4, "unichain", "settled through the router")] } }),
+  });
+  await page.goto("/app?tab=send");
+  const s = page.locator('[data-panel="send"]');
+  await s.getByLabel("Send amount").fill("10");
+  await s.getByRole("button", { name: "Send confidentially" }).click();
+  expect(body).toMatchObject({ asset: "AAPL", from: "mcbAAPL", to: "mAAPLx", amount: "10", recipient: RELAY });
+  const steps = s.getByRole("list", { name: "Send transactions" }).getByRole("listitem");
+  await expect(steps).toHaveCount(4, { timeout: 10000 });
+  await expect(s.getByTestId("relay-send-status")).toContainText("Settled");
+  await expect(steps.nth(0).getByRole("link")).toHaveAttribute("href", `https://sepolia.uniscan.xyz/tx/${tx(1)}`);
+  await expect(steps.nth(1).getByRole("link")).toHaveAttribute("href", "https://suiscan.xyz/testnet/tx/Dig2");
+  await expect(s).not.toContainText(/simulated/i);
 });

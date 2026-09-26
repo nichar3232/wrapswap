@@ -25,6 +25,7 @@ import {
   type PoolKey,
 } from "@wrapswap/types";
 import { config } from "./config";
+import { relayStatus } from "./relay";
 
 type Provider = EIP1193Provider & {
   on?: (e: string, f: (...a: unknown[]) => void) => void;
@@ -53,8 +54,8 @@ export const expectedChain = () => CHAINS[config.network];
 
 /**
  * Who signs. An injected wallet always wins. Without one: in the mock-data build (tests only) a simulated wallet
- * signs locally; live, the demo relay (a server-side signer, GET/POST {api}/demo/relay) sends real transactions and
- * returns real hashes, when the backend runs one. The demo key never reaches this bundle.
+ * signs locally; live, the demo relay (services/relay, {api}/demo/*, see relay.ts) runs each action server-side and
+ * returns real hashes. The demo key never reaches this bundle.
  */
 export const simulatedWallet = () => config.useMocks && !injected();
 /** No chain writes: mock data (where an injected wallet still signs, for tests). */
@@ -62,16 +63,10 @@ const offChain = () => config.useMocks;
 
 type RelayInfo = { address: Address };
 let relayProbe: Promise<RelayInfo | null> | undefined;
-/** The demo relay's account, or null when the backend runs none (probed once). */
+/** The demo relay's account (GET {api}/demo/status), or null when none is served (probed once). */
 export function relayInfo(): Promise<RelayInfo | null> {
   if (config.useMocks || injected()) return Promise.resolve(null);
-  relayProbe ??= fetch(`${config.apiUrl}/demo/relay`)
-    .then(async (r) => {
-      if (!r.ok || !(r.headers.get("content-type") ?? "").includes("json")) return null;
-      const j = (await r.json()) as { address?: string };
-      return j.address && /^0x[0-9a-fA-F]{40}$/.test(j.address) ? { address: j.address as Address } : null;
-    })
-    .catch(() => null);
+  relayProbe ??= relayStatus().then((s) => (s && /^0x[0-9a-fA-F]{40}$/.test(s.address) ? { address: s.address as Address } : null));
   return relayProbe;
 }
 let relayAccount: Address | undefined;
@@ -240,22 +235,8 @@ export async function send(
     return { hash, simulated: true };
   }
   const client = rpc();
-  if (usingRelay()) {
-    // Simulate first so a revert shows its decoded reason before anything is sent.
-    await client.simulateContract({ account, address, abi, functionName, args });
-    const r = await fetch(`${config.apiUrl}/demo/relay`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ to: address, data: encodeFunctionData({ abi, functionName, args }) }),
-    }).catch(() => undefined);
-    const j = r?.ok ? ((await r.json().catch(() => ({}))) as { hash?: string }) : {};
-    if (!j.hash || !/^0x[0-9a-fA-F]{64}$/.test(j.hash)) throw new Error("NoRelay");
-    const hash = j.hash as Hash;
-    opts.onHash?.(hash);
-    const receipt = await client.waitForTransactionReceipt({ hash });
-    if (receipt.status !== "success") throw new Error("The transaction reverted onchain.");
-    return { hash, receipt, simulated: false };
-  }
+  // Relay mode has no generic signer: each action goes through its relay endpoint (relay.ts).
+  if (usingRelay()) throw new Error("NoRelay");
   const wallet = createWalletClient({ account, transport: custom(provider()) });
   if ((await wallet.getChainId()) !== d.chainId) throw new Error("WrongChain");
   // Load-balanced public RPCs can serve a backend that has not seen the previous receipt (e.g. the approval),
@@ -393,4 +374,11 @@ export async function escrowAvailable(hook: Address, account: Address, tokens: A
     tokens.map((t) => rpc().readContract({ address: hook, abi: IDarkCrossHookAbi, functionName: "balances", args: [account, t] })),
   );
   return rows.map((r) => r[0]);
+}
+
+/** Wait for a transaction sent elsewhere (the demo relay) and return its receipt. */
+export async function waitReceipt(hash: Hash) {
+  const receipt = await rpc().waitForTransactionReceipt({ hash });
+  if (receipt.status !== "success") throw new Error("The transaction reverted onchain.");
+  return receipt;
 }

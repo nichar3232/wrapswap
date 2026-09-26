@@ -38,7 +38,8 @@ function Faucet({ d, assets, faucetAddr }: { d: Deployment | undefined; assets: 
     });
     if (!done) return;
   };
-  if (!w.address) return null;
+  // The demo relay holds its own test shares and has no faucet action; the faucet is for connected wallets.
+  if (!w.address || w.relay) return null;
   const per = feed.data?.tokens[0];
   const perDecimals = per ? findToken(assets, per.address)?.token.decimals : undefined;
   return (

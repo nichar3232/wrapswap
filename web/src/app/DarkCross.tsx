@@ -3,7 +3,9 @@ import { encodeAbiParameters, formatUnits, keccak256, parseUnits, toHex, zeroAdd
 import { canonical, type Address, type BatchPhase, type Deployment } from "@wrapswap/types";
 import { useApi, type Feed } from "../hooks/useApi";
 import { amount, duration, fmtShares } from "../lib/format";
+import { relayAmount, relayDarkCommit, relayStatus } from "../relay";
 import { approve, darkSend, escrowAvailable, verifyOrder } from "../wallet";
+import { RelayLimitNote, useRelayCooldown } from "./relayUi";
 import { toShares, type Asset, type Platform } from "./assets";
 import { pipsToBps } from "./fees";
 import { useTx } from "./tx";
@@ -28,6 +30,8 @@ type Order = {
   salt: Hash;
   stage: Stage;
   simulated: boolean;
+  /** Committed by the demo relay, which also reveals it (the salt stays server-side). */
+  relayed?: boolean;
   txs: { commit?: Hash; reveal?: Hash };
 };
 
@@ -86,6 +90,7 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
   const [order, setOrderState] = useState<Order>();
   const tx = useTx<unknown>();
   const left = useCountdown(batch);
+  const cooldown = useRelayCooldown(w.relay);
 
   useEffect(() => {
     if (intent) setFromAddr(intent.fromToken);
@@ -145,8 +150,33 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
       ),
     );
 
+  const commitViaRelay = async () => {
+    const done = await tx.run("Sealed commit (demo relay)", async (onHash) => {
+      // The relay funds escrow, waits for a commit window, commits, and reveals in the reveal phase.
+      const r = await relayDarkCommit({ asset: asset.symbol, from: a.symbol, amount: relayAmount(input) });
+      onHash(r.txHash);
+      setOrder({
+        hook,
+        asset: asset.symbol,
+        account: w.address!,
+        batchId: r.batchId,
+        sellBase: r.side === "sellBase",
+        lockToken: a.address,
+        amount: BigInt(r.amountIn),
+        limit: BigInt(r.limitPriceX18),
+        salt: zero32,
+        stage: "committed",
+        simulated: false,
+        relayed: true,
+        txs: { commit: r.txHash },
+      });
+      return { hash: r.txHash, simulated: false, result: "committed" };
+    });
+    if (done) tx.reset();
+  };
   const commit = async () => {
     if (!b || !w.address) return;
+    if (w.relay) return commitViaRelay();
     const salt = toHex(crypto.getRandomValues(new Uint8Array(32)));
     const o = { batchId: b.batchId, sellBase, amount: raw, limit, salt };
     const done = await tx.run("Sealed commit", async (onHash) => {
@@ -191,14 +221,34 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
   const mine = order ? BigInt(order.batchId) : undefined;
   useEffect(() => {
     if (!order || current === undefined || mine === undefined || tx.busy) return;
+    if (order.relayed) return; // the relay reveals; tracked from /demo/status below
     if (order.stage === "committed" && current === mine && b?.phase === "REVEAL" && w.demo) void reveal();
     if (order.stage === "committed" && (current > mine || (current === mine && b?.phase === "SETTLE"))) setOrder({ ...order, stage: "missed" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.stage, current, b?.phase, w.demo]);
-  const waitingSettle = !!order && order.stage === "revealed" && current !== undefined && (current > mine! || b?.phase === "SETTLE");
+  // Relay orders: the reveal tx appears in the relay's recent actions.
+  useEffect(() => {
+    if (!order?.relayed || order.stage !== "committed") return;
+    let live = true;
+    const poll = async () => {
+      const st = await relayStatus();
+      const hit = st?.recent.find((x) => x.action === "dark-reveal" && x.batchId === order.batchId && x.asset === order.asset);
+      if (live && hit?.txHash) setOrder({ ...order, stage: "revealed", txs: { ...order.txs, reveal: hit.txHash as Hash } });
+    };
+    void poll();
+    const id = setInterval(poll, 3000);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order?.relayed, order?.stage, order?.batchId]);
+  const past = current !== undefined && mine !== undefined && (current > mine || (current === mine && b?.phase === "SETTLE"));
+  const waitingSettle = !!order && (order.stage === "revealed" || (!!order.relayed && order.stage === "committed")) && past;
   const detail = useApi("batch", order && (waitingSettle || order.stage === "settled") ? `${order.batchId}?asset=${order.asset}` : null, 4000);
   useEffect(() => {
-    if (order?.stage === "revealed" && detail.data?.batch.settled) setOrder({ ...order, stage: "settled" });
+    if (order && order.stage !== "settled" && (order.stage === "revealed" || order.relayed) && detail.data?.batch.settled)
+      setOrder({ ...order, stage: "settled" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail.data?.batch.settled, order?.stage]);
 
@@ -211,7 +261,9 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
         ? `Not enough ${a.symbol} on ${from.name}.`
         : b?.oracle.stale
           ? "The oracle midpoint is stale; commits reopen after the next update."
-          : b && b.phase !== "COMMIT"
+          : w.relay && toShares(raw, a) > 100n * 10n ** 18n
+            ? "The demo relay moves at most 100 shares per action."
+            : b && b.phase !== "COMMIT" && !w.relay // the relay waits for the next commit window itself
             ? `Commits reopen with the next batch (${left !== undefined ? duration(left) : "—"} left in ${b.phase.toLowerCase()}).`
             : "";
 
@@ -231,6 +283,7 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
           onReveal={() => void reveal()}
           busy={tx.busy}
           demo={w.demo}
+          relayed={!!order.relayed}
           onDone={() => setOrder(undefined)}
           onWithdraw={async (tokens) => {
             await tx.run("Withdraw", async (onHash) => {
@@ -325,11 +378,20 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
               {w.busy === "connect" ? "Connecting…" : "Connect to commit"}
             </button>
           ) : (
-            <button className="primary wide" disabled={!!blocked || tx.busy || !mid} aria-busy={tx.busy || undefined} onClick={() => void commit()}>
+            <button className="primary wide" disabled={!!blocked || tx.busy || !mid || cooldown > 0} aria-busy={tx.busy || undefined} onClick={() => void commit()}>
               {tx.busy && <Spinner />}
-              {tx.state.step === "signing" ? "Confirm in wallet…" : tx.busy ? "Sealing…" : `Commit sealed order · batch #${b?.batchId ?? "—"}`}
+              {tx.state.step === "signing"
+                ? w.relay
+                  ? "Demo relay: waiting for a commit window…"
+                  : "Confirm in wallet…"
+                : tx.busy
+                  ? "Sealing…"
+                  : w.relay
+                    ? "Commit sealed order (demo relay)"
+                    : `Commit sealed order · batch #${b?.batchId ?? "—"}`}
             </button>
           )}
+          <RelayLimitNote left={cooldown} />
         </>
       )}
       <TxPanel tx={tx.state} onRetry={() => tx.retry()} />
@@ -390,6 +452,7 @@ function OrderCard({
   onReveal,
   busy,
   demo,
+  relayed,
   onDone,
   onWithdraw,
 }: {
@@ -403,6 +466,7 @@ function OrderCard({
   onReveal: () => void;
   busy: boolean;
   demo: boolean;
+  relayed: boolean;
   onDone: () => void;
   onWithdraw: (tokens: { token: Address; amount: bigint }[]) => void;
 }) {
@@ -440,11 +504,13 @@ function OrderCard({
           <p className="hint">
             {currentBatch === order.batchId && phase === "COMMIT"
               ? "Sealed. The reveal window opens when commits close."
-              : demo
+              : relayed
+                ? "The demo relay reveals this order in the reveal window."
+                : demo
                 ? "Revealing…"
                 : "Reveal window open: sign the reveal to enter the cross."}
           </p>
-          {!demo && phase === "REVEAL" && currentBatch === order.batchId && (
+          {!demo && !relayed && phase === "REVEAL" && currentBatch === order.batchId && (
             <button className="primary wide" disabled={busy} onClick={onReveal}>
               Reveal now
             </button>
@@ -498,18 +564,22 @@ function OrderCard({
           </dl>
           {midX18 && <p className="hint">Midpoint {amount(midX18, 18, 6)} {quote.token.symbol}/{base.token.symbol}. Proceeds and refunds are in your Dark Cross escrow.</p>}
           <div className="row-actions">
-            <button
-              className="primary"
-              disabled={busy}
-              onClick={() =>
-                onWithdraw([
-                  { token: outTok.address, amount: (cross ? BigInt(cross.amountOut) : 0n) + (res ? BigInt(res.amountOut) : 0n) },
-                  { token: inTok.address, amount: unfilled },
-                ])
-              }
-            >
-              Withdraw to wallet
-            </button>
+            {relayed ? (
+              <span className="hint">Proceeds stay in the demo relay's Dark Cross escrow.</span>
+            ) : (
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  onWithdraw([
+                    { token: outTok.address, amount: (cross ? BigInt(cross.amountOut) : 0n) + (res ? BigInt(res.amountOut) : 0n) },
+                    { token: inTok.address, amount: unfilled },
+                  ])
+                }
+              >
+                Withdraw to wallet
+              </button>
+            )}
             <button type="button" className="ghost-btn" onClick={onDone}>
               New order
             </button>

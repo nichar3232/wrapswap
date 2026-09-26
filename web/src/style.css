@@ -2877,3 +2877,33 @@ table.sees th[scope="row"] {
   flex-direction: column;
   justify-content: flex-start;
 }
+.relay-send {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+}
+.relay-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.relay-steps li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+}
+@media (max-width: 720px) {
+  .relay-steps li {
+    grid-template-columns: auto 1fr;
+  }
+  .relay-steps .hex {
+    grid-column: 1 / -1;
+  }
+}

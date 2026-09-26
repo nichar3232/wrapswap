@@ -15,7 +15,9 @@ const SendPanel = lazy(() => import("./app/Send").then((m) => ({ default: m.send
 import { Hex, Skeleton, shortHex } from "./app/ui";
 import type { Token } from "./app/assets";
 import { WalletProvider, useWallet } from "./app/wallet";
-import { isDemo } from "./wallet";
+import { injected, isDemo } from "./wallet";
+import { RelaySend } from "./app/RelaySend";
+import { Boundary } from "./app/Boundary";
 import type { MoveIntent } from "./app/types";
 import "./theme.css";
 import "./style.css";
@@ -176,6 +178,22 @@ function Account({ tokens }: { tokens: Token[] }) {
   );
 }
 
+/**
+ * The Send slot. A connected wallet gets the sui lane's panel (real transactions only; its simulated mode runs in
+ * the mock test build alone). With no wallet, the demo relay runs the real Sui path (POST /api/demo/send).
+ */
+function SendSlot({ d, assets }: { d: Deployment | undefined; assets: ReturnType<typeof assetsOf> }) {
+  const w = useWallet();
+  if (!config.useMocks && !injected()) return <RelaySend assets={assets} />;
+  return (
+    <Boundary label="Send">
+      <Suspense fallback={<Skeleton w="100%" h="16em" />}>
+        <SendPanel d={d} assets={assets} demo={config.useMocks && !w.relay} />
+      </Suspense>
+    </Boundary>
+  );
+}
+
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 function App() {
@@ -329,13 +347,7 @@ function App() {
                 ) : t === "Move" ? (
                   <Move d={d} asset={asset} pool={pool} batch={batch} intent={intent} />
                 ) : t === "Send" ? (
-                  <SendOverview>
-                    {(i === index || sendOpened) && (
-                      <Suspense fallback={<Skeleton w="100%" h="16em" />}>
-                        <SendPanel d={d} assets={assets} />
-                      </Suspense>
-                    )}
-                  </SendOverview>
+                  <SendOverview>{(i === index || sendOpened) && <SendSlot d={d} assets={assets} />}</SendOverview>
                 ) : (
                   <Liquidity asset={asset} pool={pool} onMove={moveFrom} />
                 )}

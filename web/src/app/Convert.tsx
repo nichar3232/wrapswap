@@ -4,7 +4,9 @@ import type { Deployment, Route } from "@wrapswap/types";
 import { FeeRows } from "../components";
 import { useApi, type Feed } from "../hooks/useApi";
 import { amount, fmtShares } from "../lib/format";
-import { allowance, approve, convertExactIn, convertedOf } from "../wallet";
+import { relayAmount, relayConvert } from "../relay";
+import { allowance, approve, convertExactIn, convertedOf, waitReceipt } from "../wallet";
+import { RelayLimitNote, useRelayCooldown } from "./relayUi";
 import { toShares, type Asset } from "./assets";
 import { quoteBreakdown, skewPct } from "./fees";
 import { useTx } from "./tx";
@@ -38,6 +40,7 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
   const [approvedKey, setApprovedKey] = useState("");
   const [receipt, setReceipt] = useState<Receipt>();
   const tx = useTx<unknown>();
+  const cooldown = useRelayCooldown(w.relay);
 
   useEffect(() => {
     if (!intent) return;
@@ -81,7 +84,7 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
   const router = d.contracts.wrapSwapRouter ?? d.router ?? undefined;
   const approvalKey = `${w.address}:${a.address}:${raw}`;
   useEffect(() => {
-    if (w.demo && !w.relay) return;
+    if (w.demo) return; // mock wallet, or the relay (which approves for itself)
     if (!w.ready || !router || raw === 0n) return;
     let live = true;
     allowance(a.address, w.address!, router).then(
@@ -104,10 +107,46 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
             ? route.data?.reason || "Paused: the pool is more than 50 bps from NAV parity."
             : activeRoute === "FALL-THROUGH"
               ? "Hook inventory is short for this size. Try a smaller amount."
-              : "";
+              : w.relay && qb && qb.sharesIn > 100n * 10n ** 18n
+                ? "The demo relay moves at most 100 shares per action."
+                : "";
 
+  const finish = (hash: Hash | undefined, simulated: boolean, c: ReturnType<typeof convertedOf>, out: bigint) => {
+    setApprovedKey("");
+    w.adjust(a.address, -raw);
+    w.adjust(b.address, out);
+    pool.refresh();
+    setReceipt({
+      hash,
+      simulated,
+      exact: !!c,
+      from: from.name,
+      to: to.name,
+      basePips: q!.fee.basePips,
+      skewPips: q!.fee.skewPips,
+      sharesIn: qb!.sharesIn,
+      sharesOut: c?.sharesOut ?? qb!.sharesOut,
+      baseFee: c?.baseFee ?? qb!.baseFee,
+      skewFee: c?.skewFee ?? qb!.skewFee,
+      preSkew: qb!.preSkewX18,
+      postSkew: c?.postSkew ?? qb!.postSkewX18,
+      amountOut: out,
+    });
+  };
   const run = async () => {
     if (!w.address || !q || !qb || !asset.pool) return;
+    if (w.relay) {
+      // Demo relay: the server signs approve + swapExactIn; the receipt figures come from the real transaction.
+      const done = await tx.run("Convert (demo relay)", async (onHash) => {
+        const r = await relayConvert({ asset: asset.symbol, from: a.symbol, to: b.symbol, amount: relayAmount(input) });
+        onHash(r.txHash);
+        const c = convertedOf(await waitReceipt(r.txHash), b.address, w.address!);
+        finish(r.txHash, false, c, c?.amountOut ?? BigInt(r.quotedOut));
+        return { hash: r.txHash, simulated: false, result: "converted" };
+      });
+      if (done) tx.reset();
+      return;
+    }
     if (approvedKey !== approvalKey) {
       const ok = await tx.run("Approval", async (onHash) => {
         const spender = router ?? d.contracts.swapRouter;
@@ -121,27 +160,7 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
     const done = await tx.run("Convert", async (onHash) => {
       const sent = await convertExactIn(d, asset.pool!.key, w.address!, a.address, raw, minOut, w.uid, { onHash, recipient: w.address });
       const c = sent.receipt ? convertedOf(sent.receipt, b.address, w.address!) : undefined;
-      const out = c?.amountOut ?? BigInt(output!);
-      setApprovedKey("");
-      w.adjust(a.address, -raw);
-      w.adjust(b.address, out);
-      pool.refresh();
-      setReceipt({
-        hash: sent.hash,
-        simulated: sent.simulated,
-        exact: !!c,
-        from: from.name,
-        to: to.name,
-        basePips: q.fee.basePips,
-        skewPips: q.fee.skewPips,
-        sharesIn: qb.sharesIn,
-        sharesOut: c?.sharesOut ?? qb.sharesOut,
-        baseFee: c?.baseFee ?? qb.baseFee,
-        skewFee: c?.skewFee ?? qb.skewFee,
-        preSkew: qb.preSkewX18,
-        postSkew: c?.postSkew ?? qb.postSkewX18,
-        amountOut: out,
-      });
+      finish(sent.hash, sent.simulated, c, c?.amountOut ?? BigInt(output!));
       return { hash: sent.hash, simulated: sent.simulated, result: "converted" };
     });
     // The receipt card carries the result; clear the pending panel so it isn't shown twice.
@@ -268,12 +287,13 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
           {w.busy === "connect" ? "Connecting…" : "Connect to convert"}
         </button>
       ) : (
-        <button className="primary wide" disabled={!!blocked || tx.busy || !qb} aria-busy={tx.busy || undefined} onClick={() => void run()}>
+        <button className="primary wide" disabled={!!blocked || tx.busy || !qb || cooldown > 0} aria-busy={tx.busy || undefined} onClick={() => void run()}>
           {tx.busy && <Spinner />}
-          {tx.state.step === "signing" ? "Confirm in wallet…" : tx.busy ? "Converting…" : approvedKey === approvalKey || (w.demo && !w.relay) ? "Convert" : "Approve and convert"}
+          {tx.state.step === "signing" ? "Confirm in wallet…" : tx.busy ? "Converting…" : approvedKey === approvalKey || w.demo ? "Convert" : "Approve and convert"}
         </button>
       )}
       {w.notice && <p className="block-reason">{w.notice}</p>}
+      <RelayLimitNote left={cooldown} />
       <TxPanel tx={tx.state} onRetry={() => void run()} />
     </div>
   );
