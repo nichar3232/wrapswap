@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Mark, ThemeToggle } from "../brand";
 import { explorerUrl } from "@wrapswap/types";
+import { Diagram } from "./Diagram";
 import { Halftone } from "./Halftone";
 import {
   EXPLORER,
@@ -221,6 +222,7 @@ function Landing() {
             </li>
           ))}
         </ol>
+        <Diagram />
       </section>
 
       <section className="black proof" id="proof">

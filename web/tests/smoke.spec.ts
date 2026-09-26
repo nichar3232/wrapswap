@@ -291,6 +291,44 @@ test.describe("Landing controls all navigate or scroll", () => {
       await expectPopup(page, () => explorer.nth(i).click(), /uniscan\.xyz\/address\//);
   });
 
+  test("architecture diagram: a Unichain node opens its explorer page", async ({
+    page,
+  }) => {
+    const file = new URL(
+      "../../deployments/unichain-sepolia.json",
+      import.meta.url,
+    );
+    const d = existsSync(file)
+      ? JSON.parse(readFileSync(file, "utf8"))
+      : undefined;
+    await page.goto("/");
+    const diagram = page.locator(".dg-wide");
+    await expect(diagram).toBeVisible();
+    for (const text of ["UNICHAIN SEPOLIA · UNISWAP v4", "SUI TESTNET · CONFIDENTIAL PAYMENTS", "ParityHook", "ShareVault"])
+      await expect(diagram.getByText(text, { exact: true })).toBeVisible();
+    await expect(diagram.getByText(/chainlink/i)).toHaveCount(0);
+    const parity = diagram.locator('[data-node="parity"]');
+    if (d?.contracts?.parityHook) {
+      await expectPopup(
+        page,
+        () => parity.click(),
+        new RegExp(`sepolia\\.uniscan\\.xyz/address/${d.contracts.parityHook}`, "i"),
+      );
+    } else {
+      // No deployment yet: the node renders but is not a link.
+      await expect(parity).toBeVisible();
+      await expect(diagram.locator('a[data-node="parity"]')).toHaveCount(0);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(page.locator(".dg-stacked")).toBeVisible();
+    await expect(diagram).toBeHidden();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+
   test("mobile menu opens without chevrons and its items scroll", async ({
     page,
   }) => {
