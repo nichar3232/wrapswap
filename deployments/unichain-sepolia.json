@@ -72,5 +72,8 @@
     "block": "63591954",
     "keeper": "0xFD42fC43855C9332051e9e2F05a75C8914073F9e",
     "suiDeployment": "deployments/sui-testnet.json"
+  },
+  "demo": {
+    "relay": "0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C"
   }
 }

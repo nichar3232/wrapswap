@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "network": "unichain-sepolia",
   "chainId": 1301,
-  "deployCommit": "e8f68bdcdfe6970376ed19f1952ff48436c992cd",
+  "deployCommit": "d3e42ebf2f5857686c3b212c6302658c7fce6b7e",
   "deployedAt": "2026-09-26T16:06:14.000Z",
   "deployer": "0xFD42fC43855C9332051e9e2F05a75C8914073F9e",
   "startBlock": "63586346",
@@ -142,6 +142,9 @@
     "block": "63591954",
     "keeper": "0xFD42fC43855C9332051e9e2F05a75C8914073F9e",
     "suiDeployment": "deployments/sui-testnet.json"
+  },
+  "demo": {
+    "relay": "0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C"
   },
   "assets": [
     {

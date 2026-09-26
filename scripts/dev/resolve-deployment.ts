@@ -119,6 +119,8 @@ const resolved = {
   protocolFeeRecipient: getAddress(m.protocolFeeRecipient),
   deployBlock: block,
   ...(m.send ? { send: { ...m.send, shareVault: getAddress(m.send.shareVault) } } : {}),
+  // Demo relay signer (services/relay): public address only; its key lives in ~/wrapswap-run/env/.
+  ...(m.demo?.relay ? { demo: { relay: getAddress(m.demo.relay) } } : {}),
   assets: assets.map((a) => ({
     symbol: a.symbol,
     wrappers: a.wrappers.map(({ adapterName, name, ...w }) => w),

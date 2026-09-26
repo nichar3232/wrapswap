@@ -925,6 +925,18 @@ export const schemas = {
           }
         }
       },
+      "demo": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "relay"
+        ],
+        "properties": {
+          "relay": {
+            "$ref": "Address"
+          }
+        }
+      },
       "assets": {
         "type": "array",
         "items": {
@@ -2949,6 +2961,9 @@ export type Deployment = {
     "block"?: UInt;
     "keeper"?: Address;
     "suiDeployment"?: string;
+  };
+  "demo"?: {
+    "relay": Address;
   };
   "assets"?: Array<{
     "symbol": string;

@@ -942,6 +942,12 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
         "suiDeployment": { "type": "string" }
       }
     },
+    "demo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relay"],
+      "properties": { "relay": { "$ref": "Address" } }
+    },
     "assets": {
       "type": "array",
       "items": {
