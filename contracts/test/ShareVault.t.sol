@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
+import {PoolKey} from "v4-core/src/types/PoolKey.sol";
+import {Currency} from "v4-core/src/types/Currency.sol";
+import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
+import {IIssuerRegistry} from "../src/interfaces/IIssuerRegistry.sol";
 import {Fixture} from "./utils/Fixture.sol";
 import {WrapSwapRouter} from "../src/WrapSwapRouter.sol";
 import {ShareVault} from "../src/ShareVault.sol";
@@ -229,5 +234,82 @@ contract ShareVaultMcbCurrency0Test is ShareVaultBase {
 contract ShareVaultMcbCurrency1Test is ShareVaultBase {
     function mcbIsCurrency0() internal pure override returns (bool) {
         return false;
+    }
+}
+
+/// @notice Runs against a fork of the live Unichain Sepolia deployment (real PoolManager, ParityHook, router, tokens).
+///         Skipped unless UNICHAIN_SEPOLIA_RPC_URL is set and a manifest is available, either at
+///         deployments/unichain-sepolia.json or passed inline as SHARE_VAULT_MANIFEST_JSON.
+contract ShareVaultUnichainForkTest is Test {
+    ShareVault internal vault;
+    MockToken internal mcb;
+    MockToken internal maaplx;
+    address internal tokenOwner;
+    address internal keeper = makeAddr("keeper");
+    address internal alice = makeAddr("alice");
+    address internal bob = makeAddr("bob");
+
+    function setUp() public {
+        string memory rpc = vm.envOr("UNICHAIN_SEPOLIA_RPC_URL", string(""));
+        string memory j = vm.envOr("SHARE_VAULT_MANIFEST_JSON", string(""));
+        if (bytes(j).length == 0 && vm.exists("deployments/unichain-sepolia.json")) {
+            j = vm.readFile("deployments/unichain-sepolia.json");
+        }
+        if (bytes(rpc).length == 0 || bytes(j).length == 0) {
+            vm.skip(true);
+            return;
+        }
+        vm.createSelectFork(rpc);
+        require(block.chainid == 1301, "not Unichain Sepolia");
+        PoolKey memory key = PoolKey({
+            currency0: Currency.wrap(vm.parseJsonAddress(j, ".pool.key.currency0")),
+            currency1: Currency.wrap(vm.parseJsonAddress(j, ".pool.key.currency1")),
+            fee: uint24(vm.parseJsonUint(j, ".pool.key.fee")),
+            tickSpacing: int24(int256(vm.parseJsonInt(j, ".pool.key.tickSpacing"))),
+            hooks: IHooks(vm.parseJsonAddress(j, ".pool.key.hooks"))
+        });
+        vault = new ShareVault(
+            IIssuerRegistry(vm.parseJsonAddress(j, ".contracts.registry")),
+            WrapSwapRouter(vm.parseJsonAddress(j, ".contracts.wrapSwapRouter")),
+            key,
+            address(this)
+        );
+        vault.setKeeper(keeper, true);
+        (address a, address b) = (Currency.unwrap(key.currency0), Currency.unwrap(key.currency1));
+        (mcb, maaplx) = MockToken(a).decimals() == 6 ? (MockToken(a), MockToken(b)) : (MockToken(b), MockToken(a));
+        tokenOwner = mcb.owner();
+        vm.startPrank(tokenOwner);
+        mcb.mint(alice, 2e6);
+        maaplx.mint(bob, 10e18);
+        vm.stopPrank();
+        vm.prank(alice);
+        mcb.approve(address(vault), type(uint256).max);
+        vm.prank(bob);
+        maaplx.approve(address(vault), type(uint256).max);
+    }
+
+    function test_fork_depositPayWithdrawAcrossIssuers() public {
+        vm.prank(alice);
+        uint256 aShares = vault.deposit(address(mcb), 2e6, bytes32(uint256(0xA)));
+        vm.prank(bob);
+        vault.deposit(address(maaplx), 10e18, bytes32(uint256(0xB)));
+        assertEq(aShares, 2.025e18);
+
+        // Bob withdraws more mcbAAPL than custody holds, so it must convert mAAPLx through the live ParityHook pool.
+        address carol = makeAddr("carol");
+        (, uint256 debit, uint24 feePips, bool direct) = vault.quoteWithdrawal(address(mcb), 3e18);
+        assertFalse(direct);
+        ShareVault.Withdrawal[] memory ws = new ShareVault.Withdrawal[](2);
+        ws[0] = ShareVault.Withdrawal("fork-ok", carol, address(mcb), 3e18, 25);
+        ws[1] = ShareVault.Withdrawal("fork-skip", carol, address(mcb), 2.5e18, 0); // below the live fee
+        uint256 before = vault.sharesOutstanding();
+        vm.prank(keeper);
+        vault.settleWithdrawals(ws, "fork");
+        assertGe(mcb.balanceOf(carol), CanonicalShares.fromSharesDown(3e18, 1.0125e18, 6));
+        assertFalse(vault.settled("fork-skip"));
+        assertEq(before - vault.sharesOutstanding(), debit);
+        assertGt(feePips, 0);
+        (uint256 held, uint256 outstanding) = vault.reserves();
+        assertGe(held, outstanding);
     }
 }

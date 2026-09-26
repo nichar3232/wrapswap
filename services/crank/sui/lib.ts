@@ -77,7 +77,7 @@ export async function walrusPut(data: Uint8Array): Promise<{ blobId: string; obj
   let lastErr: unknown;
   for (let attempt = 0; attempt < 4; attempt++) {
     try {
-      const res = await fetch(`${WALRUS_PUBLISHER}/v1/blobs?epochs=${WALRUS_EPOCHS}`, { method: 'PUT', body: data });
+      const res = await fetch(`${WALRUS_PUBLISHER}/v1/blobs?epochs=${WALRUS_EPOCHS}`, { method: 'PUT', body: data as BodyInit });
       if (!res.ok) throw new Error(`walrus PUT ${res.status}: ${(await res.text()).slice(0, 200)}`);
       const j: any = await res.json();
       if (j.newlyCreated) return { blobId: j.newlyCreated.blobObject.blobId, objectId: j.newlyCreated.blobObject.id, fresh: true };
