@@ -19,8 +19,8 @@ Placeholders referenced: `{{URL:repo}}`, `{{URL:video}}`, `{{URL:feedback-md}}`,
 
 ## 2. Record Part B on the live site (≈10 min)
 
-- [ ] Open `https://sepolia.uniscan.xyz/address/0x1D2C9335813B8d3fFDCCC9d43aAf73d7871b20c8#code` and confirm the "verified" check shows (block B1).
-- [ ] Run `scripts/dev/live-up` (Funnel serves it, DEMO.md §3) and open `https://nichars-mac-mini.tail43cacc.ts.net/app`, Convert tab. Check the header says NYSE **CLOSED** and chain 1301. The 100 mcbAAPL → mAAPLx quote was **14.09 bps** / **101.10733875 mAAPLx** at time of writing (block B2); read the live figures off the screen. **Only quote; don't execute a swap before recording.**
+- [ ] Open `https://sepolia.uniscan.xyz/address/0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8#code` and confirm the "verified" check shows (block B1).
+- [ ] Run `scripts/dev/live-up` (Funnel serves it, DEMO.md §3) and open `https://nichars-mac-mini.tail43cacc.ts.net/app`, Convert tab. Check the header says NYSE **CLOSED** and chain 1301. The 100 mcbAAPL → mAAPLx quote was **3.16 bps** / **101.218005 mAAPLx** at time of writing (skew-reducing, so no off-hours premium; the reverse direction was 4.65 bps); read the live figures off the screen. **Only quote; don't execute a swap before recording.**
 - [ ] Open `{{URL:repo-readme-integrations}}` (block B3).
 - [ ] Record blocks B1–B3 (2:20–3:00).
 

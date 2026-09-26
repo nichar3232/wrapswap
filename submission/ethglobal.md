@@ -32,7 +32,7 @@ WrapSwap is share-for-share conversion, no USDC leg. A Uniswap v4 hook, ParityHo
 
 Users only ever hold real issuer securities; shares are internal accounting. Swaps are gated to non-US users through the Coinbase Verified Country EAS attestation. On testnet, an owner-set `demoMode` bypasses the gate so anyone can try it, and that toggle is public on-chain.
 
-The closed-market fee is deliberate: the hook keeps quoting when NYSE is closed and prices the off-hours risk. On Unichain Sepolia this weekend, the same 100 mcbAAPL quote is 14.09 bps (101.10733875 mAAPLx out, at time of writing), against 4.60 bps (101.203425 mAAPLx out) with the market open on the local fork.
+The off-hours fee is deliberate and narrow: a same-share swap carries no underlying price risk, so off-hours the only risk is rebalancing lag (issuers can't mint or redeem until the open), which grows with inventory skew. The hook keeps quoting when NYSE is closed and charges 15 bps × |post-trade skew| only to trades that increase skew. On Unichain Sepolia this weekend (book |skew| 0.089), 100 mcbAAPL → mAAPLx rebalances and costs 3.16 bps; the reverse deepens skew and costs 4.65 bps (1.49 bps off-hours), at time of writing.
 
 ## How it's made
 
@@ -70,30 +70,48 @@ The project was built with AI coding agents (Claude) working in parallel lanes a
 ## Contract addresses (Unichain Sepolia, chain 1301)
 
 <!-- testnet:start -->
-Unichain Sepolia (chain 1301). Manifest: [`deployments/unichain-sepolia.json`](deployments/unichain-sepolia.json), deploy commit `22ef482`, start block 63572662, pool id `0x402eaf025f43466fcd7d1a145802a0b837428e799fc01ba61a77a09af0d68c20`. Eligibility runs with `demoMode` on (testnet).
+Unichain Sepolia (chain 1301). Manifest: [`deployments/unichain-sepolia.json`](deployments/unichain-sepolia.json), deploy commit `b4ef312`, start block 63572662, pool id `0xfb36965758ff8acaa8074d8349af34ba6b914298b27032abe95bd4ef06252821`. Eligibility runs with `demoMode` on (testnet).
 
 | Contract | Address | Uniscan (source) |
 | --- | --- | --- |
-| ParityHook | `0x1D2C9335813B8d3fFDCCC9d43aAf73d7871b20c8` | [verified](https://sepolia.uniscan.xyz/address/0x1D2C9335813B8d3fFDCCC9d43aAf73d7871b20c8#code) |
-| DarkCrossHook | `0x9E358e72018B776F22fEf71bd07cD9e8bC4b790e` | [verified](https://sepolia.uniscan.xyz/address/0x9E358e72018B776F22fEf71bd07cD9e8bC4b790e#code) |
+| ParityHook | `0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8` | [verified](https://sepolia.uniscan.xyz/address/0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8#code) |
+| DarkCrossHook (AAPL) | `0xBfcdFf560AaEe80E9030be7574e2451a1296883A` | [verified](https://sepolia.uniscan.xyz/address/0xBfcdFf560AaEe80E9030be7574e2451a1296883A#code) |
 | WrapSwapRouter | `0x9C4Fc24f99C2E0212F6d6562b8A417952ef3Eba3` | [verified](https://sepolia.uniscan.xyz/address/0x9C4Fc24f99C2E0212F6d6562b8A417952ef3Eba3#code) |
 | IssuerRegistry | `0xA5d433FA4E90D21859B325Be34F0B8845F8E9070` | [verified](https://sepolia.uniscan.xyz/address/0xA5d433FA4E90D21859B325Be34F0B8845F8E9070#code) |
 | NyseCalendar | `0x70396f1Be86e3d7F70C017cbbe69efED861387A1` | [verified](https://sepolia.uniscan.xyz/address/0x70396f1Be86e3d7F70C017cbbe69efED861387A1#code) |
 | EASEligibility | `0x85ABBc06C69D9426907352034a5A7C3D30EB5C5A` | [verified](https://sepolia.uniscan.xyz/address/0x85ABBc06C69D9426907352034a5A7C3D30EB5C5A#code) |
 | MockPriceOracle | `0xBe2fb3259454F35bC5999f345873c870b5DE3dB1` | [verified](https://sepolia.uniscan.xyz/address/0xBe2fb3259454F35bC5999f345873c870b5DE3dB1#code) |
+| MockIssuerToken mcbAAPL (Coinbase, 6 dec) | `0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c` | [verified](https://sepolia.uniscan.xyz/address/0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c#code) |
 | B20MultiplierAdapter (mcbAAPL) | `0xc3bE8635F1CB05aBCd5DF001157aAb9349184828` | [verified](https://sepolia.uniscan.xyz/address/0xc3bE8635F1CB05aBCd5DF001157aAb9349184828#code) |
+| MockIssuerToken mAAPLx (xStocks, 18 dec) | `0x433DAfF77AD96b9319957D83d9d422E70c996C45` | [verified](https://sepolia.uniscan.xyz/address/0x433DAfF77AD96b9319957D83d9d422E70c996C45#code) |
 | XStocksMultiplierAdapter (mAAPLx) | `0x577C983f0c3cf3868d543C1c4cbb2807B65ddA78` | [verified](https://sepolia.uniscan.xyz/address/0x577C983f0c3cf3868d543C1c4cbb2807B65ddA78#code) |
-| MockIssuerToken mcbAAPL (6 dec) | `0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c` | [verified](https://sepolia.uniscan.xyz/address/0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c#code) |
-| MockIssuerToken mAAPLx (18 dec) | `0x433DAfF77AD96b9319957D83d9d422E70c996C45` | [verified](https://sepolia.uniscan.xyz/address/0x433DAfF77AD96b9319957D83d9d422E70c996C45#code) |
+| MockIssuerToken mcbNVDA (Coinbase, 6 dec) | `0x9b1dc2Cb4cF7b3e514555944E5cE07A54265A2D2` | [verified](https://sepolia.uniscan.xyz/address/0x9b1dc2Cb4cF7b3e514555944E5cE07A54265A2D2#code) |
+| B20MultiplierAdapter (mcbNVDA) | `0xF76aC3064b5b8a458a46e281acf047069F2eD762` | [verified](https://sepolia.uniscan.xyz/address/0xF76aC3064b5b8a458a46e281acf047069F2eD762#code) |
+| MockIssuerToken mNVDAx (xStocks, 18 dec) | `0xEdcD509ab5404529ed5169379EeE14A755E3027c` | [verified](https://sepolia.uniscan.xyz/address/0xEdcD509ab5404529ed5169379EeE14A755E3027c#code) |
+| XStocksMultiplierAdapter (mNVDAx) | `0x612b15a552D49616A60aa4B740A84D3e2E306211` | [verified](https://sepolia.uniscan.xyz/address/0x612b15a552D49616A60aa4B740A84D3e2E306211#code) |
+| MockIssuerToken mcbTSLA (Coinbase, 6 dec) | `0x0757eEe1292046c7303f5C603001e0a9069a6B80` | [verified](https://sepolia.uniscan.xyz/address/0x0757eEe1292046c7303f5C603001e0a9069a6B80#code) |
+| B20MultiplierAdapter (mcbTSLA) | `0x2De6944b9c3C00c9Fe2f407C91DF28c7283c8Ef6` | [verified](https://sepolia.uniscan.xyz/address/0x2De6944b9c3C00c9Fe2f407C91DF28c7283c8Ef6#code) |
+| MockIssuerToken mTSLAx (xStocks, 18 dec) | `0x752746b311B256170f1a3156B34465D5A4363153` | [verified](https://sepolia.uniscan.xyz/address/0x752746b311B256170f1a3156B34465D5A4363153#code) |
+| XStocksMultiplierAdapter (mTSLAx) | `0x81e70214de47206a58c03179291e7DD8e2C168a5` | [verified](https://sepolia.uniscan.xyz/address/0x81e70214de47206a58c03179291e7DD8e2C168a5#code) |
+| TestShareFaucet (1,000 of each wrapper / 24 h) | `0xD25b4916eC55aA1F550052ff90d1EcD6B51AABdC` | [verified](https://sepolia.uniscan.xyz/address/0xD25b4916eC55aA1F550052ff90d1EcD6B51AABdC#code) |
 | PoolSwapTest | `0x8525eD020Aa0CEa75884546b834d1eb40D3987b3` | [verified](https://sepolia.uniscan.xyz/address/0x8525eD020Aa0CEa75884546b834d1eb40D3987b3#code) |
 | PoolModifyLiquidityTest | `0x57428942dEC15511cE19700877001813EE5fE81d` | [verified](https://sepolia.uniscan.xyz/address/0x57428942dEC15511cE19700877001813EE5fE81d#code) |
 
 Canonical Uniswap v4 (from Uniswap's deployment docs): PoolManager [`0x00B036B58a818B1BC34d502D3fE730Db729e62AC`](https://sepolia.uniscan.xyz/address/0x00B036B58a818B1BC34d502D3fE730Db729e62AC), V4Quoter [`0x56DCD40A3F2d466F48e7F48bDBE5Cc9B92Ae4472`](https://sepolia.uniscan.xyz/address/0x56DCD40A3F2d466F48e7F48bDBE5Cc9B92Ae4472), StateView [`0xc199F1072a74D4e905ABa1A84d9a45E2546B6222`](https://sepolia.uniscan.xyz/address/0xc199F1072a74D4e905ABa1A84d9a45E2546B6222), PositionManager [`0xf969Aee60879C54bAAed9F3eD26147Db216Fd664`](https://sepolia.uniscan.xyz/address/0xf969Aee60879C54bAAed9F3eD26147Db216Fd664). EAS: OP-stack predeploy `0x4200000000000000000000000000000000000021`.
 
-Swap proofs (100 mcbAAPL → mAAPLx through `WrapSwapRouter.swapExactIn`):
+ParityHook pools (one hook, dynamic fee, tick spacing 10):
 
-- Deployer 0xFD42…3F9e (101.10227625 mAAPLx out): [`0x9b989f6b2494ad76114315fd5f9a0c1cac8bb59d5de820759eee9b14dfc2ef30`](https://sepolia.uniscan.xyz/tx/0x9b989f6b2494ad76114315fd5f9a0c1cac8bb59d5de820759eee9b14dfc2ef30)
-- Owner MetaMask 0x1960…feb8 (101.1035925 mAAPLx out): [`0xd1bfee595d7521ca50eb2d95de3012090632982994be5365877ac669e9841ff1`](https://sepolia.uniscan.xyz/tx/0xd1bfee595d7521ca50eb2d95de3012090632982994be5365877ac669e9841ff1)
+- AAPL (mcbAAPL / mAAPLx): pool id `0xfb36965758ff8acaa8074d8349af34ba6b914298b27032abe95bd4ef06252821` · Dark Cross
+- NVDA (mcbNVDA / mNVDAx): pool id `0x4bf2d33a06bd7604898199c65e34bc8e74ddc9c9d0e3e0569c99e947abcc4173`
+- TSLA (mcbTSLA / mTSLAx): pool id `0x428b5ab44fd961a0c84b554a924b93a4a8d4598ddf1b6414a3be95449062f339`
+
+Proof transactions:
+
+- Deployer WrapSwapRouter.swapExactIn, 100 mAAPLx -> 98.71674 mcbAAPL (skew-increasing, off-hours 1.64 bps, total 4.93 bps): [`0x8fb8d9c3c90cb31c830ec331197e62b10f3fa9b0f50c5689b5e78dc6ecc5ac12`](https://sepolia.uniscan.xyz/tx/0x8fb8d9c3c90cb31c830ec331197e62b10f3fa9b0f50c5689b5e78dc6ecc5ac12)
+- Dark Cross batch 16 settled by the crank (2 crossed, residual routed through ParityHook): [`0x43cdac4b32a03c49b6f7dc937a094a4f94861b172df5380391cace646571bb0e`](https://sepolia.uniscan.xyz/tx/0x43cdac4b32a03c49b6f7dc937a094a4f94861b172df5380391cace646571bb0e)
+- TestShareFaucet.claim() (1,000 of each of 6 wrappers): [`0x5fd33936c421b2046415fbae6197ba09fee575d4f95755b4ad31ee19017913ca`](https://sepolia.uniscan.xyz/tx/0x5fd33936c421b2046415fbae6197ba09fee575d4f95755b4ad31ee19017913ca)
+
+Test funds: `TestShareFaucet.claim()` sends 1,000 of every mock wrapper (once per address per 24 h). Unichain Sepolia ETH faucets (from Unichain's docs): [Superchain Faucet](https://app.optimism.io/faucet), [QuickNode](https://faucet.quicknode.com/unichain/sepolia), [thirdweb](https://thirdweb.com/unichain-sepolia-testnet).
 <!-- testnet:end -->
 
 ## Prize tracks

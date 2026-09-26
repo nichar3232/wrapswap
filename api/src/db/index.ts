@@ -24,12 +24,10 @@ export async function migrate(d: Deployment, down = false, pool = db) {
         await c.query(
           readFileSync(new URL("./schema.sql", import.meta.url), "utf8"),
         );
-      await c.query(
-        readFileSync(
-          new URL("./migrations/001-network-check.sql", import.meta.url),
-          "utf8",
-        ),
-      );
+      for (const m of ["001-network-check.sql", "002-faucet-claims.sql"])
+        await c.query(
+          readFileSync(new URL(`./migrations/${m}`, import.meta.url), "utf8"),
+        );
     }
     await c.query("COMMIT");
   } catch (e) {

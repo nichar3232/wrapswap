@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Verifies every contract created by the latest Deploy.s.sol broadcast on Unichain Sepolia (Etherscan v2 API).
-# Env: ETHERSCAN_API_KEY (Etherscan v2 key), RPC_URL.
+# Verifies every contract created by the latest Deploy.s.sol (or the script named in $1, e.g. UpgradeFees.s.sol)
+# broadcast on Unichain Sepolia (Etherscan v2 API). Env: ETHERSCAN_API_KEY (Etherscan v2 key), RPC_URL.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${ETHERSCAN_API_KEY:?}" "${RPC_URL:?}"
-broadcast=broadcast/Deploy.s.sol/1301/run-latest.json
+broadcast=broadcast/${1:-Deploy.s.sol}/1301/run-latest.json
 declare -A src=(
   [PoolSwapTest]=lib/v4-core/src/test/PoolSwapTest.sol
   [PoolModifyLiquidityTest]=lib/v4-core/src/test/PoolModifyLiquidityTest.sol
@@ -18,6 +18,7 @@ declare -A src=(
   [ParityHook]=contracts/src/ParityHook.sol
   [DarkCrossHook]=contracts/src/DarkCrossHook.sol
   [WrapSwapRouter]=contracts/src/WrapSwapRouter.sol
+  [TestShareFaucet]=contracts/src/mocks/TestShareFaucet.sol
 )
 failed=0
 while IFS=$'\t' read -r name address hash; do

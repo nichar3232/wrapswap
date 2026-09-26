@@ -35,7 +35,7 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
 
     uint24 public constant BASE_FEE_PIPS = CanonicalShares.BASE_FEE_PIPS;
     uint24 public constant SKEW_FEE_PIPS = CanonicalShares.SKEW_FEE_PIPS;
-    uint24 public constant CLOSED_FEE_PIPS = CanonicalShares.CLOSED_FEE_PIPS;
+    uint24 public constant OFF_HOURS_MAX_FEE_PIPS = CanonicalShares.OFF_HOURS_MAX_FEE_PIPS;
     uint24 public constant MAX_FEE_PIPS = CanonicalShares.MAX_FEE_PIPS;
     uint256 public constant PEG_GUARD_BPS = 50;
     uint8 public constant HOOK_DATA_VERSION = 1;
@@ -181,7 +181,7 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
         if (amountSpecified == 0) revert ZeroAmount();
         (Side memory s0, Side memory s1) = _pair(key);
         _requireActive(s0.currency, s1.currency);
-        q = _quote(s0, s1, zeroForOne, amountSpecified, _feeBreakdown(s0, s1));
+        q = _quote(s0, s1, zeroForOne, amountSpecified);
     }
 
     function pegStatus(PoolKey calldata key) public view returns (PegStatus memory) {
@@ -233,11 +233,10 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
         _requireActive(s0.currency, s1.currency);
 
         PoolId id = key.toId();
-        FeeBreakdown memory fee = _feeBreakdown(s0, s1);
+        Quote memory q = _quote(s0, s1, params.zeroForOne, params.amountSpecified);
+        FeeBreakdown memory fee = q.fee;
         emit FeeQuoted(id, fee.totalPips, fee.basePips, fee.skewPips, fee.closedPips, fee.skewX18, fee.marketOpen);
         uint24 lpFeeOverride = fee.totalPips | LPFeeLibrary.OVERRIDE_FEE_FLAG;
-
-        Quote memory q = _quote(s0, s1, params.zeroForOne, params.amountSpecified, fee);
         if (!q.fillable) {
             uint8 reason = (q.amountIn == 0 || q.amountOut == 0) ? FALL_DUST : FALL_INSUFFICIENT;
             _tstore(
@@ -307,17 +306,22 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
 
     /// @dev Exact input (amountSpecified < 0) and exact output (> 0) per INTERFACES.md §1.7; every rounding step
     ///      favours the hook. Shared verbatim by quote() and beforeSwap() so the view equals execution.
-    function _quote(Side memory s0, Side memory s1, bool zeroForOne, int256 amountSpecified, FeeBreakdown memory fee)
+    ///      The fee depends on the trade: its off-hours part is evaluated at the post-trade skew. The trade's share
+    ///      size for that is fee-independent: the input's shares (exact input) or the net output's shares (exact output).
+    function _quote(Side memory s0, Side memory s1, bool zeroForOne, int256 amountSpecified)
         internal
         view
         returns (Quote memory q)
     {
         (Side memory sIn, Side memory sOut) = zeroForOne ? (s0, s1) : (s1, s0);
-        q.fee = fee;
-        uint24 pips = fee.totalPips;
+        uint256 size = amountSpecified < 0
+            ? CanonicalShares.toSharesDown(uint256(-amountSpecified), sIn.spt, sIn.decimals)
+            : CanonicalShares.toSharesUp(uint256(amountSpecified), sOut.spt, sOut.decimals);
+        q.fee = _tradeFee(s0, s1, zeroForOne, size);
+        uint24 pips = q.fee.totalPips;
         if (amountSpecified < 0) {
             q.amountIn = uint256(-amountSpecified);
-            q.shares = CanonicalShares.toSharesDown(q.amountIn, sIn.spt, sIn.decimals);
+            q.shares = size;
             q.grossOut = CanonicalShares.fromSharesDown(q.shares, sOut.spt, sOut.decimals);
             q.feeAmount = CanonicalShares.feeOnGross(q.grossOut, pips);
             q.amountOut = q.grossOut - q.feeAmount;
@@ -331,15 +335,38 @@ contract ParityHook is IParityHook, IUnlockCallback, Ownable {
         q.fillable = q.amountIn > 0 && q.amountOut > 0 && inventory(sOut.currency) >= q.grossOut;
     }
 
+    /// @dev Trade-less view (feeBreakdown): closedPips is the off-hours premium a marginal skew-increasing trade
+    ///      pays now, ceil(15 bps * |skew|); a skew-reducing trade pays 0. Exact per-trade figures come from quote().
     function _feeBreakdown(Side memory s0, Side memory s1) internal view returns (FeeBreakdown memory fee) {
-        uint256 sh0 = CanonicalShares.toSharesDown(inventory(s0.currency), s0.spt, s0.decimals);
-        uint256 sh1 = CanonicalShares.toSharesDown(inventory(s1.currency), s1.spt, s1.decimals);
+        (uint256 sh0, uint256 sh1) = _inventoryShares(s0, s1);
+        fee = _fee(sh0, sh1, calendar.isOpen(block.timestamp) ? 0 : CanonicalShares.marginalOffHoursPips(sh0, sh1));
+    }
+
+    /// @dev Fee for a parity fill of `size` canonical shares: base + skew (pre-trade) + off-hours premium, the latter
+    ///      15 bps * |post-trade skew| and only when the trade increases |skew| (CanonicalShares.totalFeePips).
+    function _tradeFee(Side memory s0, Side memory s1, bool zeroForOne, uint256 size)
+        internal
+        view
+        returns (FeeBreakdown memory fee)
+    {
+        (uint256 sh0, uint256 sh1) = _inventoryShares(s0, s1);
+        (uint256 post0, uint256 post1) = CanonicalShares.postTradeShares(sh0, sh1, zeroForOne, size);
+        fee = _fee(sh0, sh1, calendar.isOpen(block.timestamp) ? 0 : CanonicalShares.offHoursPips(sh0, sh1, post0, post1));
+    }
+
+    function _fee(uint256 sh0, uint256 sh1, uint24 offHours) internal view returns (FeeBreakdown memory fee) {
         fee.marketOpen = calendar.isOpen(block.timestamp);
         fee.basePips = BASE_FEE_PIPS;
         fee.skewPips = CanonicalShares.skewPips(sh0, sh1, SKEW_FEE_PIPS);
-        fee.closedPips = fee.marketOpen ? 0 : CLOSED_FEE_PIPS;
-        fee.totalPips = CanonicalShares.totalFeePips(sh0, sh1, fee.marketOpen);
+        fee.closedPips = offHours;
+        uint256 total = uint256(BASE_FEE_PIPS) + fee.skewPips + offHours;
+        fee.totalPips = total > MAX_FEE_PIPS ? MAX_FEE_PIPS : uint24(total);
         fee.skewX18 = CanonicalShares.skewX18(sh0, sh1);
+    }
+
+    function _inventoryShares(Side memory s0, Side memory s1) internal view returns (uint256 sh0, uint256 sh1) {
+        sh0 = CanonicalShares.toSharesDown(inventory(s0.currency), s0.spt, s0.decimals);
+        sh1 = CanonicalShares.toSharesDown(inventory(s1.currency), s1.spt, s1.decimals);
     }
 
     function _pegStatus(PoolId id, Side memory s0, Side memory s1) internal view returns (PegStatus memory p) {

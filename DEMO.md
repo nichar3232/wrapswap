@@ -21,6 +21,10 @@ curl -s 127.0.0.1:18110/status | python3 -m json.tool | head -6   # "ok": true
 scripts/dev/live-down         # stop (keeps the Postgres data); `live-down --reset` drops it
 ```
 
+After a contract redeploy, run `scripts/dev/live-down --reset && scripts/dev/live-up`. The indexer rebuilds from the
+manifest's `startBlock` and takes each hook's events only from its own deploy block (`blocks.parityHook` / `darkCrossHook`).
+It covers every asset's tokens and adapters (`assets[].wrappers`) and the faucet.
+
 - `NETWORK` defaults to `unichain-sepolia`, with `USE_MOCKS=false`, `deployments/unichain-sepolia.json` and the public externals in `scripts/dev/unichain-sepolia.env`.
 - Secrets come from `~/wrapswap-run/env/onchain.env` (`DEMO_MNEMONIC`, `CRANK_PRIVATE_KEY`, `UNICHAIN_SEPOLIA_RPC_URL`). Override the path with `LIVE_ENV=...`.
 - Web is the **production build** (`dist/web`, rebuilt by `live-up`) served by `scripts/dev/serve-web.mjs`, never the Vite dev server. On the single port 13010 it serves `/` (landing) and `/app`, and proxies `/api` → 18010, `/crank` → 18110 and `/rpc` → `RPC_URL`, so RPC keys stay server-side.
@@ -71,37 +75,51 @@ For the anvil backup, tunnel `13008` and `18008` the same way.
 
 ## 4. Run of show (Unichain Sepolia)
 
-The figures below are from the live 1301 pool **at time of writing** (block 63577136, Sat 2026-09-26 13:32 UTC).
-NYSE is closed until Mon 2026-09-28 13:30 UTC. Every live swap moves the skew, so read the numbers off the screen.
+Live figures below are from the 1301 pools **at time of writing** (block 63581560, Sat 2026-09-26 14:46 UTC). NYSE is
+closed until Mon 2026-09-28 13:30 UTC. Every live swap moves the skew, so read the numbers off the screen.
+Fee model: 2 bps base + skew fee + off-hours premium of 15 bps × |post-trade skew|. The premium applies only to trades
+that increase skew while NYSE is closed. The total is capped at 25 bps.
 
 ### 4.1 Convert: PARITY fill (Convert tab)
 
-- The header shows `unichain-sepolia · Chain 1301 · NYSE CLOSED`, crank healthy and an indexer lag of about 2 blocks.
+- The header shows `unichain-sepolia · Chain 1301 · NYSE CLOSED`, crank healthy and an indexer lag of about 2 blocks. The asset picker (from `/api/assets`) lists AAPL, NVDA and TSLA, each with Coinbase and xStocks wrappers.
 - Convert 100 mcbAAPL to mAAPLx and the **PARITY** badge appears. The quote shows ratio 1.0125 and 101.25 shares.
-- Fee 2.00 base + 2.09 skew + 10.00 closed = **14.09 bps**; fee 0.14266125 mAAPLx; output **101.10733875 mAAPLx** (at time of writing).
-- Talking point: the hook fills the swap from its own inventory inside `beforeSwap` at the share ratio, with no USDC leg. It prices off-hours risk instead of refusing to trade.
-- Executed Converts through `WrapSwapRouter.swapExactIn` (100 mcbAAPL each):
-  - Deployer, 101.10227625 mAAPLx out: [0x9b989f6b…ef30](https://sepolia.uniscan.xyz/tx/0x9b989f6b2494ad76114315fd5f9a0c1cac8bb59d5de820759eee9b14dfc2ef30)
-  - Owner MetaMask wallet, 101.1035925 mAAPLx out: [0xd1bfee59…1ff1](https://sepolia.uniscan.xyz/tx/0xd1bfee595d7521ca50eb2d95de3012090632982994be5365877ac669e9841ff1)
-  - Production `/app` UI, demo account 1, via `e2e/live/sepolia-convert.spec.ts`: 101.1060225 mAAPLx out, exactly the quote (14.22 bps): [0x992435f8…4dce](https://sepolia.uniscan.xyz/tx/0x992435f8914807eb93e290c497f717e45561f0667cdea906c022b6facfca4dce)
+- At time of writing this trade reduces inventory skew (|skew| 0.089), so the fee is 2.00 base + 1.16 skew + 0 off-hours = **3.16 bps**, output **101.218005 mAAPLx**.
+- Flip the direction (100 mAAPLx → mcbAAPL): it deepens the skew, so off-hours adds 1.49 bps = **4.65 bps**, output 98.719506 mcbAAPL.
+- Talking point: the hook fills the swap from its own inventory inside `beforeSwap` at the share ratio, with no USDC leg. Off-hours it charges only trades that deepen inventory skew (rebalancing lag), instead of refusing to trade.
+- Executed Converts through `WrapSwapRouter.swapExactIn` on the current ParityHook:
+  - Production `/app` UI, demo account 1, via `e2e/live/sepolia-convert.spec.ts`: 100 mcbAAPL → 101.21668875 mAAPLx, exactly the quote (3.29 bps): [0x41022b52…3dbb](https://sepolia.uniscan.xyz/tx/0x41022b52ea7908bb631818a97562ee6ee5124768314fcddaf2586b9fcc9b3dbb) (block 63581542)
+  - Deployer, skew-increasing: 100 mAAPLx → 98.71674 mcbAAPL at 4.93 bps (1.64 off-hours): [0x8fb8d9c3…ac12](https://sepolia.uniscan.xyz/tx/0x8fb8d9c3c90cb31c830ec331197e62b10f3fa9b0f50c5689b5e78dc6ecc5ac12) (block 63580053)
+- Test funds: `TestShareFaucet.claim()` sends 1,000 of each of the 6 wrappers once per 24 h. Proof claim: [0x5fd33936…13ca](https://sepolia.uniscan.xyz/tx/0x5fd33936c421b2046415fbae6197ba09fee575d4f95755b4ad31ee19017913ca). Claims show in `/api/stats`.
 
 ### 4.2 Pool skew (Pool tab)
 
-- Inventory is held as ERC-6909 claims in the PoolManager. At time of writing, skew is 0.160, shown as about 16.0%.
+- Inventory is held as ERC-6909 claims in the PoolManager. At time of writing, the AAPL pool's skew is 0.089, shown as about 8.9%.
 - Talking point: the skew fee prices the inventory imbalance. When inventory can't cover a swap, it falls through to the same pool's liquidity, guarded to within 50 bps of parity.
+- `/api/stats` gives the totals: conversions, share volume and inventory fees, per asset and per wallet.
 
-### 4.3 Dark Cross settle (Dark Cross tab)
+### 4.3 Dark Cross settle (Dark Cross tab, AAPL)
 
-- Batch 16 is settled on 1301 by the crank: [0xc26aecb4…2e95d](https://sepolia.uniscan.xyz/tx/0xc26aecb443fcac9689b059f9c789d665c8a072cd5d4cae5fee5cb2a76ef2e95d) (block 63573070).
-- Mid was 1.0125. It crossed 50 mcbAAPL ↔ 50.625 mAAPLx and sent a 10 mcbAAPL residual into the ParityHook pool, all in the same settlement tx.
-- On stage, show this settled batch and its tx. Re-running `scripts/dev/seed` on 1301 is a no-op by design, because its marker blocks duplicate inventory.
-- The full commit → reveal → settle sequence plays in the anvil backup.
+- Batch 16 is settled on the current DarkCrossHook by the crank: [0x43cdac4b…b0e](https://sepolia.uniscan.xyz/tx/0x43cdac4b32a03c49b6f7dc937a094a4f94861b172df5380391cace646571bb0e) (block 63580007).
+- It crossed 50 mcbAAPL ↔ 50.625 mAAPLx at mid 1.0125 and routed a 10 mcbAAPL residual through ParityHook in the same settlement tx. `/api/batches?settled=true` lists it.
+- Dark Cross exists for AAPL only; NVDA and TSLA have ParityHook pools without a Dark Cross pair.
+- On stage, show this settled batch and its tx. The full commit → reveal → settle sequence plays in the anvil backup.
 
 ### 4.4 Uniscan proof
 
-All 13 contracts are verified; the full table is in `~/wrapswap-run/status/unichain.md`.
+All deployed contracts are verified; the full table is in `~/wrapswap-run/status/unichain.md`.
 
-- ParityHook (flags `0x20c8`): https://sepolia.uniscan.xyz/address/0x1D2C9335813B8d3fFDCCC9d43aAf73d7871b20c8#code
-- DarkCrossHook: https://sepolia.uniscan.xyz/address/0x9E358e72018B776F22fEf71bd07cD9e8bC4b790e#code
+- ParityHook (flags `0x20c8`, one hook for all three pools): https://sepolia.uniscan.xyz/address/0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8#code
+- DarkCrossHook: https://sepolia.uniscan.xyz/address/0xBfcdFf560AaEe80E9030be7574e2451a1296883A#code
 - WrapSwapRouter: https://sepolia.uniscan.xyz/address/0x9C4Fc24f99C2E0212F6d6562b8A417952ef3Eba3#code
-- The swap and settle txs are linked above.
+- TestShareFaucet: https://sepolia.uniscan.xyz/address/0xD25b4916eC55aA1F550052ff90d1EcD6B51AABdC#code
+- The swap, settle and faucet txs are linked above.
+
+### 4.5 §10 live variant
+
+INTERFACES.md §10 `variants.unichain-sepolia` is generated, never hand-typed. It is labelled "Seed state at deploy
+block 63580006, market closed". Regenerate it after any redeploy, then run `pnpm types` (verify-demo re-derives it):
+
+```sh
+NETWORK=unichain-sepolia RPC_URL=https://sepolia.unichain.org pnpm exec tsx scripts/dev/demo-variant.ts && pnpm types
+```

@@ -70,11 +70,11 @@ Start state: a fresh `scripts/dev/record-ready` stack, before any swap.
 
 ## Part B — live Unichain Sepolia, Variant UNICHAIN-SEPOLIA (2:20–3:00)
 
-Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote only**. The pool already holds live swaps, so the numbers below are the live 1301 quote **at time of writing** (block 63577136, Sat 2026-09-26 13:32 UTC). Any later swap moves the skew line, so read the final figures off the screen.
+Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote only**. The pool already holds live swaps, so the numbers below are the live 1301 quote **at time of writing** (block 63581560, Sat 2026-09-26 14:46 UTC). Any later swap moves the skew line, so read the final figures off the screen.
 
 ### B1 · 2:20–2:30 — Verified hook on Uniscan
 
-- **Screen:** `https://sepolia.uniscan.xyz/address/0x1D2C9335813B8d3fFDCCC9d43aAf73d7871b20c8#code` → Contract tab, green "verified" check, `beforeSwap` in the source.
+- **Screen:** `https://sepolia.uniscan.xyz/address/0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8#code` → Contract tab, green "verified" check, `beforeSwap` in the source.
 - **Voiceover (23 words):** "Same hook, live on Unichain Sepolia, verified. It gates swaps to non-US wallets via Coinbase's Verified Country attestation; testnet runs a demoMode bypass."
 - **Caption:** `ParityHook · Unichain Sepolia (1301) · verified · non-US gate: Coinbase Verified Country EAS (demoMode on for testnet)`
 
@@ -83,10 +83,10 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 - **Screen:**
   1. `https://nichars-mac-mini.tail43cacc.ts.net/app` (live stack on the mini via Tailscale Funnel; see DEMO.md), Convert tab. The header shows NYSE **CLOSED** · next open Mon 13:30 UTC.
   2. From `mcbAAPL`, To `mAAPLx`, amount `100`.
-  3. At time of writing, the fee breakdown shows base 2.00 + skew 2.09 + **NYSE closed +10.00** = **14.09 bps**; fee 0.14266125 mAAPLx; output **101.10733875 mAAPLx**.
-  4. Hover the closed line.
-- **Voiceover (44 words):** "It's the weekend, so NYSE is closed. The same 100 mcbAAPL quote now adds a 10 basis point line: 14.09 total, 101.1073 mAAPLx out. The hook doesn't refuse to trade off-hours. It prices the risk that the underlying can't be hedged until Monday's open."
-- **Caption:** `NYSE CLOSED · fee 14.09 bps = 2.00 base + 2.09 skew + 10.00 off-hours risk · 101.10733875 mAAPLx` (at time of writing)
+  3. At time of writing (book long mAAPLx, |skew| 0.089), 100 mcbAAPL → mAAPLx reduces skew, so the breakdown is base 2.00 + skew 1.16 + **off-hours 0** = **3.16 bps**; output **101.218005 mAAPLx**.
+  4. Flip the direction (100 mAAPLx → mcbAAPL): it increases skew, so off-hours adds **1.49 bps** (15 bps × post-trade |skew| 0.099) = **4.65 bps**, output 98.719506 mcbAAPL. The deployer's proof swap at deploy time filled 4.93 bps on this side (98.71674 mcbAAPL out).
+- **Voiceover (47 words):** "It's the weekend, so NYSE is closed. A same-share swap has no price risk; the only off-hours risk is that issuers can't rebalance until Monday. So a trade that rebalances the hook pays nothing extra, 3.16 bps, and one that deepens the skew pays 4.65."
+- **Caption:** `NYSE CLOSED · rebalancing 3.16 bps (off-hours 0) · skew-increasing 4.65 bps (off-hours 15 bps × |post skew|)` (at time of writing)
 
 ### B3 · 2:50–3:00 — Integration table, close
 
@@ -108,7 +108,7 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 | A 60 mcbAAPL @1.0100, B 50.625 mAAPLx @1.0150, mid 1.0125 | shared | `dark.orders`, `dark.oracleMidX18` |
 | crossed 50 ↔ 50.625; A gets 50.5996875; B gets 49.975 | shared | `dark.crossedBase/crossedQuote`, `dark.crossOut` |
 | residual 10 mcbAAPL → 10.120474125 mAAPLx, 4.47 bps, min 10.1 | ANVIL | `variants.anvil.residual`, `dark.residual.minOut` |
-| 14.09 bps = 2.00 + 2.09 + 10.00, fee 0.14266125, out 101.10733875 (at time of writing) | UNICHAIN-SEPOLIA | live `ParityHook.quote` / `feeBreakdown` on 1301, block 63577136 |
+| 3.16 bps = 2.00 + 1.16 + 0 off-hours (skew-reducing), out 101.218005; reverse 4.65 bps = 2.00 + 1.16 + 1.49, out 98.719506 mcbAAPL (at time of writing) | UNICHAIN-SEPOLIA | live `ParityHook.quote` on 1301, block 63581560 |
 | next open Mon 2026-09-28 13:30 UTC | UNICHAIN-SEPOLIA | `variants.unichain-sepolia.nextOpen = 1790602200` |
 
 ## Technical claims in the voiceover → source
@@ -116,7 +116,7 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 | Claim | Source |
 |---|---|
 | Hook fills from inventory inside beforeSwap at the share ratio | [`ParityHook.beforeSwap` (ParityHook.sol#L226)](../contracts/src/ParityHook.sol#L226); DECISIONS.md "Fills are all-or-nothing from inventory via beforeSwapReturnDelta" |
-| Fee = 2 bps base + skew + 10 bps closed, cap 25 bps | [`ParityHook.feeBreakdown` (ParityHook.sol#L171)](../contracts/src/ParityHook.sol#L171); DECISIONS.md "Fee is expressed in pips: min(200 + ceil(1300·\|skew\|) + (NYSE closed ? 1000 : 0), 2500)" |
+| Fee = 2 bps base + skew + off-hours 15 bps·\|post-trade skew\| on skew-increasing trades, cap 25 bps | [`ParityHook.feeBreakdown` (ParityHook.sol#L171)](../contracts/src/ParityHook.sol#L171); DECISIONS.md "Fee is expressed in pips: min(200 + ceil(1300·\|skew\|) + (NYSE closed and the trade increases \|skew\| ? ceil(1500·\|post-trade skew\|) : 0), 2500)" |
 | Inventory is ERC-6909 claims in the PoolManager | [`ParityHook.depositInventory` (ParityHook.sol#L119)](../contracts/src/ParityHook.sol#L119); DECISIONS.md "Inventory is ERC-6909 claims owned by ParityHook in the PoolManager" |
 | Fall-through to the same pool, 50 bps peg guard | [`ParityHook.afterSwap` (ParityHook.sol#L279)](../contracts/src/ParityHook.sol#L279); DECISIONS.md "afterSwap reverts when the post-swap price is more than 50 bps from adapter parity" |
 | Commit-reveal; settle at oracle mid; 5 bps per side | [`DarkCrossHook.commit` (DarkCrossHook.sol#L185)](../contracts/src/DarkCrossHook.sol#L185), [`DarkCrossHook.reveal` (DarkCrossHook.sol#L212)](../contracts/src/DarkCrossHook.sol#L212); DECISIONS.md "crossing charges 5 bps per side to treasury" |

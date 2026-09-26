@@ -255,7 +255,11 @@ import {IEligibility} from "./IEligibility.sol";
 ///      Inventory = ERC-6909 claims owned by this hook in the PoolManager, excluding feesAccrued.
 ///      beforeSwap fills all-or-nothing from inventory via BeforeSwapDelta; otherwise returns ZERO_DELTA and the
 ///      swap falls through to concentrated liquidity on the same pool, after which afterSwap enforces the peg guard.
-///      Fees are pips (1e-6): total = min(BASE + ceil(SKEW * |skew|) + (open ? 0 : CLOSED), MAX).
+///      Fees are pips (1e-6): total = min(BASE + ceil(SKEW * |skew|) + (open ? 0 : offHours), MAX), skew pre-trade.
+///      offHours = ceil(OFF_HOURS_MAX * |post-trade skew|) if the trade increases |skew|, else 0 (rebalancing lag:
+///      issuers cannot mint/redeem until the open). Post-trade skew moves the trade's canonical shares one-for-one
+///      (exact input: input shares; exact output: net output shares). FeeBreakdown.closedPips carries offHours;
+///      feeBreakdown(key) reports it for a marginal skew-increasing trade, quote() for the actual trade.
 ///      amountSpecified < 0 = exact input, > 0 = exact output (pinned v4-core convention).
 interface IParityHook {
     struct FeeBreakdown {
@@ -348,7 +352,7 @@ interface IParityHook {
 
     function BASE_FEE_PIPS() external view returns (uint24);
     function SKEW_FEE_PIPS() external view returns (uint24);
-    function CLOSED_FEE_PIPS() external view returns (uint24);
+    function OFF_HOURS_MAX_FEE_PIPS() external view returns (uint24);
     function MAX_FEE_PIPS() external view returns (uint24);
     function PEG_GUARD_BPS() external view returns (uint256);
     function HOOK_DATA_VERSION() external view returns (uint8);
@@ -391,7 +395,7 @@ Normative behaviour (the contracts lane implements exactly this):
 |---|---|
 | `BASE_FEE_PIPS` | 200 (2 bps) |
 | `SKEW_FEE_PIPS` | 1300 (13 bps at \|skew\| = 1) |
-| `CLOSED_FEE_PIPS` | 1000 (10 bps while `calendar.isOpen(block.timestamp)` is false) |
+| `OFF_HOURS_MAX_FEE_PIPS` | 1500 (15 bps at \|post-trade skew\| = 1). While `calendar.isOpen(block.timestamp)` is false a trade that increases \|skew\| pays `ceil(1500 · |post-trade skew|)`; a trade that leaves \|skew\| unchanged or reduces it pays 0. Post-trade skew moves the trade's canonical shares one-for-one (exact input: input shares; exact output: net output shares). Rationale: a same-share swap carries no underlying price risk; off-hours the only risk is rebalancing lag (issuers cannot mint/redeem until the open), which grows with skew. `feeBreakdown(key)` reports the marginal skew-increasing premium `ceil(1500 · |skew|)`; `quote()` and `beforeSwap` use the trade's own premium |
 | `MAX_FEE_PIPS` | 2500 (25 bps cap) |
 | `PEG_GUARD_BPS` | 50 |
 | `HOOK_DATA_VERSION` | 1 |
@@ -632,7 +636,10 @@ library CanonicalShares {
     function parityPriceX18(uint256 spt0, uint256 spt1) internal pure returns (uint256);                            // floor(spt0 * 1e18 / spt1)
     function skewX18(uint256 shares0, uint256 shares1) internal pure returns (int256);                              // trunc toward zero
     function skewPips(uint256 shares0, uint256 shares1, uint24 skewFeePips) internal pure returns (uint24);         // ceil
-    function totalFeePips(uint256 shares0, uint256 shares1, bool marketOpen) internal pure returns (uint24);        // capped
+    function offHoursPips(uint256 shares0, uint256 shares1, uint256 post0, uint256 post1) internal pure returns (uint24); // ceil(1500*|post skew|) iff |skew| grows, else 0
+    function marginalOffHoursPips(uint256 shares0, uint256 shares1) internal pure returns (uint24);             // ceil(1500*|skew|)
+    function postTradeShares(uint256 shares0, uint256 shares1, bool zeroForOne, uint256 shares) internal pure returns (uint256, uint256);
+    function totalFeePips(uint256 shares0, uint256 shares1, uint256 post0, uint256 post1, bool marketOpen) internal pure returns (uint24); // capped
     function feeOnGross(uint256 grossOut, uint24 feePips) internal pure returns (uint256);                         // ceil(gross * pips / 1e6)
     function grossForNet(uint256 netOut, uint24 feePips) internal pure returns (uint256);                          // ceil(net * 1e6 / (1e6 - pips))
     function poolPriceX18(uint160 sqrtPriceX96, uint8 dec0, uint8 dec1) internal pure returns (uint256);           // floor
@@ -894,7 +901,56 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
         }
       }
     },
-    "verification": { "type": "object", "additionalProperties": { "type": "string" } }
+    "verification": { "type": "object", "additionalProperties": { "type": "string" } },
+    "router": { "$ref": "Address" },
+    "faucet": { "$ref": "Address" },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["symbol", "wrappers", "pool", "darkCross"],
+        "properties": {
+          "symbol": { "type": "string" },
+          "wrappers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["platform", "symbol", "token", "adapter", "multiplier", "decimals"],
+              "properties": {
+                "platform": { "enum": ["Coinbase", "xStocks"] },
+                "symbol": { "type": "string" },
+                "token": { "$ref": "Address" },
+                "adapter": { "$ref": "Address" },
+                "multiplier": { "$ref": "UInt" },
+                "decimals": { "type": "integer" }
+              }
+            }
+          },
+          "pool": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "key", "initSqrtPriceX96"],
+            "properties": {
+              "id": { "$ref": "Bytes32" },
+              "key": { "$ref": "PoolKey" },
+              "initSqrtPriceX96": { "$ref": "UInt" }
+            }
+          },
+          "darkCross": { "type": "boolean" }
+        }
+      }
+    },
+    "proofs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["label", "tx"],
+        "properties": { "label": { "type": "string" }, "tx": { "$ref": "Bytes32" } }
+      }
+    }
   }
 }
 ```
@@ -1072,11 +1128,13 @@ that cannot be read is an error, never a default. Chain-read values carry the `b
   { "name": "route", "method": "GET", "path": "/route", "query": "RouteQuery", "response": "RouteResponse", "backing": "chain: IEligibility.check, ParityHook.quote, V4Quoter simulation, DarkCrossHook.currentBatch, IPriceOracle.getMid; table: eligibility_checks (insert)" },
   { "name": "nyse", "method": "GET", "path": "/nyse", "query": null, "response": "NyseResponse", "backing": "chain: latest block timestamp, NyseCalendar.isOpen, nextTransition" },
   { "name": "currentBatch", "method": "GET", "path": "/batches/current", "query": null, "response": "CurrentBatchResponse", "backing": "chain: DarkCrossHook.currentBatch, participants, IPriceOracle.getMid" },
-  { "name": "batches", "method": "GET", "path": "/batches", "query": "PageQuery", "response": "BatchListResponse", "backing": "view: v_dark_batches" },
+  { "name": "batches", "method": "GET", "path": "/batches", "query": "BatchesQuery", "response": "BatchListResponse", "backing": "view: v_dark_batches" },
   { "name": "batch", "method": "GET", "path": "/batches/:batchId", "query": null, "response": "BatchDetailResponse", "backing": "view: v_dark_batches, v_dark_orders, v_fills; table: dark_forfeits, dark_residual_skips" },
   { "name": "orders", "method": "GET", "path": "/orders/:address", "query": "PageQuery", "response": "OrderListResponse", "backing": "view: v_dark_orders" },
   { "name": "fills", "method": "GET", "path": "/fills", "query": "FillsQuery", "response": "FillListResponse", "backing": "view: v_fills" },
   { "name": "eligibility", "method": "GET", "path": "/eligibility/:address", "query": "EligibilityQuery", "response": "EligibilityResponse", "backing": "chain: IEligibility.check, demoMode; table: eligibility_checks (insert), eligibility_denials" },
+  { "name": "assets", "method": "GET", "path": "/assets", "query": null, "response": "AssetsResponse", "backing": "file: deployments/${NETWORK}.json (tokens, pool/pools, dark); chain: IWrapperAdapter.ratio, IssuerRegistry.active" },
+  { "name": "stats", "method": "GET", "path": "/stats", "query": "StatsQuery", "response": "StatsResponse", "backing": "view: v_fills; table: faucet_claims; chain: IWrapperAdapter.sharesPerToken, TestShareFaucet.nextClaimAt" },
   { "name": "crankStatus", "method": "GET", "path": "/status", "query": null, "response": "CrankStatusResponse", "backing": "crank process on CRANK_HEALTH_PORT (§7), not the API" }
 ]
 ```
@@ -1361,7 +1419,7 @@ reasons visible in the fields (it never 503s). `addresses.tokens` is keyed by sy
     "poolId": { "$ref": "Bytes32" },
     "fee": { "$ref": "FeeBreakdown" },
     "maxFeePips": { "type": "integer" },
-    "formula": { "const": "min(200 + ceil(1300*|skew|) + (open ? 0 : 1000), 2500) pips" }
+    "formula": { "const": "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips" }
   }
 }
 ```
@@ -1625,6 +1683,198 @@ Route decision, first match wins:
   "properties": {
     "items": { "type": "array", "items": { "$ref": "FillView" } },
     "nextCursor": { "type": ["string", "null"] }
+  }
+}
+```
+
+`GET /batches?settled=true` lists settled batches only (`false`: unsettled only); otherwise as `PageQuery`.
+
+```json wrapswap:schema BatchesQuery
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "settled": { "enum": ["true", "false"] },
+    "limit": { "type": "string", "pattern": "^([1-9]|[1-9][0-9]|1[0-9][0-9]|200)$" },
+    "cursor": { "type": "string", "pattern": "^[0-9]+:[0-9]+$" }
+  }
+}
+```
+
+`GET /stats`: aggregate conversion stats from the indexer (`v_fills`), up to `indexedBlock`. Share figures are
+1e18-scaled canonical shares: each fill's `amountIn` converted with its input token's on-chain
+`IWrapperAdapter.sharesPerToken` (rounded down). `feesEarned` counts inventory fees only (PARITY and DARK-RESIDUAL
+fills; the fee is charged in `tokenOut`), not dark-cross treasury fees or fall-through LP fees. With `?address=`,
+`wallet` repeats the counts for that account and lists its 10 most recent fills; otherwise `wallet` is null.
+`byAsset` groups the same totals by the fills' `underlying` asset (tokens as in `GET /assets`). `faucet` (null if the
+manifest has no `faucet`) counts indexed `TestShareFaucet.Claimed` events; with `?address=` it adds that wallet's
+last claim time (indexer) and `nextClaimAt` (read on chain).
+
+```json wrapswap:schema StatsQuery
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": { "address": { "$ref": "Address" } }
+}
+```
+
+```json wrapswap:schema StatsResponse
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["indexedBlock", "fills", "byKind", "sharesVolume", "byAsset", "feesEarned", "faucet", "wallet"],
+  "properties": {
+    "indexedBlock": { "$ref": "UInt" },
+    "fills": { "type": "integer" },
+    "byKind": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["PARITY", "FALL-THROUGH", "DARK-CROSS", "DARK-RESIDUAL"],
+      "properties": {
+        "PARITY": { "type": "integer" },
+        "FALL-THROUGH": { "type": "integer" },
+        "DARK-CROSS": { "type": "integer" },
+        "DARK-RESIDUAL": { "type": "integer" }
+      }
+    },
+    "sharesVolume": { "$ref": "UInt" },
+    "byAsset": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset", "fills", "sharesVolume", "feesEarnedShares"],
+        "properties": {
+          "asset": { "type": "string" },
+          "fills": { "type": "integer" },
+          "sharesVolume": { "$ref": "UInt" },
+          "feesEarnedShares": { "$ref": "UInt" }
+        }
+      }
+    },
+    "feesEarned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalShares", "tokens"],
+      "properties": {
+        "totalShares": { "$ref": "UInt" },
+        "tokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["symbol", "address", "amount", "shares"],
+            "properties": {
+              "symbol": { "type": "string" },
+              "address": { "$ref": "Address" },
+              "amount": { "$ref": "UInt" },
+              "shares": { "$ref": "UInt" }
+            }
+          }
+        }
+      }
+    },
+    "faucet": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["address", "claims", "claimants", "walletLastClaimAt", "walletNextClaimAt"],
+      "properties": {
+        "address": { "$ref": "Address" },
+        "claims": { "type": "integer" },
+        "claimants": { "type": "integer" },
+        "walletLastClaimAt": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" },
+        "walletNextClaimAt": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" }
+      }
+    },
+    "wallet": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["address", "fills", "sharesVolume", "recent"],
+      "properties": {
+        "address": { "$ref": "Address" },
+        "fills": { "type": "integer" },
+        "sharesVolume": { "$ref": "UInt" },
+        "recent": { "type": "array", "items": { "$ref": "FillView" } }
+      }
+    }
+  }
+}
+```
+
+`GET /assets`: every asset in the deployment: the manifest's `assets[]` when present (multi-asset deployments),
+otherwise the tokens grouped by `underlying`. Platforms are the issuer tokens (wrappers) of that asset; `name`,
+`adapterKind` and `mock` are null when the manifest does not carry them for a wrapper. Each platform comes with their adapter ratio read on chain (`sharesPerTokenX18`; `healthy` = adapter ratio healthy and IssuerRegistry `active`); `pools`
+are the deployment's ParityHook pools whose currencies both belong to the asset; `darkCross` is set when the
+DarkCrossHook pair belongs to it. The UI builds its asset/platform pickers from this response.
+
+```json wrapswap:schema AssetsResponse
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["network", "chainId", "block", "assets"],
+  "properties": {
+    "network": { "type": "string" },
+    "chainId": { "type": "integer" },
+    "block": { "$ref": "UInt" },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset", "platforms", "pools", "darkCross"],
+        "properties": {
+          "asset": { "type": "string" },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["platform", "issuer", "symbol", "name", "address", "decimals", "adapter", "adapterKind", "sharesPerTokenX18", "healthy", "mock"],
+              "properties": {
+                "platform": { "type": "string" },
+                "issuer": { "type": "string" },
+                "symbol": { "type": "string" },
+                "name": { "type": ["string", "null"] },
+                "address": { "$ref": "Address" },
+                "decimals": { "type": "integer" },
+                "adapter": { "$ref": "Address" },
+                "adapterKind": { "type": ["string", "null"] },
+                "sharesPerTokenX18": { "$ref": "UInt" },
+                "healthy": { "type": "boolean" },
+                "mock": { "type": ["boolean", "null"] }
+              }
+            }
+          },
+          "pools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["poolId", "currency0", "currency1", "fee", "tickSpacing", "hooks"],
+              "properties": {
+                "poolId": { "$ref": "Bytes32" },
+                "currency0": { "$ref": "Address" },
+                "currency1": { "$ref": "Address" },
+                "fee": { "type": "integer" },
+                "tickSpacing": { "type": "integer" },
+                "hooks": { "$ref": "Address" }
+              }
+            }
+          },
+          "darkCross": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["hook", "baseToken", "quoteToken", "batchBlocks"],
+            "properties": {
+              "hook": { "$ref": "Address" },
+              "baseToken": { "$ref": "Address" },
+              "quoteToken": { "$ref": "Address" },
+              "batchBlocks": { "type": "integer" }
+            }
+          }
+        }
+      }
+    }
   }
 }
 ```
@@ -2167,14 +2417,13 @@ Warp the next block to `1790692200` (Tue 2026-09-29 14:30:00 UTC = 10:30 EDT, a 
 
 ### Variant UNICHAIN-SEPOLIA (live, real clock, NYSE CLOSED Sat 2026-09-26 – Mon 2026-09-28 13:30 UTC)
 
-Real clock; while `isOpen` is false the closed-market fee applies (next open `1790602200`, Mon 2026-09-28 13:30 UTC).
+Real clock; while `isOpen` is false the off-hours premium applies to skew-increasing trades only (next open `1790602200`, Mon 2026-09-28 13:30 UTC). Both §10 trades sell mcbAAPL into a book long mAAPLx (|skew| 0.20 → 0.19 → 0.189), so neither pays it: the numbers equal Variant ANVIL. The trade-less `feeBreakdown` shows closedPips = ceil(1500 · 0.2) = 300 (what a skew-increasing trade would pay).
 
-- Step 1 fee: 200 + 260 + 1000 = **1460 pips = 14.60 bps**; feeAmount = ceil(101.25e18 · 1460 / 1e6) =
-  **147,825,000,000,000,000 wei** (0.147825 mAAPLx); amountOut = **101,102,175,000,000,000,000** (101.102175 mAAPLx).
-- Step 2 residual fee: 200 + 247 + 1000 = 1447 pips = 14.47 bps; feeAmount = 14,650,875,000,000,000;
-  amountOut = 10,110,349,125,000,000,000 (≥ minOut).
-- End state: demo wallet 400 mcbAAPL + 601.102175 mAAPLx; A escrow 60.710036625 mAAPLx; B escrow 49.975 mcbAAPL;
-  hook feesAccrued(mAAPLx) = 162,475,875,000,000,000.
+- Step 1 fee: 200 + 260 + 0 = **460 pips = 4.60 bps**; feeAmount = 46,575,000,000,000,000; amountOut = **101,203,425,000,000,000,000**.
+- Step 2 residual fee: 200 + 247 + 0 = 447 pips = 4.47 bps; feeAmount = 4,525,875,000,000,000;
+  amountOut = 10,120,474,125,000,000,000 (≥ minOut).
+- End state: demo wallet 400 mcbAAPL + 601.203425 mAAPLx; A escrow 60.720161625 mAAPLx; B escrow 49.975 mcbAAPL;
+  hook feesAccrued(mAAPLx) = 51,100,875,000,000,000.
 
 Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings become `bigint`):
 
@@ -2234,10 +2483,10 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
       "end": { "demoMAAPLx": "601203425000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60720161625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "51100875000000000" }
     },
     "unichain-sepolia": {
-      "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200,
-      "parityFill": { "feePips": 1460, "feeBps": "14.60", "feeAmount": "147825000000000000", "amountOut": "101102175000000000000" },
-      "residual": { "feePips": 1447, "feeBps": "14.47", "feeAmount": "14650875000000000", "amountOut": "10110349125000000000" },
-      "end": { "demoMAAPLx": "601102175000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60710036625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "162475875000000000" }
+      "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200, "seedBlock": 63580006, "label": "Seed state at deploy block 63580006, market closed", "seedInventory": {"mcbAAPL": "8888888889", "mAAPLx": "11000000000000000000000"},
+      "parityFill": { "feePips": 330, "feeBps": "3.30", "feeAmount": "33412500000000000", "amountOut": "101216587500000000000" },
+      "residual": { "feePips": 317, "feeBps": "3.17", "feeAmount": "3209625000000000", "amountOut": "10121790375000000000" },
+      "end": { "demoMAAPLx": "601216587500000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60721477875000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "36622125000000000" }
     }
   }
 }
@@ -2277,11 +2526,11 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
 | The hook is the settlement engine | `IParityHook` `beforeSwapReturnDelta` inventory fill; `IDarkCrossHook.settle` routes residuals into the ParityHook pool inside one `unlock` (`ResidualRouted`) |
 | Eligibility: Coinbase Verified Country (non-US) EAS, demoMode retained | `IEASEligibility` (`schemaUid`, `trustedAttester`, `restrictedCountry = "US"`), `IEligibility.demoMode/setDemoMode` + `DemoModeSet`; hooks revert `NotEligible` / commit returns false |
 | Demo video on local anvil with NYSE warped to OPEN | §10 Variant ANVIL `warpTimestamp = 1790692200`; `INyseCalendar.isOpen(block.timestamp)`; API `/nyse` `source: "chain"` |
-| Live Unichain Sepolia on real clock; CLOSED weekend +10 bps shown as a feature | `IParityHook.CLOSED_FEE_PIPS = 1000`, `FeeBreakdown.closedPips/marketOpen`, `FeeQuoted`; §10 Variant UNICHAIN-SEPOLIA; `/fees`, `/nyse` |
+| Live Unichain Sepolia on real clock; off-hours premium (15 bps · \|post-trade skew\|, skew-increasing trades only) shown as a feature | `IParityHook.OFF_HOURS_MAX_FEE_PIPS = 1500`, `FeeBreakdown.closedPips/marketOpen`, `FeeQuoted`; §10 Variant UNICHAIN-SEPOLIA; `/fees`, `/nyse` |
 | PoolKey sorted, DYNAMIC_FEE_FLAG, hooks = ParityHook | `beforeInitialize` `DynamicFeeRequired`; `Deployment.pool.key` rule (fee 8388608, hooks = parityHook) |
 | Inventory = hook-owned ERC-6909 claims, keeper deposit/withdraw | `IParityHook.depositInventory/withdrawInventory/isKeeper/setKeeper`, `inventory`, `InventoryChanged` |
 | All-or-nothing fill, else zero-delta fall-through; afterSwap 50 bps peg guard | `Quote.fillable`, `InventoryFill` vs `FallThrough`, `PEG_GUARD_BPS = 50`, `PegGuardTripped`, `pegStatus`, `checkPeg`/`PegGuardStatus` |
-| Fee = 2 + 13·\|skew\| + 10 closed, cap 25 bps, skew in canonical shares | `BASE_FEE_PIPS/SKEW_FEE_PIPS/CLOSED_FEE_PIPS/MAX_FEE_PIPS`, `FeeBreakdown`, `CanonicalShares.skewPips/totalFeePips` |
+| Fee = 2 + 13·\|skew\| + (closed and skew-increasing ? 15·\|post-trade skew\| : 0), cap 25 bps, skew in canonical shares | `BASE_FEE_PIPS/SKEW_FEE_PIPS/OFF_HOURS_MAX_FEE_PIPS/MAX_FEE_PIPS`, `FeeBreakdown`, `CanonicalShares.skewPips/offHoursPips/totalFeePips` |
 | Rounding favours the hook; exact-in and exact-out with pinned sign convention | §1.7 quote rules, `CanonicalShares` Down/Up pairs, `IParityHook.quote(key, zeroForOne, int256 amountSpecified)` |
 | Adapters expose ratio (18-dec) and staleness/health | `IWrapperAdapter.sharesPerToken/ratio/health`, `AdapterUnhealthy`, `IIssuerRegistry.active` |
 | DarkCrossHook commit-reveal at IPriceOracle mid, residual into ParityHook pool in the same unlock | `IDarkCrossHook.commit/reveal/settle`, `IPriceOracle.getMid`, `ORACLE_MAX_AGE`, `ResidualRouted`, `parityPoolKey` |

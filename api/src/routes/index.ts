@@ -15,6 +15,7 @@ import {
 } from "viem";
 import { chainReader, publicClient } from "../chain/client.js";
 import { permitsDarkFallback, routeErrors } from "../chain/reverts.js";
+import { deploymentTokens } from "../indexer/events.js";
 import { db, camel } from "../db/index.js";
 const reasons = [
   "OK",
@@ -85,17 +86,26 @@ export async function routes(
   chainClient: any = publicClient,
   pool: any = db,
 ) {
+  // Load-balanced public RPCs (Unichain Sepolia) can route a read pinned to the newest block to a backend that has not
+  // seen it yet ("returned no data", unknown block); retry those briefly before reporting CHAIN_UNAVAILABLE.
+  const stale = /returned no data|header not found|unknown block|block not found|could not be found/i;
   const client = new Proxy(chainClient, {
     get(target, key) {
       const value = target[key];
       return typeof value === "function"
         ? async (...args: any[]) => {
-            try {
-              return await value.apply(target, args);
-            } catch (e) {
-              throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), {
-                cause: e,
-              });
+            for (let attempt = 0; ; attempt++) {
+              try {
+                return await value.apply(target, args);
+              } catch (e) {
+                if (attempt < 3 && stale.test(String(e))) {
+                  await new Promise((r) => setTimeout(r, 250));
+                  continue;
+                }
+                throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), {
+                  cause: e,
+                });
+              }
             }
           }
         : value;
@@ -123,8 +133,12 @@ export async function routes(
       throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), { cause: e });
     }
   };
+  const allTokens = deploymentTokens(d);
+  const faucetAbi = parseAbi([
+    "function nextClaimAt(address account) view returns (uint256)",
+  ]);
   const token = async (address: string, b: any) => {
-    const t = d.tokens.find((t) => eq(t.address, address))!;
+    const t = allTokens.find((t) => eq(t.address, address))!;
     const [ratio, active] = await Promise.all([
       client.readContract({
         address: t.adapter,
@@ -383,7 +397,7 @@ export async function routes(
         await read("parityHook", "feeBreakdown", [d.pool.key], b.number),
       ),
       maxFeePips: 2500,
-      formula: "min(200 + ceil(1300*|skew|) + (open ? 0 : 1000), 2500) pips",
+      formula: "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips",
     };
   });
   get("/inventory", "InventoryResponse", async () => {
@@ -570,7 +584,7 @@ export async function routes(
       nextTransition,
       nextState: open ? "CLOSED" : "OPEN",
       secondsUntilTransition: Number(nextTransition - b.timestamp),
-      closedFeePips: 1000,
+      closedFeePips: Number(canonical.OFF_HOURS_MAX_FEE_PIPS), // max off-hours premium (skew-increasing trades only)
       source: "chain",
     };
   });
@@ -580,9 +594,17 @@ export async function routes(
   get(
     "/batches",
     "BatchListResponse",
-    async (req) =>
-      page(batchSource, req.query, "", [], (r) => selectFields(r, batchFields)),
-    "PageQuery",
+    async (req) => {
+      const settled = req.query.settled;
+      return page(
+        batchSource,
+        req.query,
+        settled ? " AND settled=$2" : "",
+        settled ? [settled === "true"] : [],
+        (r) => selectFields(r, batchFields),
+      );
+    },
+    "BatchesQuery",
   );
   get(
     "/orders/:address",
@@ -617,6 +639,175 @@ export async function routes(
       return page("SELECT * FROM v_fills", q, extra, args, fillMap);
     },
     "FillsQuery",
+  );
+  get("/assets", "AssetsResponse", async () => {
+    const b = await block();
+    // A multi-pool deployment lists `pools`; the current schema has the single `pool`.
+    const manifest =
+      d.assets ??
+      [...new Set(d.tokens.map((t) => t.underlying))].map((symbol) => ({
+        symbol,
+        pool: d.pool,
+        darkCross: true,
+        wrappers: d.tokens
+          .filter((t) => t.underlying === symbol)
+          .map((t) => ({ platform: t.issuer, symbol: t.symbol, token: t.address })),
+      }));
+    return {
+      network: d.network,
+      chainId: d.chainId,
+      block: b.number,
+      assets: await Promise.all(
+        manifest.map(async (m: any) => {
+          const mine = (a: string) => m.wrappers.some((w: any) => eq(w.token, a));
+          const platforms = await Promise.all(
+            m.wrappers.map(async (w: any) => {
+              const t = allTokens.find((t) => eq(t.address, w.token))!;
+              const known = d.tokens.find((x) => eq(x.address, w.token));
+              const live = await token(t.address, b);
+              return {
+                platform: w.platform,
+                issuer: t.issuer,
+                symbol: t.symbol,
+                name: known?.name ?? null,
+                address: t.address,
+                decimals: t.decimals,
+                adapter: t.adapter,
+                adapterKind: known?.adapterKind ?? null,
+                sharesPerTokenX18: live.sharesPerTokenX18,
+                healthy: live.healthy,
+                mock: known?.mock ?? null,
+              };
+            }),
+          );
+          return {
+            asset: m.symbol,
+            platforms,
+            pools: [m.pool].map((p: any) => ({ poolId: p.id, ...p.key })),
+            darkCross:
+              m.darkCross && mine(d.dark.baseToken) && mine(d.dark.quoteToken)
+                ? {
+                    hook: d.contracts.darkCrossHook,
+                    baseToken: d.dark.baseToken,
+                    quoteToken: d.dark.quoteToken,
+                    batchBlocks: d.dark.batchBlocks,
+                  }
+                : null,
+          };
+        }),
+      ),
+    };
+  });
+  get(
+    "/stats",
+    "StatsResponse",
+    async (req) => {
+      const address = req.query.address?.toLowerCase();
+      const b = await block();
+      // Share figures use the on-chain adapter ratio of each fill's token (INTERFACES.md StatsResponse).
+      const ratios = new Map<string, { spt: bigint; decimals: number }>();
+      const underlying = (tokenAddress: string) =>
+        allTokens.find((t) => eq(t.address, tokenAddress))?.underlying ?? "UNKNOWN";
+      const shares = async (tokenAddress: string, amount: bigint) => {
+        const key = tokenAddress.toLowerCase();
+        if (!ratios.has(key)) {
+          const t = await token(tokenAddress, b);
+          ratios.set(key, { spt: t.sharesPerTokenX18, decimals: t.decimals });
+        }
+        const r = ratios.get(key)!;
+        return canonical.toSharesDown(amount, r.spt, r.decimals);
+      };
+      const volume = async (account?: string) => {
+        const args: any[] = [d.chainId];
+        let where = "chain_id=$1";
+        if (account) {
+          args.push(account);
+          where += " AND account=$2";
+        }
+        const [kinds, inputs] = await Promise.all([
+          sql(`SELECT kind, count(*)::int AS n FROM v_fills WHERE ${where} GROUP BY kind`, args),
+          sql(`SELECT token_in, count(*)::int AS n, sum(amount_in)::text AS amount FROM v_fills WHERE ${where} GROUP BY token_in`, args),
+        ]);
+        let sharesVolume = 0n;
+        const assets = new Map<string, { fills: number; sharesVolume: bigint }>();
+        for (const r of inputs) {
+          const v = await shares(r.tokenIn, BigInt(r.amount));
+          sharesVolume += v;
+          const a = underlying(r.tokenIn);
+          const cur = assets.get(a) ?? { fills: 0, sharesVolume: 0n };
+          assets.set(a, { fills: cur.fills + r.n, sharesVolume: cur.sharesVolume + v });
+        }
+        const byKind: Record<string, number> = { PARITY: 0, "FALL-THROUGH": 0, "DARK-CROSS": 0, "DARK-RESIDUAL": 0 };
+        for (const r of kinds) byKind[r.kind] = r.n;
+        return { byKind, fills: kinds.reduce((n, r) => n + r.n, 0), sharesVolume, assets };
+      };
+      const [cursor, total, fees] = await Promise.all([
+        sql("SELECT last_block FROM indexer_cursor WHERE chain_id=$1", [d.chainId]),
+        volume(),
+        sql(
+          "SELECT token_out, sum(fee_amount)::text AS amount FROM v_fills WHERE chain_id=$1 AND kind IN ('PARITY','DARK-RESIDUAL') AND fee_amount IS NOT NULL GROUP BY token_out",
+          [d.chainId],
+        ),
+      ]);
+      const tokens = await Promise.all(
+        fees.map(async (r) => {
+          const t = allTokens.find((t) => eq(t.address, r.tokenOut))!;
+          const amount = BigInt(r.amount);
+          return { symbol: t.symbol, address: t.address, amount, shares: await shares(t.address, amount) };
+        }),
+      );
+      let faucet = null;
+      if (d.faucet) {
+        const [claims] = await sql(
+          "SELECT count(*)::int AS n, count(DISTINCT account)::int AS accounts, max(CASE WHEN account=$2 THEN \"timestamp\" END)::text AS last FROM faucet_claims WHERE chain_id=$1",
+          [d.chainId, address ?? ""],
+        );
+        let next = null;
+        if (address)
+          try {
+            next = await client.readContract({
+              address: d.faucet,
+              abi: faucetAbi,
+              functionName: "nextClaimAt",
+              args: [req.query.address],
+              blockNumber: b.number,
+            });
+          } catch (e) {
+            throw Object.assign(fault("CHAIN_UNAVAILABLE", String(e)), { cause: e });
+          }
+        faucet = {
+          address: d.faucet,
+          claims: claims.n,
+          claimants: claims.accounts,
+          walletLastClaimAt: address ? claims.last : null,
+          walletNextClaimAt: next,
+        };
+      }
+      let wallet = null;
+      if (address) {
+        const w = await volume(address);
+        const recent = await page("SELECT * FROM v_fills", { limit: "10" }, " AND account=$2", [address], fillMap);
+        wallet = { address: req.query.address, fills: w.fills, sharesVolume: w.sharesVolume, recent: recent.items };
+      }
+      return {
+        indexedBlock: BigInt(cursor[0]?.lastBlock ?? 0),
+        fills: total.fills,
+        byKind: total.byKind,
+        sharesVolume: total.sharesVolume,
+        byAsset: [...total.assets].map(([asset, v]) => ({
+          asset,
+          fills: v.fills,
+          sharesVolume: v.sharesVolume,
+          feesEarnedShares: tokens
+            .filter((t) => underlying(t.address) === asset)
+            .reduce((s, t) => s + t.shares, 0n),
+        })),
+        feesEarned: { totalShares: tokens.reduce((s, t) => s + t.shares, 0n), tokens },
+        faucet,
+        wallet,
+      };
+    },
+    "StatsQuery",
   );
   get("/batches/:batchId", "BatchDetailResponse", async (req) => {
     const id = checked("UInt", req.params.batchId),

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Read-only Unichain Sepolia smoke checks against deployments/unichain-sepolia.json.
-# Env: RPC_URL. Checks code at every address, ParityHook flag bits, pool at parity, seeded inventory (+-10% after fills).
+# Env: RPC_URL. Checks code at every address, ParityHook flag bits, every asset pool at parity with a mildly skewed inventory.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${RPC_URL:?}"
@@ -9,23 +9,27 @@ fail=0
 ok() { printf 'PASS %s\n' "$1"; }
 bad() { printf 'FAIL %s\n' "$1"; fail=1; }
 [[ $(cast chain-id --rpc-url "$RPC_URL") == 1301 ]] && ok 'chainId 1301' || bad 'chainId'
-for a in $(jq -r '[.contracts[], .tokens[].address, .tokens[].adapter] | map(select(. != null)) | .[]' "$m"); do
+for a in $(jq -r '[.contracts[], .tokens[].address, .tokens[].adapter, (.assets // [])[].wrappers[].token, (.assets // [])[].wrappers[].adapter, .faucet] | map(select(. != null)) | unique | .[]' "$m"); do
   [[ $(cast code "$a" --rpc-url "$RPC_URL") != 0x ]] && ok "code $a" || bad "code $a"
 done
 hook=$(jq -r .contracts.parityHook "$m")
 flags=$(printf '0x%04x' $(( $(cast to-dec "$hook") & 0x3fff )))
 [[ $flags == "$(jq -r .hooks.parityHook.flags "$m")" && $flags == 0x20c8 ]] && ok "hook flags $flags" || bad "hook flags $flags"
-pm=$(jq -r .contracts.poolManager "$m"); id=$(jq -r .pool.id "$m")
-slot=$(cast keccak "$(cast concat-hex "$id" "$(cast to-uint256 6)")")
-word=$(cast storage "$pm" "$slot" --rpc-url "$RPC_URL")
-sqrt=$(cast to-dec "0x${word: -40}")
-[[ $sqrt == "$(jq -r .pool.initSqrtPriceX96 "$m")" ]] && ok "pool at parity sqrtPriceX96=$sqrt" || bad "pool sqrtPriceX96=$sqrt"
-for t in $(jq -r '.tokens[] | "\(.symbol):\(.address)"' "$m"); do
-  sym=${t%%:*} addr=${t#*:}
-  inv=$(cast call "$hook" 'inventory(address)(uint256)' "$addr" --rpc-url "$RPC_URL" | awk '{print $1}')
-  want=$([[ $sym == mcbAAPL ]] && echo 8000000000 || echo 12150000000000000000000)
-  # Seeded exactly; settled dark batches and proof swaps then move it, so accept +-10% of the seed.
-  awk -v i="$inv" -v w="$want" 'BEGIN{exit !(i >= 0.9*w && i <= 1.1*w)}' && ok "inventory $sym $inv (seed $want)" || bad "inventory $sym $inv (seed $want)"
+pm=$(jq -r .contracts.poolManager "$m")
+# Every ParityHook pool (assets[]; the legacy .pool when absent): at parity, both sides stocked, mild |skew| (<= 0.2).
+for row in $(jq -r '(.assets // [{symbol:"AAPL",pool:.pool,wrappers:[{token:.tokens[0].address},{token:.tokens[1].address}]}])[]
+    | "\(.symbol):\(.pool.id):\(.pool.initSqrtPriceX96):\(.pool.key.currency0):\(.pool.key.currency1):\(.pool.key.hooks)"' "$m"); do
+  IFS=: read -r sym id init c0 c1 hk <<<"$row"
+  slot=$(cast keccak "$(cast concat-hex "$id" "$(cast to-uint256 6)")")
+  word=$(cast storage "$pm" "$slot" --rpc-url "$RPC_URL")
+  sqrt=$(cast to-dec "0x${word: -40}")
+  [[ $sqrt == "$init" ]] && ok "$sym pool at parity sqrtPriceX96=$sqrt" || bad "$sym pool sqrtPriceX96=$sqrt (init $init)"
+  i0=$(cast call "$hook" 'inventory(address)(uint256)' "$c0" --rpc-url "$RPC_URL" | awk '{print $1}')
+  i1=$(cast call "$hook" 'inventory(address)(uint256)' "$c1" --rpc-url "$RPC_URL" | awk '{print $1}')
+  skew=$(cast call "$hook" 'feeBreakdown((address,address,uint24,int24,address))((uint24,uint24,uint24,uint24,int256,bool))' \
+    "($c0,$c1,8388608,10,$hk)" --rpc-url "$RPC_URL" | tr -d '()' | awk -F', ' '{print $5}' | awk '{print $1}')
+  [[ $i0 != 0 && $i1 != 0 ]] && awk -v k="$skew" 'BEGIN{a=k<0?-k:k; exit !(a >= 2e16 && a <= 2e17)}' \
+    && ok "$sym inventory $i0 / $i1, skewX18 $skew" || bad "$sym inventory $i0 / $i1, skewX18 $skew"
 done
 cal=$(jq -r .contracts.calendar "$m")
 ts=$(cast block latest --field timestamp --rpc-url "$RPC_URL")
