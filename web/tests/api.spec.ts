@@ -34,24 +34,32 @@ function watchConsole(page: Page) {
   return errors;
 }
 
-test("API down (empty bodies): Connecting pill, skeleton cards, zero raw errors on every tab", async ({ page }) => {
+const step = (page: Page) => page.locator(".step:not([inert])");
+const tab = (page: Page, name: string) => page.locator("header nav").getByRole("button", { name, exact: true });
+async function toHow(page: Page) {
+  await page.goto("/app?tab=move");
+  await page.getByRole("button", { name: "Connect wallet" }).click();
+  await page.getByLabel("Move amount").fill("100");
+  await step(page).getByRole("button", { name: "Next" }).click();
+  await step(page).getByRole("button", { name: "Next" }).click();
+}
+
+test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on every panel", async ({ page }) => {
   const errors = watchConsole(page);
   await api(page, () => "EMPTY");
-  await page.goto("/app");
+  await page.goto("/app?tab=liquidity");
   const pill = page.getByTestId("status-pill");
   await expect(pill).toHaveText(/^(Unichain Sepolia|Anvil) · connecting…$/);
-  await expect(page.locator(".convert .skeleton").first()).toBeVisible();
   // After a few failed attempts values settle on "unavailable" while the pill keeps retrying.
-  await page.getByRole("button", { name: "Pool", exact: true }).click();
-  await expect(page.getByText("unavailable").first()).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('[data-panel="liquidity"]').getByText("unavailable").first()).toBeVisible({ timeout: 15000 });
   await expect(pill).toHaveText(/connecting…/);
-  for (const [tab, card] of [
-    ["Pool", "Inventory balance"],
-    ["Dark Cross", "Sealed order"],
-    ["Convert", "You convert"],
+  for (const [t, text] of [
+    ["Liquidity", "Market"],
+    ["Move", "Move AAPL from"],
+    ["Portfolio", "AAPL"],
   ]) {
-    await page.getByRole("button", { name: tab, exact: true }).click();
-    await expect(page.locator("main").getByText(card, { exact: true }).first()).toBeVisible();
+    await tab(page, t).click();
+    await expect(page.locator(`[data-panel="${t.toLowerCase()}"]`).getByText(text, { exact: false }).first()).toBeVisible();
     await expect(page.locator("main")).not.toContainText(RAW_ERROR);
   }
   await pill.click();
@@ -65,7 +73,6 @@ test("degraded names only the failing feeds; everything else stays live", async 
   const pill = page.getByTestId("status-pill");
   await expect(pill).toHaveText(/^(Unichain Sepolia|Anvil) · degraded$/, { timeout: 15000 });
   await expect(pill).toHaveAttribute("title", "Degraded: Peg guard, Crank");
-  await expect(page.locator(".share-line")).toContainText("AAPL shares");
   await pill.click();
   const feeds = page.locator("#feed-status");
   await expect(feeds.getByRole("listitem").filter({ hasText: "Fees" })).toContainText("live");
@@ -73,52 +80,41 @@ test("degraded names only the failing feeds; everything else stays live", async 
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
 });
 
-test("all feeds loaded: Live pill", async ({ page }) => {
+test("all feeds loaded: Live badge; a real wallet turns demo off", async ({ page }) => {
   await api(page);
   await page.goto("/app");
   await expect(page.getByTestId("status-pill")).toHaveText(/^(Unichain Sepolia|Anvil)$/);
-  await expect(page.locator("header").getByText("Demo", { exact: true })).toHaveCount(0); // live data + a real wallet: not demo
+  await expect(page.locator("header").getByText("Demo", { exact: true })).toHaveCount(0);
 });
 
-test("eligibility denial disables the action with a reason", async ({ page }) => {
+test("eligibility denial blocks the move with a reason", async ({ page }) => {
   await api(page, (name, value) =>
     name === "eligibility" ? { ...value, eligible: false, reason: "RESTRICTED_COUNTRY", reasonCode: 7 } : value,
   );
-  await page.goto("/app");
-  await page.getByRole("button", { name: "Connect wallet" }).click();
-  await expect(page.getByText("A valid issuer eligibility attestation is required.", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: "Details", exact: true }).click();
-  await expect(page.getByTestId("route-badge")).toHaveText("BLOCKED-ELIGIBILITY");
-  await expect(page.getByRole("button", { name: "Approve token", exact: true })).toBeDisabled();
-  await expect(page.getByText("Simulated transactions", { exact: true })).toHaveCount(0);
+  await toHow(page);
+  await expect(step(page).getByText("A valid issuer eligibility attestation is required.", { exact: false })).toBeVisible();
+  await expect(step(page).getByRole("button", { name: "Next" })).toBeDisabled();
 });
 
-test("blocked peg route is visible and cannot submit", async ({ page }) => {
+test("blocked peg route is visible and cannot proceed", async ({ page }) => {
   await api(page, (name, value) =>
     name === "route" ? { ...value, route: "BLOCKED-PEG", reason: "Peg deviation exceeds 50 bps", quote: null } : value,
   );
-  await page.goto("/app");
-  await page.getByRole("button", { name: "Connect wallet" }).click();
-  await expect(page.getByText("Peg deviation exceeds 50 bps")).toBeVisible();
-  await page.getByRole("button", { name: "Details", exact: true }).click();
-  await expect(page.getByTestId("route-badge")).toHaveText("BLOCKED-PEG");
-  await expect(page.getByRole("button", { name: "Approve token", exact: true })).toBeDisabled();
+  await toHow(page);
+  await expect(step(page).getByText("Peg deviation exceeds 50 bps")).toBeVisible();
+  await expect(step(page).getByRole("button", { name: "Next" })).toBeDisabled();
 });
 
-test("slow and malformed responses show skeletons, never blank screens or raw errors", async ({ page }) => {
+test("slow and malformed responses never produce blank screens or raw errors", async ({ page }) => {
   await api(page, (name, v) => (name === "fills" || name === "batches" ? { items: [], nextCursor: null } : v));
   await page.route("**/api/deployment", async (route) => {
     await new Promise((r) => setTimeout(r, 800));
     await route.fulfill({ json: {} });
   });
-  await page.goto("/app");
-  await expect(page.locator(".convert")).toBeVisible();
-  // While /deployment is slow (then malformed) the committed Unichain manifest still names the tokens.
-  await expect(page.getByLabel("From token")).toHaveValue(/^0x/);
-  await page.getByRole("button", { name: "Pool", exact: true }).click();
-  await expect(page.getByText(/No fills yet/)).toBeVisible();
-  await page.getByRole("button", { name: "Dark Cross", exact: true }).click();
-  await page.getByRole("button", { name: "Details", exact: true }).click();
-  await expect(page.getByText(/No batch has crossed yet/)).toBeVisible();
+  await page.goto("/app?tab=move");
+  // While /deployment is slow (then malformed) the committed Unichain manifest still names the platforms.
+  await expect(step(page).getByRole("radio", { name: /Coinbase/ })).toBeVisible();
+  await tab(page, "Liquidity").click();
+  await expect(page.getByText("No fills yet.")).toBeVisible();
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
 });

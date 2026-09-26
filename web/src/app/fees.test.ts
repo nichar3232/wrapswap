@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { canonical, DEMO } from "@wrapswap/types";
-import { feeAtSkew } from "./fees";
+import { feeAtSkew, inventoryAtSkew, quoteSummary, tradeFee } from "./fees";
 
 // Values asserted by contracts/test/CanonicalShares.t.sol against the Solidity implementation.
 describe("fee formula pinned to contract output", () => {
@@ -14,13 +14,33 @@ describe("fee formula pinned to contract output", () => {
   });
   it("the curve's skew mapping reproduces the demo pool (-20% skew)", () => {
     expect(feeAtSkew(-0.2, true).totalPips).toBe(BigInt(DEMO.variants.anvil.parityFill.feePips));
-    expect(feeAtSkew(-0.2, false).totalPips).toBe(1460n); // CanonicalShares.t.sol: totalFeePips(8100e18, 12150e18, false)
+    expect(feeAtSkew(-0.2, false).totalPips).toBe(1460n); // totalFeePips(8100e18, 12150e18, false)
   });
-  it("is symmetric, 2 bps at balance, +10 bps off-hours, capped at 25 bps", () => {
-    expect(feeAtSkew(0, true).totalPips).toBe(200n);
-    expect(feeAtSkew(0, false).totalPips).toBe(1200n);
-    expect(feeAtSkew(0.5, true).totalPips).toBe(feeAtSkew(-0.5, true).totalPips);
-    expect(feeAtSkew(1, true).totalPips).toBe(1500n);
-    expect(feeAtSkew(1, false).totalPips).toBe(2500n);
+  it("tradeFee is the shared formula plus the trade's direction", () => {
+    const inv = { shares0: 8100n * canonical.ONE, shares1: 12150n * canonical.ONE };
+    const in0 = tradeFee(inv, { sharesIn: 101n * canonical.ONE, inIsToken0: true }, false);
+    const in1 = tradeFee(inv, { sharesIn: 101n * canonical.ONE, inIsToken0: false }, false);
+    expect(in0.totalPips).toBe(canonical.feeBreakdown(inv.shares0, inv.shares1, false).totalPips);
+    expect(in0.rebalances).toBe(true); // selling the scarce side back to the hook
+    expect(in1.rebalances).toBe(false);
+    expect(Math.abs(in0.postSkew)).toBeLessThan(0.2);
+    expect(inventoryAtSkew(0).shares0).toBe(inventoryAtSkew(0).shares1);
+  });
+});
+
+// One quote, pinned: 100 mcbAAPL → mAAPLx at 14.60 bps (the parity quote arithmetic, §10 closed-market figures).
+describe("shares headline pinned to one quote", () => {
+  const mcb = { spt: DEMO.tokens.mcbAAPL.sharesPerTokenX18, decimals: DEMO.tokens.mcbAAPL.decimals };
+  const x = { spt: DEMO.tokens.mAAPLx.sharesPerTokenX18, decimals: DEMO.tokens.mAAPLx.decimals };
+  const q = canonical.parityQuote(mcb, x, -DEMO.parityFill.amountIn, 1460n);
+  const s = quoteSummary(
+    { shares: q.shares.toString(), amountOut: q.amountOut.toString(), feeAmount: q.feeAmount.toString() },
+    { sharesPerTokenX18: x.spt.toString(), decimals: x.decimals },
+  );
+  it("in-shares, out-shares after fee, keep% and fee amount", () => {
+    expect(s.sharesIn).toBe(101_250_000_000_000_000_000n); // 101.25 shares
+    expect(s.sharesOut).toBe(101_102_175_000_000_000_000n); // 101.102175 → shown as 101.10
+    expect(s.keptPct).toBe(99.854);
+    expect(s.feeAmount).toBe(147_825_000_000_000_000n); // 0.147825 mAAPLx → "0.15"
   });
 });

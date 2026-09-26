@@ -1,25 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type WheelEvent as ReactWheelEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { CHAINS, parseDeployment, type Deployment } from "@wrapswap/types";
 import { Mark } from "./brand";
 import { config } from "./config";
 import { useApi, type FeedStatus } from "./hooks/useApi";
 import { amount } from "./lib/format";
-import { Convert } from "./app/Convert";
-import { DarkCross } from "./app/DarkCross";
-import { Pool } from "./app/Pool";
-import { Send } from "./app/Send";
+import { Liquidity } from "./app/Liquidity";
+import { Move } from "./app/Move";
+import { Portfolio } from "./app/Portfolio";
 import { Hex, Skeleton, shortHex } from "./app/ui";
 import { WalletProvider, useWallet } from "./app/wallet";
 import { isDemo } from "./wallet";
+import type { MoveIntent } from "./app/types";
 import "./theme.css";
 import "./style.css";
 
-const TABS = ["Convert", "Dark Cross", "Pool", "Send"] as const;
+const TABS = ["Portfolio", "Move", "Liquidity"] as const;
 type Tab = (typeof TABS)[number];
-const TAB_PARAM: Record<Tab, string> = { Convert: "convert", "Dark Cross": "dark", Pool: "pool", Send: "send" };
-const initialTab = (): Tab =>
-  TABS.find((t) => TAB_PARAM[t] === new URLSearchParams(location.search).get("tab")) ?? "Convert";
+const TAB_PARAM: Record<Tab, string> = { Portfolio: "portfolio", Move: "move", Liquidity: "liquidity" };
+/** Old links (?tab=convert|dark|pool) land on their new homes. */
+const LEGACY: Record<string, Tab> = { convert: "Move", dark: "Move", pool: "Liquidity" };
+const initialTab = (): Tab => {
+  const p = new URLSearchParams(location.search).get("tab") ?? "";
+  return TABS.find((t) => TAB_PARAM[t] === p) ?? LEGACY[p] ?? "Portfolio";
+};
 const CHAIN = CHAINS[config.network];
 
 // When the API is unreachable the app still knows its contracts from the committed manifest.
@@ -165,6 +169,8 @@ function Account({ d }: { d: Deployment | undefined }) {
   );
 }
 
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
 function App() {
   const deployment = useApi("deployment");
   const health = useApi("health"),
@@ -174,12 +180,71 @@ function App() {
     crank = useApi("crankStatus");
   const d = deployment.data ?? fallbackDeployment;
   const [tab, setTabState] = useState<Tab>(initialTab);
+  const [intent, setIntent] = useState<MoveIntent>();
+  const moveFrom = (fromToken: string) => {
+    setIntent({ fromToken, nonce: Date.now() });
+    setTab("Move");
+  };
+  const index = TABS.indexOf(tab);
   const setTab = (t: Tab) => {
     setTabState(t);
     const u = new URL(location.href);
     u.searchParams.set("tab", TAB_PARAM[t]);
     history.replaceState(null, "", u);
   };
+  const step = (dir: 1 | -1) => {
+    const next = TABS[index + dir];
+    if (next) setTab(next);
+  };
+
+  // Rewrite legacy ?tab= values to the panel they now open.
+  useEffect(() => {
+    const u = new URL(location.href);
+    if (u.searchParams.get("tab") !== TAB_PARAM[tab]) {
+      u.searchParams.set("tab", TAB_PARAM[tab]);
+      history.replaceState(null, "", u);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // ←/→ switch panels (not while typing or adjusting a slider).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey || e.metaKey || e.ctrlKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      const t = e.target as HTMLElement;
+      if (t.closest("input, select, textarea, [contenteditable=true]")) return;
+      step(e.key === "ArrowRight" ? 1 : -1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  // Trackpad horizontal swipe: one panel per gesture.
+  const wheel = useRef({ acc: 0, until: 0 });
+  const onWheel = (e: ReactWheelEvent) => {
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 1.5) return;
+    const w = wheel.current,
+      now = performance.now();
+    if (now < w.until) return;
+    w.acc += e.deltaX;
+    if (Math.abs(w.acc) > 60) {
+      step(w.acc > 0 ? 1 : -1);
+      w.acc = 0;
+      w.until = now + 650;
+    }
+  };
+
+  // The nav indicator slides under the active tab.
+  const navRef = useRef<HTMLElement>(null);
+  const [bar, setBar] = useState({ left: 0, width: 0 });
+  useEffect(() => {
+    const place = () => {
+      const b = navRef.current?.querySelectorAll("button")[index] as HTMLElement | undefined;
+      if (b) setBar({ left: b.offsetLeft, width: b.offsetWidth });
+    };
+    place();
+    addEventListener("resize", place);
+    return () => removeEventListener("resize", place);
+  }, [index]);
+
   const feeds: FeedRow[] = [
     // The bundled manifest keeps the UI rendering but is not a live feed, so it never counts as loaded.
     { name: "Deployment", status: deployment.status },
@@ -190,6 +255,7 @@ function App() {
     { name: "Crank", status: crank.status, healthy: crank.data?.ok },
   ];
   const demo = isDemo();
+  const still = reducedMotion();
   return (
     <WalletProvider d={d}>
       <a className="skip" href="#main">
@@ -200,12 +266,13 @@ function App() {
           <Mark />
           unison
         </a>
-        <nav aria-label="Main navigation">
+        <nav aria-label="Main navigation" ref={navRef}>
           {TABS.map((t) => (
             <button key={t} className={tab === t ? "active" : ""} aria-current={tab === t ? "page" : undefined} onClick={() => setTab(t)}>
               {t}
             </button>
           ))}
+          <span className={`tab-bar${still ? " still" : ""}`} style={{ transform: `translateX(${bar.left}px)`, width: bar.width }} aria-hidden="true" />
         </nav>
         <div className="wallet">
           <NetworkBadge feeds={feeds} />
@@ -220,9 +287,23 @@ function App() {
           <Account d={d} />
         </div>
       </header>
-      <main id="main" className="app-main">
+      <main id="main" className="app-main" onWheel={onWheel}>
         <h1 className="sr-only">{tab}</h1>
-        {tab === "Convert" ? <Convert d={d} pool={pool} /> : tab === "Dark Cross" ? <DarkCross d={d} /> : <Pool d={d} fees={fees} nyse={nyse} />}
+        <div className={`track${still ? " still" : ""}`} style={{ transform: `translateX(${-index * 100}%)` }}>
+          {TABS.map((t, i) => (
+            <section key={t} className="panel" aria-label={t} inert={i !== index} aria-hidden={i !== index} data-panel={TAB_PARAM[t]}>
+              <div className="panel-inner">
+                {t === "Portfolio" ? (
+                  <Portfolio d={d} onMove={moveFrom} />
+                ) : t === "Move" ? (
+                  <Move d={d} pool={pool} intent={intent} />
+                ) : (
+                  <Liquidity d={d} fees={fees} nyse={nyse} onMove={moveFrom} />
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
       </main>
     </WalletProvider>
   );

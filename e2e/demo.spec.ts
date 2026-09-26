@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { formatUnits } from 'viem';
 import { canonical } from '@wrapswap/types';
+import { formatUnits } from 'viem';
 import { mkdirSync,writeFileSync } from 'node:fs';
 import { api,webURL,injectWallet,inventoryMatchesChain,waitHead,revealBoth,deployment,read,chain,account,abis,DEMO } from './support.js';
 
@@ -9,11 +9,17 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   const d=deployment(); // Missing/legacy deployment fails before any browser actions.
   const v=DEMO.variants.anvil;
   await injectWallet(page);
-  await page.goto(webURL+'/app');
-  await page.getByRole('button',{name:'Convert',exact:true}).click();
+  // Move flow: From (Coinbase, amount) → To → How (Instant) → Review; route and fee breakdown sit behind Details.
+  const step=()=>page.locator('.step:not([inert])');
+  await page.goto(webURL+'/app?tab=move');
   await page.getByRole('button',{name:/connect wallet/i}).click();
-  await page.getByLabel('Conversion amount').fill(formatUnits(DEMO.parityFill.amountIn,DEMO.tokens.mcbAAPL.decimals));
-  await page.getByRole('button',{name:'Details',exact:true}).click(); // route and fee breakdown live behind Details
+  await step().getByRole('radio',{name:/Coinbase/}).click();
+  await page.getByLabel('Move amount').fill(formatUnits(DEMO.parityFill.amountIn,DEMO.tokens.mcbAAPL.decimals));
+  await step().getByRole('button',{name:'Next'}).click();
+  await step().getByRole('button',{name:'Next'}).click();
+  await step().getByRole('radio',{name:/Instant/}).click();
+  await step().getByRole('button',{name:'Next'}).click();
+  await page.getByRole('button',{name:'Details',exact:true}).click();
   await expect(page.getByText('PARITY',{exact:true})).toBeVisible();
   await expect(page.getByTestId('fee-breakdown').getByText(new RegExp(v.parityFill.feeBps.replace('.', '\\.')+'\\s*bps'))).toBeVisible();
   const base=d.tokens.find(x=>x.symbol==='mcbAAPL')!;
@@ -26,10 +32,7 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   const onchain=await read('parityHook','quote',[d.pool.key,base.address.toLowerCase()===d.pool.key.currency0.toLowerCase(),DEMO.parityFill.amountSpecified],BigInt(before.block));
   for(const field of ['amountIn','amountOut','grossOut','shares','feeAmount'])expect(before[field]).toBe(onchain[field].toString());
   // Live Convert: ERC-20 approval to WrapSwapRouter, then swapExactIn with the displayed minimum output (§13).
-  const convert=page.getByRole('button',{name:/^convert through parityhook$/i});
-  await page.getByRole('button',{name:/^approve token$/i}).click();
-  await expect(convert).toBeEnabled({timeout:30000});
-  await convert.click();
+  await step().getByRole('button',{name:/^move$/i}).click(); // approval then swapExactIn, one action
   await expect(page.getByText(/conversion confirmed/i)).toBeVisible({timeout:30000});
   await expect.poll(async()=> (await chain.readContract({address:base.address,abi:abis.IMockIssuerToken,functionName:'balanceOf',args:[account(1).address]})).toString()).toBe(v.end.demoMcbAAPL.toString());
   await waitHead();
@@ -44,8 +47,8 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
     canonical.toSharesDown(x,DEMO.tokens.mAAPLx.sharesPerTokenX18,DEMO.tokens.mAAPLx.decimals));
   const afterFill={mcb:DEMO.inventory.mcbAAPL+DEMO.parityFill.amountIn,x:DEMO.inventory.mAAPLx-v.parityFill.amountOut};
   expect(inv.skewX18).toBe((realised(afterFill.mcb,afterFill.x)*sign).toString());
-  await page.getByRole('button',{name:'Pool',exact:true}).click();
-  await expect(page.getByText(/19(?:\.0+)?\s*%/).first()).toBeVisible(); // header badge and Pool label both show skew
+  await page.locator('header nav').getByRole('button',{name:'Liquidity',exact:true}).click();
+  await expect(page.getByText(/19(?:\.0+)?\s*%/).first()).toBeVisible(); // Liquidity shows the inventory skew
   const [batch]=await read('darkCrossHook','currentBatch');
   await revealBoth();
   await expect.poll(()=>read('darkCrossHook','settled',[batch]),{timeout:30000}).toBe(true);
@@ -71,9 +74,13 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   expect((await read('darkCrossHook','balances',[account(2).address,quote.address]))[0]).toBe(v.end.counterpartyAEscrowMAAPLx);
   expect((await read('darkCrossHook','balances',[account(3).address,base.address]))[0]).toBe(v.end.counterpartyBEscrowMcbAAPL);
   expect(await chain.readContract({address:quote.address,abi:abis.IMockIssuerToken,functionName:'balanceOf',args:[account(1).address]})).toBe(v.end.demoMAAPLx);
-  await page.getByRole('button',{name:/dark/i}).click();
-  await expect(page.getByText(/cross/i).first()).toBeVisible();
-  await expect(page.getByText(/residual/i).first()).toBeVisible();
+  // Sealed cross is a Move method: its option shows the cross and the residual route.
+  await page.locator('header nav').getByRole('button',{name:'Move',exact:true}).click();
+  await step().getByRole('button',{name:'Move again'}).click();
+  await step().getByRole('button',{name:'Next'}).click();
+  await step().getByRole('button',{name:'Next'}).click();
+  await expect(step().getByText(/cross/i).first()).toBeVisible();
+  await expect(step().getByText(/residual/i).first()).toBeVisible();
   mkdirSync('logs/integration',{recursive:true});
   // Complete response bodies are compared, including block numbers, timestamps and tx hashes.
   writeFileSync(`logs/integration/run-${process.env.DEMO_RUN||'1'}.json`,JSON.stringify({before,fills,detail,inventory:inv},null,2));

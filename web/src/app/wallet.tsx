@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -72,6 +73,14 @@ function useWalletState(d: Deployment | undefined) {
       setBusy(null);
     }
   }, []);
+
+  // Demo mode: the simulated wallet connects itself once, so every primary button can act immediately.
+  const autoTried = useRef(false);
+  useEffect(() => {
+    if (autoTried.current || !d || !simulatedWallet()) return;
+    autoTried.current = true;
+    void connect();
+  }, [d, connect]);
 
   const disconnect = useCallback(() => {
     void disconnectWallet();

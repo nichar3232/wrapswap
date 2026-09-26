@@ -8,6 +8,7 @@ import {
   type FeeBreakdown,
   type QuoteResponse,
 } from "@wrapswap/types";
+import { keccak256, toHex } from "viem";
 import anvilSource from "./deployment.json" with { type: "json" };
 import unichainSource from "../../../deployments/unichain-sepolia.json" with { type: "json" };
 const str = (x: bigint) => x.toString();
@@ -89,7 +90,8 @@ export function fixtures(network: Network) {
     poolId: d.pool.id,
     blockNumber: "100",
     timestamp,
-    txHash: d.pool.id,
+    // Tx-shaped hash per fill (mock data never links to an explorer).
+    txHash: keccak256(toHex(`demo-fill-${network}-parity`)),
     logIndex: 0,
   };
   const tokenState = (t: typeof a) => ({
@@ -218,6 +220,7 @@ export function fixtures(network: Network) {
           shares: str(DEMO.dark.residual.shares),
           batchId: "3",
           logIndex: 1,
+          txHash: keccak256(toHex(`demo-fill-${network}-residual`)),
         },
       ],
       nextCursor: null,
@@ -233,7 +236,7 @@ export function fixtures(network: Network) {
           residualBaseIn: str(DEMO.dark.residual.amountIn),
           residualQuoteIn: "0",
           participants: 2,
-          settledTx: d.pool.id,
+          settledTx: keccak256(toHex(`demo-settle-${network}-3`)),
           settledBlock: "99",
           settledAt: timestamp,
         },

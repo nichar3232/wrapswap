@@ -37,12 +37,13 @@ test("Landing: Unison brand, proof from deployment, Launch app", async ({
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByRole("link", { name: "Launch app" }).first().click();
-  await expect(page).toHaveURL(/\/app$/);
+  await expect(page).toHaveURL(/\/app(\?tab=portfolio)?$/);
   await expect(
-    page.getByRole("button", { name: "Convert", exact: true }),
+    page.getByRole("button", { name: "Portfolio", exact: true }),
   ).toBeVisible();
-  await page.goto("/app?tab=pool");
-  await expect(page.getByText("total 20,250 shares", { exact: false })).toBeVisible();
+  await page.goto("/app?tab=pool"); // legacy link → Liquidity
+  await expect(page).toHaveURL(/tab=liquidity/);
+  await expect(page.getByText(/Inventory · skew/)).toBeVisible();
 });
 
 /** The target is scrolled to the top of the viewport, or the page is scrolled to its end. */
@@ -63,7 +64,7 @@ async function expectScrolledTo(page: Page, id: string) {
 async function expectAppTab(page: Page, tab: string) {
   await expect(page).toHaveURL(/\/app(\?tab=\w+)?$/);
   await expect(
-    page.getByRole("button", { name: tab, exact: true }),
+    page.locator("header nav").getByRole("button", { name: tab, exact: true }),
   ).toHaveAttribute("aria-current", "page");
 }
 /** External links open a new tab; answer them locally so the check needs no network. */
@@ -101,17 +102,17 @@ test.describe("Landing controls all navigate or scroll", () => {
       [
         "Product",
         [
-          ["Convert", (p) => expectAppTab(p, "Convert")],
-          ["Pool", (p) => expectAppTab(p, "Pool")],
-          ["Dark Cross", (p) => expectAppTab(p, "Dark Cross")],
+          ["Portfolio", (p) => expectAppTab(p, "Portfolio")],
+          ["Move", (p) => expectAppTab(p, "Move")],
+          ["Liquidity", (p) => expectAppTab(p, "Liquidity")],
         ],
       ],
       [
         "How it works",
         [
-          ["01 Convert", (p) => expectScrolledTo(p, "how-convert")],
-          ["02 Pool", (p) => expectScrolledTo(p, "how-pool")],
-          ["03 Dark Cross", (p) => expectScrolledTo(p, "how-dark")],
+          ["01 Instant move", (p) => expectScrolledTo(p, "how-move")],
+          ["02 Sealed cross", (p) => expectScrolledTo(p, "how-sealed")],
+          ["03 Liquidity", (p) => expectScrolledTo(p, "how-liquidity")],
         ],
       ],
       [
@@ -120,7 +121,7 @@ test.describe("Landing controls all navigate or scroll", () => {
       ],
       [
         "Developers",
-        [["Deployed contracts", (p) => expectScrolledTo(p, "proof-contracts")]],
+        [["Call order", (p) => expectScrolledTo(p, "developers")]],
       ],
     ];
     for (const [menu, items] of menus) {
@@ -164,16 +165,18 @@ test.describe("Landing controls all navigate or scroll", () => {
   test("CTAs, Try it links, brand links, theme and footer", async ({
     page,
   }) => {
-    for (const where of ["header", ".hero-copy"]) {
+    for (const [where, name] of [
+      ["header", "Launch app"],
+      [".hero-copy", "Move your shares"],
+    ]) {
       await page.goto("/");
-      await page.locator(where).getByRole("link", { name: "Launch app" }).click();
-      await expect(page).toHaveURL(/\/app$/);
-      await expectAppTab(page, "Convert");
+      await page.locator(where).getByRole("link", { name }).click();
+      await expectAppTab(page, "Portfolio");
     }
     await page.goto("/");
     await page.getByRole("link", { name: "See it onchain →" }).click();
     await expectScrolledTo(page, "proof");
-    for (const [i, tab] of ["Convert", "Pool", "Dark Cross"].entries()) {
+    for (const [i, tab] of ["Move", "Move", "Liquidity"].entries()) {
       await page.goto("/");
       await page.getByRole("link", { name: "Try it →" }).nth(i).click();
       await expectAppTab(page, tab);
@@ -206,43 +209,42 @@ test.describe("Landing controls all navigate or scroll", () => {
       await expectPopup(page, () => explorer.nth(i).click(), /uniscan\.xyz\/address\//);
   });
 
-  test("architecture diagram: a Unichain node opens its explorer page", async ({
-    page,
-  }) => {
-    const file = new URL(
-      "../../deployments/unichain-sepolia.resolved.json",
-      import.meta.url,
-    );
-    const d = existsSync(file)
-      ? JSON.parse(readFileSync(file, "utf8"))
-      : undefined;
+  test("diagrams: simple flow, developer lanes in v4 call order, Unichain node opens its explorer page", async ({ page }) => {
+    const file = new URL("../../deployments/unichain-sepolia.resolved.json", import.meta.url);
+    const d = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : undefined;
     await page.goto("/");
-    const diagram = page.locator(".dg-main");
-    await expect(diagram).toBeVisible();
-    for (const text of ["UNICHAIN SEPOLIA · UNISWAP v4", "SUI TESTNET · CONFIDENTIAL PAYMENTS", "ParityHook", "ShareVault"])
-      await expect(diagram.getByText(text, { exact: true })).toBeVisible();
-    await expect(diagram.getByText(/chainlink/i)).toHaveCount(0);
-    const parity = diagram.locator('[data-node="parity"]');
-    if (d?.contracts?.parityHook) {
-      await expectPopup(
-        page,
-        () => parity.click(),
-        new RegExp(`sepolia\\.uniscan\\.xyz/address/${d.contracts.parityHook}`, "i"),
-      );
-    } else {
-      // No deployment yet: the node renders but is not a link.
-      await expect(parity).toBeVisible();
-      await expect(diagram.locator('a[data-node="parity"]')).toHaveCount(0);
-    }
+    const simple = page.locator(".simple-flow");
+    for (const text of ["AAPL on Coinbase", "Uniswap v4 hook · NAV parity", "AAPL on xStocks", "Sealed cross", "Send on Sui"])
+      await expect(simple.getByText(text, { exact: false })).toBeVisible();
+    const dev = page.locator(".dev-diagram");
+    const order = await dev.locator(".lane-uniswap .dn-contract").allInnerTexts();
+    expect(order).toEqual(["your wallet", "WrapSwapRouter.swapExactIn", "PoolManager.swap", "ParityHook.beforeSwap", "PoolManager delta settled"]);
+    await expect(dev.getByText("keeper batches every 90 s")).toBeVisible();
+    expect(await dev.locator(".lane-sui").evaluate((e) => getComputedStyle(e).opacity)).toBe("0.7");
+    await expect(dev.getByText(/chainlink/i)).toHaveCount(0);
+    const parity = dev.locator('[data-node="parity"]');
+    if (d?.contracts?.parityHook)
+      await expectPopup(page, () => parity.click(), new RegExp(`sepolia\\.uniscan\\.xyz/address/${d.contracts.parityHook}`, "i"));
+    else await expect(dev.locator('a[data-node="parity"]')).toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(diagram).toBeVisible();
-    // Below 900px the diagram keeps its size and scrolls inside its own box.
-    expect(await page.locator(".diagram-scroll").evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
-    expect(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth <= innerWidth,
-      ),
-    ).toBe(true);
+    await expect(dev).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+
+  test("landing sections are full height and snap (proximity)", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.goto("/");
+    // Styles are injected by the module graph in dev; wait for the rendered landing before reading them.
+    await expect(page.locator(".hero h1")).toHaveText("Unison");
+    await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).not.toBe("none");
+    // "y" alone serializes proximity, the default strictness; mandatory would read "y mandatory".
+    expect(await page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).toMatch(/^y( proximity)?$/);
+    for (const id of ["product", "one-price", "how-it-works", "developers", "proof"]) {
+      const box = await page.locator(`#${id}`).evaluate((e) => ({ h: e.getBoundingClientRect().height, snap: getComputedStyle(e).scrollSnapAlign }));
+      expect(box.h, id).toBeGreaterThanOrEqual(900);
+      expect(box.snap, id).toBe("start");
+    }
   });
 
   test("mobile menu opens without chevrons and its items scroll", async ({

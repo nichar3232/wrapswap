@@ -163,7 +163,7 @@ export async function allowance(token: Address, owner: Address, spender: Address
   });
 }
 
-export type SendOptions = { onHash?: (hash: Hash) => void };
+export type SendOptions = { onHash?: (hash: Hash) => void; /** swapExactIn only: deliver the output here. */ recipient?: Address };
 export type Sent = { hash: Hash; receipt?: TransactionReceipt; simulated: boolean };
 
 const fakeHash = () =>
@@ -276,7 +276,7 @@ export async function convertExactIn(
         zeroForOne: tokenIn.toLowerCase() === d.pool.key.currency0.toLowerCase(),
         amountIn,
         amountOutMin,
-        recipient: account,
+        recipient: opts?.recipient ?? account,
         deadline: timestamp + 600n,
         hookData: encodeParityHookData({ swapper: account, attestationUid }),
       },

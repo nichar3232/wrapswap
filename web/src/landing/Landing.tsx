@@ -1,14 +1,13 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Mark, ThemeToggle } from "../brand";
-import { explorerUrl } from "@wrapswap/types";
-import { Diagram } from "./Diagram";
+import { proofSwaps, unichainFile } from "./flowData";
+import { DevDiagram, SimpleFlow } from "./Flows";
 import { Halftone } from "./Halftone";
 import { OnePrice } from "./OnePrice";
 import {
   EXPLORER,
   NETWORK_NAME,
-  PROOF_SWAPS,
   deployment,
   proofRows,
   short,
@@ -24,18 +23,18 @@ const NAV: (Link & { menu: Link[] })[] = [
     label: "Product",
     href: "#product",
     menu: [
-      { label: "Convert", href: "/app?tab=convert" },
-      { label: "Pool", href: "/app?tab=pool" },
-      { label: "Dark Cross", href: "/app?tab=dark" },
+      { label: "Portfolio", href: "/app?tab=portfolio" },
+      { label: "Move", href: "/app?tab=move" },
+      { label: "Liquidity", href: "/app?tab=liquidity" },
     ],
   },
   {
     label: "How it works",
     href: "#how-it-works",
     menu: [
-      { label: "01 Convert", href: "#how-convert" },
-      { label: "02 Pool", href: "#how-pool" },
-      { label: "03 Dark Cross", href: "#how-dark" },
+      { label: "01 Instant move", href: "#how-move" },
+      { label: "02 Sealed cross", href: "#how-sealed" },
+      { label: "03 Liquidity", href: "#how-liquidity" },
     ],
   },
   {
@@ -43,7 +42,6 @@ const NAV: (Link & { menu: Link[] })[] = [
     href: "#proof",
     menu: [
       { label: "Deployed contracts", href: "#proof-contracts" },
-      { label: "Router swaps", href: "#proof-swap" },
       { label: "Uniscan ↗", href: EXPLORER, external: true },
     ],
   },
@@ -51,8 +49,8 @@ const NAV: (Link & { menu: Link[] })[] = [
     label: "Developers",
     href: "#developers",
     menu: [
+      { label: "Call order", href: "#developers" },
       { label: "GitHub ↗", href: GITHUB, external: true },
-      { label: "Deployed contracts", href: "#proof-contracts" },
     ],
   },
 ];
@@ -60,22 +58,25 @@ const ext = (l: Link) =>
   l.external ? { target: "_blank", rel: "noreferrer" } : {};
 const STEPS = [
   {
-    name: "Convert",
-    tab: "convert",
+    name: "Instant move",
+    id: "move",
+    tab: "move",
     title: "Parity fill.",
-    body: "Swap one issuer's AAPL wrapper for another's at oracle NAV, not pool price.",
+    body: "Move AAPL from one platform's wrapper to another's at oracle NAV, not pool price.",
   },
   {
-    name: "Pool",
-    tab: "pool",
-    title: "Skew-aware liquidity.",
-    body: "Fees lean against inventory imbalance so LPs aren't the exit.",
-  },
-  {
-    name: "Dark Cross",
-    tab: "dark",
+    name: "Sealed cross",
+    id: "sealed",
+    tab: "move",
     title: "Batch-crossed flow.",
-    body: "Settles at the NYSE-calendar reference, off the public curve.",
+    body: "Large orders cross at the oracle mid in a sealed batch, off the public curve.",
+  },
+  {
+    name: "Liquidity",
+    id: "liquidity",
+    tab: "liquidity",
+    title: "Skew-aware fees.",
+    body: "Fees lean against inventory imbalance so LPs aren't the exit.",
   },
 ];
 
@@ -200,7 +201,7 @@ function Landing() {
           </p>
           <div className="ctas">
             <a className="launch" href="/app">
-              Launch app
+              Move your shares
             </a>
             <a className="ghost" href="#proof">
               See it onchain →
@@ -215,7 +216,7 @@ function Landing() {
         <h2>How it works</h2>
         <ol className="steps3">
           {STEPS.map((s, i) => (
-            <li key={s.tab} id={`how-${s.tab}`}>
+            <li key={s.id} id={`how-${s.id}`}>
               <span className="index">0{i + 1}</span>
               <h3>{s.name}</h3>
               <p>
@@ -225,7 +226,17 @@ function Landing() {
             </li>
           ))}
         </ol>
-        <Diagram />
+        <SimpleFlow />
+      </section>
+
+      <section className="black developers" id="developers">
+        <h2>Developers</h2>
+        <DevDiagram />
+        <p className="dev-links">
+          <a href={GITHUB} target="_blank" rel="noreferrer">
+            Source on GitHub ↗
+          </a>
+        </p>
       </section>
 
       <section className="black proof" id="proof">
@@ -265,25 +276,23 @@ function Landing() {
           </table>
         </div>
         </div>
-        <div className="tx-cards" id="proof-swap">
-          {PROOF_SWAPS.map((p, i) => (
-            <a
-              key={p.hash}
-              className={`tx-card${i ? " secondary" : ""}`}
-              href={explorerUrl("unichain-sepolia", "tx", p.hash)!}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <span className="tx-label">{p.label}</span>
-              <span className="mono tx-hash">{p.hash}</span>
-              <span className="tx-caption">{p.caption} via WrapSwapRouter.swapExactIn</span>
-              <span className="tx-go">Block {p.block.toLocaleString("en-US")} · View on Uniscan ↗</span>
-            </a>
-          ))}
-        </div>
+        {proofSwaps(unichainFile).length > 0 && (
+          <div className="tx-cards" id="proof-swap">
+            {proofSwaps(unichainFile).map((p, i) => (
+              <a key={p.hash} className={`tx-card${i ? " secondary" : ""}`} href={p.url} target="_blank" rel="noreferrer">
+                {p.label && <span className="tx-label">{p.label}</span>}
+                <span className="mono tx-hash">{p.hash}</span>
+                {p.caption && <span className="tx-caption">{p.caption}</span>}
+                <span className="tx-go">
+                  {p.block !== undefined ? `Block ${Number(p.block).toLocaleString("en-US")} · ` : ""}View on Uniscan ↗
+                </span>
+              </a>
+            ))}
+          </div>
+        )}
       </section>
 
-      <footer className="lfoot" id="developers">
+      <footer className="lfoot">
         <span className="brand">
           <Mark size={20} />
           unison

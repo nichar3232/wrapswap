@@ -3,24 +3,7 @@ import { CHAINS, explorerUrl } from "@wrapswap/types";
 const NETWORK = "unichain-sepolia";
 export const EXPLORER = CHAINS[NETWORK].explorer;
 export const NETWORK_NAME = CHAINS[NETWORK].name;
-/**
- * WrapSwapRouter.swapExactIn receipts on Unichain Sepolia, verified with eth_getTransactionReceipt (status 1,
- * `to` = deployments/unichain-sepolia.json contracts.wrapSwapRouter, Transfer amounts as captioned).
- */
-export const PROOF_SWAPS = [
-  {
-    label: "Real router swap from a user wallet",
-    hash: "0xd1bfee595d7521ca50eb2d95de3012090632982994be5365877ac669e9841ff1",
-    caption: "100 mcbAAPL → 101.1035925 mAAPLx",
-    block: 63574001,
-  },
-  {
-    label: "First router swap (deployer)",
-    hash: "0x9b989f6b2494ad76114315fd5f9a0c1cac8bb59d5de820759eee9b14dfc2ef30",
-    caption: "100 mcbAAPL → 101.10227625 mAAPLx",
-    block: 63573144,
-  },
-] as const;
+
 
 type ProofDeployment = {
   chainId?: number;
