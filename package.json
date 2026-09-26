@@ -9,11 +9,13 @@
     "dev:crank": "tsx services/crank/index.ts",
     "dev:web": "vite --config web/vite.config.ts",
     "db:migrate": "tsx api/src/db/migrate.ts",
-    "test:smoke": "playwright test --config web/playwright.config.ts"
+    "test:smoke": "playwright test --config web/playwright.config.ts",
+    "types": "pnpm --filter @wrapswap/types generate && pnpm --filter @wrapswap/types build && pnpm --filter @wrapswap/types verify"
   },
   "dependencies": {
     "@fastify/cors": "^11.1.0",
     "@tanstack/react-query": "^5.90.0",
+    "@wrapswap/types": "workspace:*",
     "concurrently": "^9.2.0",
     "dotenv": "^17.2.0",
     "fastify": "^5.6.0",

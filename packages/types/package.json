@@ -1,0 +1,31 @@
+{
+  "name": "@wrapswap/types",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Frozen WrapSwap interfaces: ABIs, event topics, deployment and API types with runtime validators, demo constants.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepare": "tsc -p tsconfig.json",
+    "generate": "tsx scripts/generate.ts",
+    "verify": "tsx scripts/verify-demo.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "viem": "^2.37.0"
+  }
+}

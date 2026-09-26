@@ -44,3 +44,22 @@
 - Use the existing Uniswap deployment JSON feed as evidence and suggest enriched records: feedback must recognize already-shipped developer tooling.
 - Use a blue action accent in both themes: reserve red and green for state indicators as requested.
 - Publish Sepolia README addresses only after receipt and explorer verification succeeds: predicted deployment addresses must not look verified.
+
+## 2026-09-26 — interfaces freeze for the reframe (INTERFACES.md, tag `interfaces-frozen`)
+- 2026-09-26: PoolKey is the two issuer tokens sorted as currency0/currency1, fee = DYNAMIC_FEE_FLAG, hooks = ParityHook, tickSpacing = 10: ParityHook settles issuer-to-issuer directly; 10-tick spacing keeps LP ranges fine-grained around a 50 bps peg guard.
+- 2026-09-26: Inventory is ERC-6909 claims owned by ParityHook in the PoolManager, deposited and withdrawn by keepers through hook functions; fee claims are tracked separately and excluded from inventory and skew.
+- 2026-09-26: Fills are all-or-nothing from inventory via beforeSwapReturnDelta; otherwise a zero delta falls through to the same pool's concentrated liquidity and afterSwap reverts when the post-swap price is more than 50 bps from adapter parity.
+- 2026-09-26: Fee is expressed in pips: min(200 + ceil(1300·|skew|) + (NYSE closed ? 1000 : 0), 2500), skew measured in canonical shares on pre-swap inventory: pips are the v4 LP-fee unit, allow the 13·|skew| term without truncation, and pre-swap skew makes quotes exact.
+- 2026-09-26: Rounding favours the hook (shares and output floored, fees and exact-out input ceiled); exact-in and exact-out both follow the pinned v4-core sign convention (amountSpecified < 0 is exact input).
+- 2026-09-26: Adapters (IWrapperAdapter) expose sharesPerToken per whole token (1e18) plus a paused/stale health flag; an unhealthy adapter blocks swaps with AdapterUnhealthy.
+- 2026-09-26: DarkCrossHook crosses the same issuer pair at an IPriceOracle midpoint (whole quote per whole base) and routes residuals into the ParityHook pool inside the same unlock; it is not attached to any pool and carries no hook flags. Commits lock the token being sold; crossing charges 5 bps per side to treasury; mids older than 900 s block settlement.
+- 2026-09-26: IEligibility has an EAS implementation (Coinbase Verified Country, restricted country "US"); the swapper comes from hookData only when the sender is an allowlisted router, else the sender; demoMode is owner-set and emits DemoModeSet.
+- 2026-09-26: Eligibility denials that must be indexed come from IEligibility.enforce on the non-reverting dark-commit path; reverted parity swaps cannot emit events, so the API surfaces them by simulation as BLOCKED-ELIGIBILITY.
+- 2026-09-26: Peg-guard trips are made indexable through a permissionless checkPeg that emits PegGuardStatus on state changes and is driven by the crank: the afterSwap revert itself cannot emit.
+- 2026-09-26: Local and testnet tokens are mock issuer ERC-20s with issuer-faithful decimals and multiplier behaviour: mcbAAPL (6 decimals, multiplier 1.0125) and mAAPLx (18 decimals, multiplier 1.0), giving a non-trivial 1 : 1.0125 parity.
+- 2026-09-26: Deployment files are deployments/anvil.json (chainId 31337, generated, gitignored) and deployments/base-sepolia.json (chainId 84532, committed); every consumer selects with NETWORK. deployments/local.json is legacy.
+- 2026-09-26: Demo accounts derive from DEMO_MNEMONIC by fixed index (0 deployer/keeper/treasury/LP, 1 demo wallet, 2 and 3 dark counterparties, 4 crank): the anvil default mnemonic locally, an env-supplied mnemonic on Sepolia. Deployment JSON never carries private keys.
+- 2026-09-26: The mock oracle mid is pushed by the crank at adapter parity: the demo's dark cross then clears at the same ratio as the parity fill, and pushes are reproducible from chain state.
+- 2026-09-26: Market-hours logic everywhere reads the latest block timestamp: anvil is warped to NYSE OPEN (1790692200) for the video while Sepolia runs on the real clock.
+- 2026-09-26: Indexer reorg safety comes from cascading deletes: every event row references its block by hash with ON DELETE CASCADE, and derived state is SQL views.
+- 2026-09-26: @wrapswap/types is generated from the compiled interface ABIs and the fenced schemas in INTERFACES.md, carries no runtime dependencies, and verifies the §10 arithmetic on every `make types`.
