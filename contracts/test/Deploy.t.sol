@@ -11,6 +11,7 @@ import {Deploy} from "../script/Deploy.s.sol";
 import {EASEligibility} from "../src/EASEligibility.sol";
 import {MockPriceOracle} from "../src/mocks/MockPriceOracle.sol";
 import {ParityHook} from "../src/ParityHook.sol";
+import {WrapSwapRouter} from "../src/WrapSwapRouter.sol";
 import {DarkCrossHook} from "../src/DarkCrossHook.sol";
 import {IssuerRegistry} from "../src/IssuerRegistry.sol";
 
@@ -55,7 +56,7 @@ contract DeployTest is Test {
         assertEq(vm.parseJsonAddress(json, ".deployer"), 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266);
         assertEq(vm.parseJsonString(json, ".startBlock"), "5");
         assertTrue(vm.parseJsonBool(json, ".mockOracle"));
-        string[16] memory keys = [
+        string[17] memory keys = [
             "poolManager",
             "positionManager",
             "stateView",
@@ -70,13 +71,15 @@ contract DeployTest is Test {
             "oracle",
             "parityHook",
             "darkCrossHook",
+            "wrapSwapRouter",
             "eas",
             "easIndexer"
         ];
         for (uint256 i; i < keys.length; i++) {
             assertTrue(vm.keyExistsJson(json, string.concat(".contracts.", keys[i])), keys[i]);
         }
-        assertEq(vm.parseJsonKeys(json, ".contracts").length, 16);
+        assertEq(vm.parseJsonKeys(json, ".contracts").length, 17);
+        assertEq(vm.parseJsonAddress(json, ".contracts.wrapSwapRouter"), d.wrapSwapRouter);
         // anvil nulls.
         string[6] memory nulls = ["positionManager", "stateView", "permit2", "universalRouter", "eas", "easIndexer"];
         for (uint256 i; i < nulls.length; i++) {
@@ -162,6 +165,8 @@ contract DeployTest is Test {
         assertTrue(e.isTrustedRouter(d.swapRouter));
         assertTrue(e.isTrustedRouter(d.darkCrossHook));
         assertTrue(e.isTrustedRouter(d.quoter));
+        assertTrue(e.isTrustedRouter(d.wrapSwapRouter));
+        assertEq(address(WrapSwapRouter(d.wrapSwapRouter).poolManager()), d.poolManager);
         assertFalse(e.isTrustedRouter(d.modifyLiquidityRouter));
         assertEq(e.owner(), cfg.accounts[0]);
         assertEq(e.restrictedCountry(), "US");

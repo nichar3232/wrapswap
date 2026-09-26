@@ -21,6 +21,7 @@ import {NyseCalendar} from "../src/NyseCalendar.sol";
 import {EASEligibility} from "../src/EASEligibility.sol";
 import {ParityHook} from "../src/ParityHook.sol";
 import {DarkCrossHook} from "../src/DarkCrossHook.sol";
+import {WrapSwapRouter} from "../src/WrapSwapRouter.sol";
 import {MockIssuerToken} from "../src/mocks/MockIssuerToken.sol";
 import {MockPriceOracle} from "../src/mocks/MockPriceOracle.sol";
 import {B20MultiplierAdapter} from "../src/adapters/B20MultiplierAdapter.sol";
@@ -97,6 +98,7 @@ contract Deploy is Script {
         address maaplxAdapter;
         address parityHook;
         address darkCrossHook;
+        address wrapSwapRouter;
         PoolKey key;
         uint160 initSqrtPriceX96;
     }
@@ -126,7 +128,7 @@ contract Deploy is Script {
         Deployment memory d = _fromJson(prev);
         uint256 from = vm.envOr("DEPLOY_FROM_BLOCK", vm.parseUint(vm.parseJsonString(prev, ".startBlock")));
         uint256 head = block.number;
-        string[11] memory keys = [
+        string[12] memory keys = [
             "poolManager",
             "quoter",
             "swapRouter",
@@ -137,9 +139,10 @@ contract Deploy is Script {
             "oracle",
             "parityHook",
             "darkCrossHook",
+            "wrapSwapRouter",
             "poolInitialized"
         ];
-        address[10] memory addrs = [
+        address[11] memory addrs = [
             d.poolManager,
             d.quoter,
             d.swapRouter,
@@ -149,18 +152,19 @@ contract Deploy is Script {
             d.eligibility,
             d.oracle,
             d.parityHook,
-            d.darkCrossHook
+            d.darkCrossHook,
+            d.wrapSwapRouter
         ];
         string memory obj = "{";
         uint256 registryBlock;
-        for (uint256 i; i < 10; i++) {
+        for (uint256 i; i < 11; i++) {
             if (!c.anvil && i < 2) continue; // canonical PoolManager / V4Quoter are not created by this deployment
             uint256 n = _firstBlockWithCode(addrs[i], from, head);
             if (i == 4) registryBlock = n;
             obj = string.concat(obj, bytes(obj).length > 1 ? "," : "", '"', keys[i], '":"', vm.toString(n), '"');
         }
         uint256 initBlock = _firstBlockInitialized(d.poolManager, d.key.toId(), from, head);
-        obj = string.concat(obj, ',"', keys[10], '":"', vm.toString(initBlock), '"}');
+        obj = string.concat(obj, ',"', keys[11], '":"', vm.toString(initBlock), '"}');
         Blocks memory b = Blocks(vm.toString(registryBlock), obj, DarkCrossHook(d.darkCrossHook).batchOrigin());
         vm.writeFile(path, manifestJson(c, d, b));
     }
@@ -260,9 +264,12 @@ contract Deploy is Script {
         d.darkCrossHook = address(
             new DarkCrossHook(pm, ParityHook(d.parityHook), oracle, eligibility, d.mcb, d.maaplx, d.key, deployer)
         );
+        // Created last so every earlier address (and the §10 currency ordering) is unchanged.
+        d.wrapSwapRouter = address(new WrapSwapRouter(pm));
 
         eligibility.setTrustedRouter(d.swapRouter, true);
         eligibility.setTrustedRouter(d.darkCrossHook, true);
+        eligibility.setTrustedRouter(d.wrapSwapRouter, true);
         eligibility.setTrustedRouter(d.quoter, true);
         if (c.universalRouter != address(0)) eligibility.setTrustedRouter(c.universalRouter, true);
         oracle.setPusher(c.accounts[4], true);
@@ -356,6 +363,8 @@ contract Deploy is Script {
             _addr(d.parityHook),
             ',"darkCrossHook":',
             _addr(d.darkCrossHook),
+            ',"wrapSwapRouter":',
+            _addr(d.wrapSwapRouter),
             ',"eas":',
             _nullable(c.eas),
             ',"easIndexer":',
@@ -481,6 +490,7 @@ contract Deploy is Script {
         d.oracle = vm.parseJsonAddress(j, ".contracts.oracle");
         d.parityHook = vm.parseJsonAddress(j, ".contracts.parityHook");
         d.darkCrossHook = vm.parseJsonAddress(j, ".contracts.darkCrossHook");
+        d.wrapSwapRouter = vm.parseJsonAddress(j, ".contracts.wrapSwapRouter");
         DarkCrossHook dark = DarkCrossHook(d.darkCrossHook);
         d.mcb = dark.baseToken();
         d.maaplx = dark.quoteToken();
