@@ -2823,7 +2823,7 @@ dl.review {
 }
 .send-grid {
   display: grid;
-  grid-template-columns: 1.3fr 1fr;
+  grid-template-columns: 1fr;
   gap: 20px;
 }
 .tiles.two {

@@ -180,7 +180,9 @@ test("Send: three steps, who-sees-what table, labels, use cases, ladder line", a
   await expect(s).toContainText("Private compensation");
   await expect(s).toContainText("Private settlement");
   await expect(s).toContainText("Dark Cross protects the order before the trade. Send protects the amount after it.");
-  await expect(s.getByRole("region", { name: "Reserves" })).toContainText("unavailable"); // no /pay/reserves in mocks
+  // The sui lane's panel is mounted in the slot (deposit → pay → withdraw; reserves from /pay/reserves).
+  await expect(s.locator(".send-tracker, .send-panel, [class*=send-]").first()).toBeVisible();
+  await expect(s).toContainText("Reserves");
 });
 
 test("real (injected) wallet: wrong chain → add + switch; rejection and decoded reverts show the real reason", async ({ page }) => {

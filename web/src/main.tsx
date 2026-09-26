@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type WheelEvent as ReactWheelEvent } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type WheelEvent as ReactWheelEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { CHAINS, parseDeployment, type Deployment } from "@wrapswap/types";
 import { Mark } from "./brand";
@@ -10,6 +10,8 @@ import { Liquidity } from "./app/Liquidity";
 import { Move } from "./app/Move";
 import { Portfolio } from "./app/Portfolio";
 import { SendOverview } from "./app/SendOverview";
+// The sui lane's Send panel (Sui SDK, Seal, Walrus) loads only when the Send tab is first opened.
+const SendPanel = lazy(() => import("./app/Send").then((m) => ({ default: m.sendPanel.Panel })));
 import { Hex, Skeleton, shortHex } from "./app/ui";
 import type { Token } from "./app/assets";
 import { WalletProvider, useWallet } from "./app/wallet";
@@ -204,6 +206,10 @@ function App() {
     setTab("Move");
   };
   const index = TABS.indexOf(tab);
+  const [sendOpened, setSendOpened] = useState(tab === "Send");
+  useEffect(() => {
+    if (tab === "Send") setSendOpened(true);
+  }, [tab]);
   const setTab = (t: Tab) => {
     setTabState(t);
     const u = new URL(location.href);
@@ -323,7 +329,13 @@ function App() {
                 ) : t === "Move" ? (
                   <Move d={d} asset={asset} pool={pool} batch={batch} intent={intent} />
                 ) : t === "Send" ? (
-                  <SendOverview d={d} assets={assets} />
+                  <SendOverview>
+                    {(i === index || sendOpened) && (
+                      <Suspense fallback={<Skeleton w="100%" h="16em" />}>
+                        <SendPanel d={d} assets={assets} />
+                      </Suspense>
+                    )}
+                  </SendOverview>
                 ) : (
                   <Liquidity asset={asset} pool={pool} onMove={moveFrom} />
                 )}
