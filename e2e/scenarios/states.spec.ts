@@ -24,7 +24,7 @@ for(const variant of ['FALL-THROUGH','BLOCKED-PEG','NYSE-CLOSED','BLOCKED-ELIGIB
     expect(route.route).toBe(variant==='NYSE-CLOSED'?'PARITY':variant);
     // Same anvil seed state as the open-market fill, plus the 1000-pip NYSE-closed add-on (not a live-network figure).
     if(variant==='NYSE-CLOSED')expect(route.quote.fee.totalPips).toBe(DEMO.variants.anvil.parityFill.feePips+1000);
-    await page.goto(webURL);
+    await page.goto(webURL+'/app');
     await page.getByRole('button',{name:'Convert',exact:true}).click();
     await expect(page.getByRole('heading').first()).toBeVisible();
   });
