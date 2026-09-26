@@ -93,6 +93,7 @@ Canonical Uniswap v4 (from Uniswap's deployment docs): PoolManager [`0x00B036B58
 Swap proofs (100 mcbAAPL → mAAPLx through `WrapSwapRouter.swapExactIn`):
 
 - Deployer 0xFD42…3F9e (101.10227625 mAAPLx out): [`0x9b989f6b2494ad76114315fd5f9a0c1cac8bb59d5de820759eee9b14dfc2ef30`](https://sepolia.uniscan.xyz/tx/0x9b989f6b2494ad76114315fd5f9a0c1cac8bb59d5de820759eee9b14dfc2ef30)
+- Owner MetaMask 0x1960…feb8 (101.1035925 mAAPLx out): [`0xd1bfee595d7521ca50eb2d95de3012090632982994be5365877ac669e9841ff1`](https://sepolia.uniscan.xyz/tx/0xd1bfee595d7521ca50eb2d95de3012090632982994be5365877ac669e9841ff1)
 <!-- testnet:end -->
 
 ## Prize tracks
