@@ -1,0 +1,174 @@
+/* Send panel. Unison tokens only (theme.css / style.css); layout follows the Convert card and the Dark Cross steps. */
+.send-panel {
+  width: 100%;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.send-title {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.send-stages {
+  display: grid;
+  margin-top: 4px;
+}
+.send-stage {
+  color: var(--muted);
+}
+.send-stage.on {
+  color: var(--ink);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.send-stage.done .send-stage-name::after {
+  content: " ✓";
+  color: var(--good);
+}
+.send-stage-name {
+  font-weight: 600;
+}
+.send-stage small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.send-balances {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.send-address {
+  font-size: 14px !important;
+}
+.send-window {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.send-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.send-bar > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.5s linear;
+}
+.send-quote {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 16px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.send-quote dt {
+  color: var(--muted);
+}
+.send-quote dd {
+  margin: 2px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+.caption.good {
+  color: var(--good);
+}
+.caption.bad {
+  color: var(--bad);
+}
+
+/* Tracker receipt: one row per leg, done / active / next. */
+.send-tracker ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.leg {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 12px;
+  position: relative;
+  padding-bottom: 14px;
+}
+.leg:last-child {
+  padding-bottom: 0;
+}
+.leg::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 18px;
+  bottom: 0;
+  width: 1px;
+  background: var(--line);
+}
+.leg:last-child::before {
+  display: none;
+}
+.leg-dot {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+  background: var(--card);
+}
+.leg-done .leg-dot {
+  background: var(--good);
+  border-color: var(--good);
+}
+.leg-active .leg-dot {
+  border-color: var(--accent);
+}
+.leg-active .leg-dot .spinner {
+  width: 11px;
+  height: 11px;
+  margin: 0;
+}
+.leg-next {
+  color: var(--muted);
+}
+.leg-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+.leg-label {
+  font-weight: 500;
+}
+.leg-detail {
+  margin-top: 4px;
+  font-size: 13px;
+}
+.send-panel {
+  align-items: center;
+}
+.send-tracker {
+  max-width: 460px;
+}
+.send-quote > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.send-quote dd {
+  text-align: left;
+}

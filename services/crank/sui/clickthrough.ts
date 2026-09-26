@@ -1,5 +1,5 @@
-// Browser click-through of /pay on live Sui testnet + Unichain Sepolia, screenshotted at each step.
-//   deposit (Unichain) -> pay (Sui) -> payee decrypts balance -> payee withdraws into the other issuer's wrapper.
+// Browser click-through of the Send panel (/app?tab=send) on live Sui testnet + Unichain Sepolia, screenshotted at
+// each step: deposit (Unichain) -> sealed send (Sui) -> recipient decrypts -> recipient withdraws to another platform.
 //
 // Headless Chromium cannot drive the Slush or MetaMask extensions, so this harness injects stand-ins that sign with the
 // documented demo keys: an EIP-1193 provider (window.ethereum) and a wallet-standard Sui wallet named
@@ -19,8 +19,8 @@ import { RUN_DIR, evmRpcUrl, loadDeployment } from './config.js';
 import { loadKeypair } from './lib.js';
 import { withLatestNonce, withNonceRetry } from './evm.js';
 
-const URL = process.env.PAY_URL ?? 'http://127.0.0.1:5402/pay';
-const SHOTS = process.env.SUI_SHOTS_DIR ?? join(RUN_DIR, 'status', 'sui-shots');
+const URL = process.env.PAY_URL ?? 'http://127.0.0.1:5402/app?tab=send';
+const SHOTS = process.env.SUI_SHOTS_DIR ?? join(RUN_DIR, 'status', 'sui-shots', 'send-live');
 const dep = loadDeployment() as any;
 const payer = loadKeypair(dep.demoAccounts.suiPayer);
 const payee = loadKeypair(dep.demoAccounts.suiPayee);
@@ -113,70 +113,62 @@ async function openAs(kp: Ed25519Keypair, label: string) {
   // Injected as source text: tsx/esbuild wraps functions in a `__name` helper that does not exist in the page.
   await page.addInitScript({ content: `var __name = (f) => f; (${initScript.toString()})(${JSON.stringify(opts)});` });
   await page.goto(URL, { waitUntil: 'networkidle' });
-  // Connect the Sui wallet through dapp-kit's own modal.
-  await page.getByRole('button', { name: 'Connect Slush' }).click();
+  // EVM through the app's own Connect button, then the Sui wallet through the panel's primary (dapp-kit modal).
+  await page.getByRole('button', { name: 'Connect wallet' }).click();
+  await page.getByTestId('send-primary').filter({ hasText: 'Connect Sui wallet' }).click();
   await page.getByText('Demo Wallet (test harness)').click();
-  await page.getByText(/Sui account/).waitFor();
+  await page.getByTestId('send-primary').filter({ hasNotText: 'Connect Sui wallet' }).waitFor();
   return page;
 }
 
 const browser = await chromium.launch();
 const T = { timeout: 6 * 60_000 };
 try {
-  // ---- payer: deposit on Unichain
-  const p = await openAs(payer, 'payer');
-  await p.getByTestId('evm-connect').click();
-  await p.getByText(/^MetaMask 0x/).first().waitFor();
-  await shot(p, 'connected', 'payer connected: MetaMask stand-in on Unichain Sepolia, Sui wallet on testnet');
-  const dep1 = p.getByTestId('step-deposit');
-  await dep1.locator('select').selectOption({ label: 'mAAPLx' });
-  await dep1.getByLabel('Amount').fill(DEPOSIT);
-  await dep1.getByRole('button', { name: /^Deposit / }).click();
-  await dep1.getByText(/^Deposit · /).waitFor(T);
-  await shot(p, 'deposit-sent', `deposited ${DEPOSIT} mAAPLx into ShareVault on Unichain`);
-  await dep1.getByText('Credited on Sui by the keeper').waitFor(T);
-  await shot(p, 'deposit-credited', 'keeper attested the deposit on Sui (credit_deposit)');
+  const primary = (pg: Page) => pg.getByTestId('send-primary');
+  // ---- sender: deposit on Unichain
+  const p = await openAs(payer, 'sender');
+  await shot(p, 'connected', 'sender connected: MetaMask path on Unichain Sepolia, Sui wallet on testnet');
+  await p.getByLabel('Deposit token').selectOption({ index: 1 });
+  await p.getByLabel('Deposit amount').fill(DEPOSIT);
+  await primary(p).click();
+  await p.getByText(/^Deposited /).waitFor(T);
+  await shot(p, 'deposit-sent', `deposited ${DEPOSIT} into ShareVault on Unichain`);
+  await p.getByText(/^Credited /).waitFor(T);
+  await p.getByRole('button', { name: 'Decrypt' }).click();
+  await p.getByText(/Seal-decrypted · proof checked/).waitFor(T);
+  await shot(p, 'deposit-credited', 'keeper credited Sui; balance decrypted in the browser via Seal, proof checked');
 
-  // ---- payer: decrypt balance, pay
-  const pay = p.getByTestId('step-pay');
-  await pay.getByRole('button', { name: /Decrypt my balance/ }).click();
-  await pay.getByText(/Merkle proof verified/).waitFor(T);
-  await shot(p, 'payer-balance', 'payer balance decrypted client-side via Seal, Merkle proof verified');
-  await pay.getByLabel('Shares').fill(PAY_SHARES);
-  await pay.getByLabel('Memo').fill('three Apple shares');
-  await pay.getByRole('button', { name: /privately$/ }).click();
-  await pay.getByText(/^Sealed instruction submitted/).waitFor(T);
+  // ---- sender: sealed send
+  await p.getByRole('tab', { name: /Send/ }).click();
+  await p.getByLabel('Shares to send').fill(PAY_SHARES);
+  await primary(p).click();
+  await p.getByText(/^Sent .* sealed$/).waitFor(T);
   await p.waitForTimeout(2_000);
-  await shot(p, 'pay-batching', 'sealed payment submitted; window countdown "batching for privacy"');
-  await pay.getByText(/^Applied in batch/).waitFor(T);
-  await shot(p, 'pay-applied', 'window closed, keeper applied the batch; total supply unchanged');
+  await shot(p, 'send-sealed', 'sealed send submitted; "Sealed for 90 s · batching for privacy" countdown');
+  await p.getByText(/applied · total unchanged/).waitFor(T);
+  await shot(p, 'send-applied', 'window closed, keeper applied the batch; total unchanged');
 
-  // ---- payee: decrypt balance, withdraw into the other issuer's wrapper
-  const q = await openAs(payee, 'payee');
-  await q.getByTestId('evm-connect').click();
-  const pay2 = q.getByTestId('step-pay');
-  await pay2.getByRole('button', { name: /Decrypt my balance/ }).click();
-  await pay2.getByText(/Merkle proof verified/).waitFor(T);
-  await shot(q, 'payee-balance', 'payee sees the decrypted balance including the payment');
-  const wd = q.getByTestId('step-withdraw');
-  await wd.locator('select').selectOption({ label: 'mcbAAPL' });
-  await wd.getByLabel('Shares').fill(WITHDRAW_SHARES);
-  await wd.getByText(/ParityHook pool on Uniswap v4/).waitFor(T); // conversion quote for the new amount, not the default
+  // ---- recipient: decrypt, withdraw to another platform
+  const q = await openAs(payee, 'recipient');
+  await q.getByRole('tab', { name: /Withdraw/ }).click();
+  await q.getByRole('button', { name: 'Decrypt' }).click();
+  await q.getByText(/Seal-decrypted · proof checked/).waitFor(T);
+  await shot(q, 'recipient-balance', 'recipient sees the decrypted balance including the send');
+  await q.getByLabel('Deliver on platform').selectOption({ index: 0 });
+  await q.getByLabel('Shares to withdraw').fill(WITHDRAW_SHARES);
+  await q.getByText('Router → ParityHook').waitFor(T);
   await q.waitForTimeout(1_500);
-  await shot(q, 'withdraw-quote', 'withdraw quote into mcbAAPL (the other issuer), hook-output gross-up');
-  await wd.getByRole('button', { name: /^Withdraw / }).click();
-  await wd.getByText(/^Sealed withdrawal submitted/).waitFor(T);
-  await shot(q, 'withdraw-sealed', 'sealed withdrawal submitted on Sui');
-  await wd.getByText(/^Delivered |^Skipped/).waitFor(T);
-  if (await wd.getByText(/^Skipped/).count()) throw new Error('withdrawal was skipped on Unichain, not delivered');
-  await q.waitForTimeout(3_000);
-  await shot(q, 'withdraw-delivered', 'ShareVault settled on Unichain through WrapSwapRouter -> ParityHook');
-  // Wait for the keeper's debit on Sui: reserves back to 1:1, then re-decrypt the payee's new leaf.
-  await q.getByTestId('reserves').filter({ hasText: /Reserves 1:1/ }).waitFor(T);
-  await pay2.getByRole('button', { name: /Refresh/ }).click();
-  await pay2.getByText(/Merkle proof verified/).waitFor(T);
-  await q.waitForTimeout(3_000);
-  await shot(q, 'payee-after', 'payee balance after withdrawal; reserves badge still 1:1');
+  await shot(q, 'withdraw-quote', 'withdraw to the other platform: live vault quote, hook-output gross-up');
+  await primary(q).click();
+  await q.getByText(/^Recipient withdrew /).waitFor(T);
+  await q.getByText(/^Delivered |^Skipped/).waitFor(T);
+  if (await q.getByText(/^Skipped/).count()) throw new Error('withdrawal was skipped on Unichain, not delivered');
+  await shot(q, 'withdraw-delivered', 'ShareVault delivered through WrapSwapRouter -> ParityHook');
+  await q.getByText(/^Debited /).locator('xpath=ancestor::li[contains(@class,"leg-done")]').waitFor(T);
+  // Reserves poll every 10 s: wait for the 1:1 chip and the re-decrypted leaf before the last screenshot.
+  await q.locator('.chip', { hasText: '1:1' }).waitFor(T);
+  await q.waitForTimeout(4_000);
+  await shot(q, 'withdraw-debited', 'keeper debited Sui; reserves back to 1:1');
   console.log('CLICK-THROUGH PASS');
 } catch (e) {
   console.error('CLICK-THROUGH FAIL', e);

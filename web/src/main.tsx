@@ -9,14 +9,15 @@ import { amount } from "./lib/format";
 import { Convert } from "./app/Convert";
 import { DarkCross } from "./app/DarkCross";
 import { Pool } from "./app/Pool";
+import { Send } from "./app/Send";
 import { Hex, Skeleton, shortHex } from "./app/ui";
 import { WalletProvider, useWallet } from "./app/wallet";
 import "./theme.css";
 import "./style.css";
 
-const TABS = ["Convert", "Dark Cross", "Pool"] as const;
+const TABS = ["Convert", "Dark Cross", "Pool", "Send"] as const;
 type Tab = (typeof TABS)[number];
-const TAB_PARAM: Record<Tab, string> = { Convert: "convert", "Dark Cross": "dark", Pool: "pool" };
+const TAB_PARAM: Record<Tab, string> = { Convert: "convert", "Dark Cross": "dark", Pool: "pool", Send: "send" };
 const initialTab = (): Tab =>
   TABS.find((t) => TAB_PARAM[t] === new URLSearchParams(location.search).get("tab")) ?? "Convert";
 const CHAIN = CHAINS[config.network];
@@ -245,7 +246,9 @@ function App() {
             <h2 className="sub">
               {tab === "Dark Cross"
                 ? "Commit privately. Cross at the 30-minute oracle midpoint."
-                : "Hook-owned inventory, priced by skew and market hours."}
+                : tab === "Send"
+                  ? "Deposit on Unichain, send sealed on Sui, withdraw to any platform."
+                  : "Hook-owned inventory, priced by skew and market hours."}
             </h2>
             <StatusPill feeds={feeds} />
           </div>
@@ -254,6 +257,8 @@ function App() {
           <Convert d={d} pool={pool} onDark={() => setTab("Dark Cross")} />
         ) : tab === "Dark Cross" ? (
           <DarkCross d={d} />
+        ) : tab === "Send" ? (
+          <Send d={d} />
         ) : (
           <Pool d={d} fees={fees} nyse={nyse} />
         )}
