@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { chipWidth, diagramNodes, layout, type Layout, type Node } from "./diagramData";
+import {
+  chipWidth,
+  diagramNodes,
+  layout,
+  suiFile,
+  unichainFile,
+  type Layout,
+  type Node,
+} from "./diagramData";
 
 const ZONE_LABELS = {
   unichain: "UNICHAIN SEPOLIA · UNISWAP v4",
@@ -138,7 +146,7 @@ function Svg({ l, kind, reduced }: { l: Layout; kind: string; reduced: boolean }
 /** Architecture diagram: two zones (Unichain primary, Sui secondary); wide above 900px, stacked below. */
 export function Diagram() {
   const reduced = useReducedMotion();
-  const data = diagramNodes();
+  const data = diagramNodes(unichainFile, suiFile);
   return (
     <figure className="diagram" aria-label="Architecture">
       <div className="diagram-scroll">

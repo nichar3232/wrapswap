@@ -14,9 +14,8 @@ Global conventions:
 - JSON: every integer that can exceed 2^53 is a decimal string; small counters (`int` in schemas) are JSON numbers.
   Addresses are EIP-55 checksummed in responses and accepted case-insensitively in requests.
 - Time: all market-hours logic uses the chain's latest block timestamp, never the host clock (anvil is warped).
-- Network selection: every consumer reads `NETWORK` (`anvil` | `base-sepolia` | `unichain-sepolia`) and loads
-  `deployments/${NETWORK}.json`. When `NETWORK` is unset, `parseNetwork` resolves `DEFAULT_NETWORK` (`unichain-sepolia`,
-  chainId 1301); Base Sepolia is retired.
+- Network selection: every consumer reads `NETWORK` (`anvil` | `unichain-sepolia`) and loads `deployments/${NETWORK}.json`.
+  When `NETWORK` is unset, `parseNetwork` resolves `DEFAULT_NETWORK` (`unichain-sepolia`, chainId 1301).
 - Ports come from env: `ANVIL_PORT`, `PG_PORT`, `API_PORT`, `WEB_PORT`, `CRANK_HEALTH_PORT`. No defaults are bound
   in lane code except as documented fallbacks for a solo developer.
 
@@ -190,7 +189,7 @@ interface IPriceOracle {
 }
 
 /// @title IMockPriceOracle
-/// @notice Settable oracle used on anvil and Base Sepolia; only authorized pushers may set.
+/// @notice Settable oracle used on anvil and Unichain Sepolia; only authorized pushers may set.
 interface IMockPriceOracle is IPriceOracle {
     event PusherSet(address indexed pusher, bool allowed);
 
@@ -231,7 +230,7 @@ interface IMockIssuerToken is IERC20Metadata {
 }
 ```
 
-Mock tokens on anvil and Base Sepolia: `mcbAAPL` (6 decimals, mock Coinbase tokenized AAPL) and `mAAPLx`
+Mock tokens on anvil and Unichain Sepolia: `mcbAAPL` (6 decimals, mock Coinbase tokenized AAPL) and `mAAPLx`
 (18 decimals, mock Backed xStocks AAPLx). `mint` is owner-only. `setTransfersPaused(true)` makes every transfer revert
 `TokenPaused()` and makes its adapter report `paused`.
 
@@ -716,7 +715,7 @@ hookData = abi.encode(uint8 version, address swapper, bytes32 attestationUid)   
 - `hookData.length == 96 && version == 1`: swapper = `eligibility.resolveSwapper(sender, swapper)` (the claimed address
   is honoured only when `sender` is a trusted router), attestationUid as given (0 ⇒ indexer lookup).
 - Any other length or version ⇒ revert `InvalidHookData()`.
-- Trusted routers at deploy: `swapRouter` (PoolSwapTest) and `darkCrossHook`; on Base Sepolia additionally the
+- Trusted routers at deploy: `swapRouter` (PoolSwapTest) and `darkCrossHook`; on Unichain Sepolia additionally the
   Universal Router. Changes emit `TrustedRouterSet`.
 - TypeScript: `encodeParityHookData({ swapper, attestationUid })` in `@wrapswap/types`.
 
@@ -729,7 +728,7 @@ internal: `abi.encode(uint8(1), uint256 batchId)`, accepted only while `settle` 
 ## 4. Deployment JSON
 
 Path: `deployments/${NETWORK}.json`. `deployments/anvil.json` is generated at runtime and gitignored;
-`deployments/base-sepolia.json` is committed by the deployment lane. `deployments/local.json` is legacy (§11).
+`deployments/unichain-sepolia.json` is committed by the deployment lane. `deployments/local.json` is legacy (§11).
 TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns the relative path.
 
 ```json wrapswap:schema Address
@@ -749,7 +748,7 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
 ```
 
 ```json wrapswap:schema Network
-{ "enum": ["anvil", "base-sepolia", "unichain-sepolia"] }
+{ "enum": ["anvil", "unichain-sepolia"] }
 ```
 
 ```json wrapswap:schema PoolKey
@@ -809,7 +808,7 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
   "properties": {
     "schemaVersion": { "const": 1 },
     "network": { "$ref": "Network" },
-    "chainId": { "enum": [31337, 84532, 1301] },
+    "chainId": { "enum": [31337, 1301] },
     "deployCommit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
     "deployedAt": { "type": "string" },
     "deployer": { "$ref": "Address" },
@@ -999,13 +998,13 @@ Worked example, anvil (illustrative addresses; values that must be exact are the
 }
 ```
 
-Placeholder, base-sepolia (the deployment lane fills every `<…>`; `null`s shown are the values that stay null):
+Placeholder, unichain-sepolia (the deployment lane fills every `<…>`; `null`s shown are the values that stay null):
 
 ```json
 {
   "schemaVersion": 1,
-  "network": "base-sepolia",
-  "chainId": 84532,
+  "network": "unichain-sepolia",
+  "chainId": 1301,
   "deployCommit": "<40-hex commit of the deploy>",
   "deployedAt": "<ISO-8601 UTC>",
   "deployer": "<DEMO_MNEMONIC index 0>",
@@ -1030,7 +1029,7 @@ Placeholder, base-sepolia (the deployment lane fills every `<…>`; `null`s show
   "dark": { "baseToken": "<mcbAAPL>", "quoteToken": "<mAAPLx>", "batchOrigin": "<darkCrossHook deploy block>", "batchBlocks": 20, "commitBlocks": 12, "revealBlocks": 6 },
   "blocks": { "<contract key>": "<block>", "poolInitialized": "<block>" },
   "demoAccounts": { "mnemonicSource": "env:DEMO_MNEMONIC", "accounts": ["<role/index/address for indices 0-4>"] },
-  "verification": { "<contract key>": "https://sepolia.basescan.org/address/<address>#code" }
+  "verification": { "<contract key>": "https://sepolia.uniscan.xyz/address/<address>#code" }
 }
 ```
 
@@ -1701,7 +1700,7 @@ never inserted. getLogs windows ≤ 2000 blocks; the cursor advances only after 
 ```sql
 CREATE TABLE indexer_deployments (
   chain_id        INTEGER PRIMARY KEY,
-  network         TEXT NOT NULL CHECK (network IN ('anvil', 'base-sepolia')),
+  network         TEXT NOT NULL CHECK (network IN ('anvil', 'unichain-sepolia')),
   identity        TEXT NOT NULL,             -- keccak256(deployCommit|startBlock|parityHook|darkCrossHook)
   deploy_commit   TEXT NOT NULL,
   start_block     NUMERIC(78,0) NOT NULL,
@@ -2083,7 +2082,7 @@ is set from the latest iteration. Logs are one JSON object per line with `event`
 | web | `web/` |
 | submission | `submission/`, `FEEDBACK.md` |
 | integration | `contracts/script/SeedDemo.s.sol` and seed data, `docker-compose.yml`, `scripts/dev/`, `e2e/`, `INTEGRATION.md` |
-| deployment | `deployments/base-sepolia.json`, chain config, verification, `tools/gen-integration-table`, README integration table, `docker-compose.prod.yml`, hosting config, production env for web/api/crank, `DECISIONS.md` appends |
+| deployment | `deployments/unichain-sepolia.json`, chain config, verification, `tools/gen-integration-table`, README integration table, `docker-compose.prod.yml`, hosting config, production env for web/api/crank, `DECISIONS.md` appends |
 | interfaces | `INTERFACES.md`, `contracts/src/interfaces/`, `packages/types/` |
 
 Shared TypeScript package: directory `packages/types`, package name `@wrapswap/types`, workspace member via
@@ -2166,7 +2165,7 @@ Warp the next block to `1790692200` (Tue 2026-09-29 14:30:00 UTC = 10:30 EDT, a 
 - End state: demo wallet 400 mcbAAPL + 601.203425 mAAPLx; A escrow 60.720161625 mAAPLx; B escrow 49.975 mcbAAPL;
   hook feesAccrued(mAAPLx) = 51,100,875,000,000,000.
 
-### Variant BASE-SEPOLIA (live, real clock, NYSE CLOSED Sat 2026-09-26 – Mon 2026-09-28 13:30 UTC)
+### Variant UNICHAIN-SEPOLIA (live, real clock, NYSE CLOSED Sat 2026-09-26 – Mon 2026-09-28 13:30 UTC)
 
 Real clock; while `isOpen` is false the closed-market fee applies (next open `1790602200`, Mon 2026-09-28 13:30 UTC).
 
@@ -2234,12 +2233,6 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
       "residual": { "feePips": 447, "feeBps": "4.47", "feeAmount": "4525875000000000", "amountOut": "10120474125000000000" },
       "end": { "demoMAAPLx": "601203425000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60720161625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "51100875000000000" }
     },
-    "base-sepolia": {
-      "network": "base-sepolia", "chainId": 84532, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200,
-      "parityFill": { "feePips": 1460, "feeBps": "14.60", "feeAmount": "147825000000000000", "amountOut": "101102175000000000000" },
-      "residual": { "feePips": 1447, "feeBps": "14.47", "feeAmount": "14650875000000000", "amountOut": "10110349125000000000" },
-      "end": { "demoMAAPLx": "601102175000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60710036625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "162475875000000000" }
-    },
     "unichain-sepolia": {
       "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200,
       "parityFill": { "feePips": 1460, "feeBps": "14.60", "feeAmount": "147825000000000000", "amountOut": "101102175000000000000" },
@@ -2261,7 +2254,7 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
 - `contracts/src/mocks/MockB20.sol` / `MockIssuerToken.sol` use 8 decimals / `sharesPerToken` instead of `IMockIssuerToken` (mcbAAPL 6 decimals, `multiplier`) [contracts].
 - `contracts/src/mocks/MockOracle.sol` is an AggregatorV3 mock, not `IMockPriceOracle`; no `IEligibility` implementation exists [contracts].
 - `contracts/test/ParityVault.t.sol`, `contracts/test/DarkCrossHook.t.sol` test the legacy vault/USDC design; they compile but will not exercise the frozen interfaces [contracts].
-- `contracts/script/Deploy.s.sol` writes `deployments/local.json` / `base-sepolia.json` in the legacy shape, deploys a USDC lit pool, uses tickSpacing 60 [contracts].
+- `contracts/script/Deploy.s.sol` writes `deployments/local.json` / `unichain-sepolia.json` in the legacy shape, deploys a USDC lit pool, uses tickSpacing 60 [contracts].
 - `contracts/script/Seed.s.sol`, `scripts/seed.sh`, `scripts/demo-flow.ts`, `scripts/deploy-local.sh`, `scripts/export-abis.sh` assume the Base-fork legacy flow on port 8545 [integration].
 - `deployments/local.json`, `deployments/abis/*` are legacy artifacts; consumers must move to `deployments/${NETWORK}.json` and `@wrapswap/types` ABIs [integration/backend/web].
 - `api/src/chain/client.ts` reads `DEPLOYMENT_FILE`/`deployments/local.json` and `LOCAL_RPC`; must use `NETWORK` [backend].
@@ -2284,7 +2277,7 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
 | The hook is the settlement engine | `IParityHook` `beforeSwapReturnDelta` inventory fill; `IDarkCrossHook.settle` routes residuals into the ParityHook pool inside one `unlock` (`ResidualRouted`) |
 | Eligibility: Coinbase Verified Country (non-US) EAS, demoMode retained | `IEASEligibility` (`schemaUid`, `trustedAttester`, `restrictedCountry = "US"`), `IEligibility.demoMode/setDemoMode` + `DemoModeSet`; hooks revert `NotEligible` / commit returns false |
 | Demo video on local anvil with NYSE warped to OPEN | §10 Variant ANVIL `warpTimestamp = 1790692200`; `INyseCalendar.isOpen(block.timestamp)`; API `/nyse` `source: "chain"` |
-| Live Base Sepolia on real clock; CLOSED weekend +10 bps shown as a feature | `IParityHook.CLOSED_FEE_PIPS = 1000`, `FeeBreakdown.closedPips/marketOpen`, `FeeQuoted`; §10 Variant BASE-SEPOLIA; `/fees`, `/nyse` |
+| Live Unichain Sepolia on real clock; CLOSED weekend +10 bps shown as a feature | `IParityHook.CLOSED_FEE_PIPS = 1000`, `FeeBreakdown.closedPips/marketOpen`, `FeeQuoted`; §10 Variant UNICHAIN-SEPOLIA; `/fees`, `/nyse` |
 | PoolKey sorted, DYNAMIC_FEE_FLAG, hooks = ParityHook | `beforeInitialize` `DynamicFeeRequired`; `Deployment.pool.key` rule (fee 8388608, hooks = parityHook) |
 | Inventory = hook-owned ERC-6909 claims, keeper deposit/withdraw | `IParityHook.depositInventory/withdrawInventory/isKeeper/setKeeper`, `inventory`, `InventoryChanged` |
 | All-or-nothing fill, else zero-delta fall-through; afterSwap 50 bps peg guard | `Quote.fillable`, `InventoryFill` vs `FallThrough`, `PEG_GUARD_BPS = 50`, `PegGuardTripped`, `pegStatus`, `checkPeg`/`PegGuardStatus` |

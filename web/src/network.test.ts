@@ -18,7 +18,8 @@ describe("@wrapswap/types networks", () => {
   });
   it("still accepts explicit networks and rejects unknown ones", () => {
     expect(parseNetwork("anvil")).toBe("anvil");
-    expect(parseNetwork("base-sepolia")).toBe("base-sepolia");
+    expect(parseNetwork("unichain-sepolia")).toBe("unichain-sepolia");
+    expect(() => parseNetwork("base-sepolia")).toThrow(/NETWORK must be one of/);
     expect(() => parseNetwork("mainnet")).toThrow(/NETWORK must be one of/);
   });
   it("builds explorer links per network", () => {

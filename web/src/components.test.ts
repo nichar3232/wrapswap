@@ -26,7 +26,7 @@ describe("route badges", () => {
       expect(html).toContain(route.startsWith("BLOCKED") ? "error" : "good");
     });
 });
-for (const network of ["anvil", "base-sepolia", "unichain-sepolia"] as Network[])
+for (const network of ["anvil", "unichain-sepolia"] as Network[])
   describe(network, () => {
     it("schema-valid fixtures for every mocked route", () => {
       const f = fixtures(network);
