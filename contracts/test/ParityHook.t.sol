@@ -127,7 +127,7 @@ abstract contract ParityHookBase is Fixture {
         assertFalse(p.afterInitialize || p.beforeAddLiquidity || p.afterSwapReturnDelta || p.beforeDonate);
         assertEq(hook.BASE_FEE_PIPS(), 200);
         assertEq(hook.SKEW_FEE_PIPS(), 1300);
-        assertEq(hook.CLOSED_FEE_PIPS(), 1000);
+        assertEq(hook.OFF_HOURS_MAX_FEE_PIPS(), 1500);
         assertEq(hook.MAX_FEE_PIPS(), 2500);
         assertEq(hook.PEG_GUARD_BPS(), 50);
         assertEq(hook.HOOK_DATA_VERSION(), 1);
@@ -543,28 +543,95 @@ abstract contract ParityHookBase is Fixture {
         assertEq(f.totalPips, 200);
     }
 
-    function test_closedFeeAdds1000() public {
-        uint24 open = hook.feeBreakdown(key).totalPips;
+    function test_closedFeeViewIsMarginalSkewIncreasingPremium() public {
         vm.warp(CLOSED_TS);
         IParityHook.FeeBreakdown memory f = hook.feeBreakdown(key);
         assertFalse(f.marketOpen);
-        assertEq(f.closedPips, 1000);
-        assertEq(f.totalPips, open + 1000);
+        // |skew| 0.20: a marginal skew-increasing trade pays ceil(1500 * 0.2) = 300.
+        assertEq(f.closedPips, 300);
+        assertEq(f.totalPips, 760);
+    }
+
+    function test_closedRebalancingTradePaysNoPremium() public {
+        // §10 fill: 100 mcbAAPL in moves |skew| 0.20 -> 0.19 (the book is long mAAPLx).
+        uint24 open = quoteOf(true, -int256(100 * ONE_MCB)).fee.totalPips;
+        vm.warp(CLOSED_TS);
+        IParityHook.Quote memory q = quoteOf(true, -int256(100 * ONE_MCB));
+        assertFalse(q.fee.marketOpen);
+        assertEq(q.fee.closedPips, 0);
+        assertEq(q.fee.totalPips, 460);
+        assertEq(q.fee.totalPips, open);
+        assertEq(q.amountOut, 101203425000000000000);
         vm.expectEmit(true, true, true, true, address(hook));
-        emit IParityHook.FeeQuoted(poolId, f.totalPips, 200, f.skewPips, 1000, f.skewX18, false);
-        swapAs(demo, true, -int256(1 * ONE_MCB));
+        emit IParityHook.FeeQuoted(poolId, 460, 200, 260, 0, q.fee.skewX18, false);
+        BalanceDelta d = swapAs(demo, true, -int256(100 * ONE_MCB));
+        (, uint256 got) = inOut(d, true);
+        assertEq(got, q.amountOut);
+    }
+
+    function test_closedImbalanceIncreasingTradePaysPostTradeSkewPremium() public {
+        // 100 mAAPLx in: shares 12,150 -> 12,250 vs 8,100 -> 8,000; |post skew| = 4,250 / 20,250 -> ceil(314.8) = 315.
+        vm.warp(CLOSED_TS);
+        IParityHook.Quote memory q = quoteOf(false, -int256(100 * ONE_MAAPLX));
+        assertTrue(q.fillable);
+        assertEq(q.fee.skewPips, 260);
+        assertEq(q.fee.closedPips, 315);
+        assertEq(q.fee.totalPips, 775);
+        assertEq(q.feeAmount, CanonicalShares.feeOnGross(q.grossOut, 775));
+        // Exact output of the same net amount charges the same premium tier.
+        IParityHook.Quote memory qo = quoteOf(false, int256(q.amountOut));
+        assertEq(qo.fee.totalPips, 775);
+        assertLe(qo.amountIn, q.amountIn);
+        assertApproxEqAbs(qo.amountIn, q.amountIn, 1e12); // share rounding only
+        vm.expectEmit(true, true, true, true, address(hook));
+        emit IParityHook.FeeQuoted(poolId, 775, 200, 260, 315, q.fee.skewX18, false);
+        BalanceDelta d = swapAs(demo, false, -int256(100 * ONE_MAAPLX));
+        (, uint256 got) = inOut(d, false);
+        assertEq(got, q.amountOut);
+        // Open market: the same trade pays base + skew only.
+        vm.warp(OPEN_TS);
+        assertEq(quoteOf(false, -int256(100 * ONE_MAAPLX)).fee.closedPips, 0);
+    }
+
+    function test_closedBalancedPoolIsNearBase() public {
+        mcb.mint(address(this), 4000 * ONE_MCB);
+        hook.depositInventory(cur(mcb), 4000 * ONE_MCB); // 12,150 vs 12,150 shares
+        vm.warp(CLOSED_TS);
+        assertEq(hook.feeBreakdown(key).totalPips, 200);
+        // 100 mcbAAPL (101.25 shares): |post skew| = 202.5 / 24,300 -> ceil(12.5) = 13 pips; 2.13 bps.
+        IParityHook.Quote memory q = quoteOf(true, -int256(100 * ONE_MCB));
+        assertEq(q.fee.skewPips, 0);
+        assertEq(q.fee.closedPips, 13);
+        assertEq(q.fee.totalPips, 213);
+        assertEq(quoteOf(false, -int256(100 * ONE_MAAPLX)).fee.totalPips, 213);
+    }
+
+    function test_openMarketFeeUnchangedBothDirections() public {
+        assertTrue(hook.feeBreakdown(key).marketOpen);
+        assertEq(quoteOf(true, -int256(100 * ONE_MCB)).fee.totalPips, 460);
+        assertEq(quoteOf(false, -int256(100 * ONE_MAAPLX)).fee.totalPips, 460);
+        assertEq(quoteOf(false, -int256(100 * ONE_MAAPLX)).fee.closedPips, 0);
+        assertEq(hook.feeBreakdown(key).totalPips, 460);
     }
 
     function test_feeOverrideCappedAtMax() public {
         seedLiquidity(1000 * ONE_MCB, 1012 * ONE_MAAPLX, 120);
-        _removeInventory(maaplx);
+        // Nearly one-sided (0.5 mcbAAPL vs 12,150 mAAPLx shares): a 1 mAAPLx trade cannot fill, would empty the mcbAAPL
+        // side (|post skew| = 1) and falls through at base + skew + off-hours = 200 + 1300 + 1500, capped.
+        _removeInventory(mcb);
+        mcb.mint(address(this), ONE_MCB / 2);
+        hook.depositInventory(cur(mcb), ONE_MCB / 2);
         vm.warp(CLOSED_TS);
         IParityHook.FeeBreakdown memory f = hook.feeBreakdown(key);
         assertEq(f.totalPips, 2500);
         assertEq(f.totalPips, hook.MAX_FEE_PIPS());
-        assertEq(CanonicalShares.totalFeePips(1, 0, false), 2500);
+        IParityHook.Quote memory q = quoteOf(false, -int256(1 * ONE_MAAPLX));
+        assertFalse(q.fillable);
+        assertEq(q.fee.closedPips, 1500);
+        assertEq(q.fee.totalPips, 2500);
+        assertEq(CanonicalShares.totalFeePips(950e18, 50e18, 975e18, 25e18, false), 2500);
         vm.recordLogs();
-        swapAs(demo, true, -int256(1 * ONE_MCB));
+        swapAs(demo, false, -int256(1 * ONE_MAAPLX));
         Vm.Log[] memory logs = vm.getRecordedLogs();
         for (uint256 i; i < logs.length; i++) {
             if (logs[i].emitter == address(manager) && logs[i].topics[0] == IPoolManager.Swap.selector) {

@@ -383,7 +383,7 @@ export async function routes(
         await read("parityHook", "feeBreakdown", [d.pool.key], b.number),
       ),
       maxFeePips: 2500,
-      formula: "min(200 + ceil(1300*|skew|) + (open ? 0 : 1000), 2500) pips",
+      formula: "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips",
     };
   });
   get("/inventory", "InventoryResponse", async () => {
@@ -570,7 +570,7 @@ export async function routes(
       nextTransition,
       nextState: open ? "CLOSED" : "OPEN",
       secondsUntilTransition: Number(nextTransition - b.timestamp),
-      closedFeePips: 1000,
+      closedFeePips: Number(canonical.OFF_HOURS_MAX_FEE_PIPS), // max off-hours premium (skew-increasing trades only)
       source: "chain",
     };
   });

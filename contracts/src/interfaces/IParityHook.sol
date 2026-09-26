@@ -16,7 +16,11 @@ import {IEligibility} from "./IEligibility.sol";
 ///      Inventory = ERC-6909 claims owned by this hook in the PoolManager, excluding feesAccrued.
 ///      beforeSwap fills all-or-nothing from inventory via BeforeSwapDelta; otherwise returns ZERO_DELTA and the
 ///      swap falls through to concentrated liquidity on the same pool, after which afterSwap enforces the peg guard.
-///      Fees are pips (1e-6): total = min(BASE + ceil(SKEW * |skew|) + (open ? 0 : CLOSED), MAX).
+///      Fees are pips (1e-6): total = min(BASE + ceil(SKEW * |skew|) + (open ? 0 : offHours), MAX), skew pre-trade.
+///      offHours = ceil(OFF_HOURS_MAX * |post-trade skew|) if the trade increases |skew|, else 0 (rebalancing lag:
+///      issuers cannot mint/redeem until the open). Post-trade skew moves the trade's canonical shares one-for-one
+///      (exact input: input shares; exact output: net output shares). FeeBreakdown.closedPips carries offHours;
+///      feeBreakdown(key) reports it for a marginal skew-increasing trade, quote() for the actual trade.
 ///      amountSpecified < 0 = exact input, > 0 = exact output (pinned v4-core convention).
 interface IParityHook {
     struct FeeBreakdown {
@@ -109,7 +113,7 @@ interface IParityHook {
 
     function BASE_FEE_PIPS() external view returns (uint24);
     function SKEW_FEE_PIPS() external view returns (uint24);
-    function CLOSED_FEE_PIPS() external view returns (uint24);
+    function OFF_HOURS_MAX_FEE_PIPS() external view returns (uint24);
     function MAX_FEE_PIPS() external view returns (uint24);
     function PEG_GUARD_BPS() external view returns (uint256);
     function HOOK_DATA_VERSION() external view returns (uint8);

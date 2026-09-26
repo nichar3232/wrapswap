@@ -33,15 +33,18 @@ def verified(address):
 
 c, tok = m['contracts'], {t['symbol']: t for t in m['tokens']}
 ours = [
-    ('ParityHook', c['parityHook']), ('DarkCrossHook', c['darkCrossHook']), ('WrapSwapRouter', c['wrapSwapRouter']),
+    ('ParityHook', c['parityHook']), ('DarkCrossHook (AAPL)', c['darkCrossHook']), ('WrapSwapRouter', c['wrapSwapRouter']),
     ('IssuerRegistry', c['registry']), ('NyseCalendar', c['calendar']), ('EASEligibility', c['eligibility']),
     ('MockPriceOracle', c['oracle']),
-    ('B20MultiplierAdapter (mcbAAPL)', tok['mcbAAPL']['adapter']),
-    ('XStocksMultiplierAdapter (mAAPLx)', tok['mAAPLx']['adapter']),
-    ('MockIssuerToken mcbAAPL (6 dec)', tok['mcbAAPL']['address']),
-    ('MockIssuerToken mAAPLx (18 dec)', tok['mAAPLx']['address']),
-    ('PoolSwapTest', c['swapRouter']), ('PoolModifyLiquidityTest', c['modifyLiquidityRouter']),
 ]
+for asset in m.get('assets', []):
+    for w in asset['wrappers']:
+        kind = 'B20MultiplierAdapter' if w['platform'] == 'Coinbase' else 'XStocksMultiplierAdapter'
+        ours.append((f"MockIssuerToken {w['symbol']} ({w['platform']}, {w['decimals']} dec)", w['token']))
+        ours.append((f"{kind} ({w['symbol']})", w['adapter']))
+if m.get('faucet'):
+    ours.append(('TestShareFaucet (1,000 of each wrapper / 24 h)', m['faucet']))
+ours += [('PoolSwapTest', c['swapRouter']), ('PoolModifyLiquidityTest', c['modifyLiquidityRouter'])]
 rows = ['<!-- testnet:start -->',
         f"Unichain Sepolia (chain 1301). Manifest: [`deployments/unichain-sepolia.json`](deployments/unichain-sepolia.json), "
         f"deploy commit `{m['deployCommit'][:7]}`, start block {m['startBlock']}, pool id `{m['pool']['id']}`. "
@@ -57,11 +60,19 @@ rows += ['', 'Canonical Uniswap v4 (from Uniswap\'s deployment docs): '
          f"StateView [`{c['stateView']}`]({EXPLORER}/address/{c['stateView']}), "
          f"PositionManager [`{c['positionManager']}`]({EXPLORER}/address/{c['positionManager']}). "
          f"EAS: OP-stack predeploy `{c['eas']}`."]
-if args.swap:
-    rows += ['', 'Swap proofs (100 mcbAAPL → mAAPLx through `WrapSwapRouter.swapExactIn`):', '']
-    for s in args.swap:
-        label, h = s.split('=', 1)
+if m.get('assets'):
+    rows += ['', 'ParityHook pools (one hook, dynamic fee, tick spacing 10):', '']
+    for asset in m['assets']:
+        ws = ' / '.join(w['symbol'] for w in asset['wrappers'])
+        rows.append(f"- {asset['symbol']} ({ws}): pool id `{asset['pool']['id']}`" + (' · Dark Cross' if asset['darkCross'] else ''))
+proofs = [(p['label'], p['tx']) for p in m.get('proofs', [])] + [tuple(s.split('=', 1)) for s in args.swap]
+if proofs:
+    rows += ['', 'Proof transactions:', '']
+    for label, h in proofs:
         rows.append(f'- {label}: [`{h}`]({EXPLORER}/tx/{h})')
+rows += ['', 'Test funds: `TestShareFaucet.claim()` sends 1,000 of every mock wrapper (once per address per 24 h). '
+         'Unichain Sepolia ETH faucets (from Unichain\'s docs): [Superchain Faucet](https://app.optimism.io/faucet), '
+         '[QuickNode](https://faucet.quicknode.com/unichain/sepolia), [thirdweb](https://thirdweb.com/unichain-sepolia-testnet).']
 rows += ['<!-- testnet:end -->']
 block = '\n'.join(rows)
 

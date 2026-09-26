@@ -771,6 +771,110 @@ export const schemas = {
         "additionalProperties": {
           "type": "string"
         }
+      },
+      "router": {
+        "$ref": "Address"
+      },
+      "faucet": {
+        "$ref": "Address"
+      },
+      "assets": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "symbol",
+            "wrappers",
+            "pool",
+            "darkCross"
+          ],
+          "properties": {
+            "symbol": {
+              "type": "string"
+            },
+            "wrappers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "platform",
+                  "symbol",
+                  "token",
+                  "adapter",
+                  "multiplier",
+                  "decimals"
+                ],
+                "properties": {
+                  "platform": {
+                    "enum": [
+                      "Coinbase",
+                      "xStocks"
+                    ]
+                  },
+                  "symbol": {
+                    "type": "string"
+                  },
+                  "token": {
+                    "$ref": "Address"
+                  },
+                  "adapter": {
+                    "$ref": "Address"
+                  },
+                  "multiplier": {
+                    "$ref": "UInt"
+                  },
+                  "decimals": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "pool": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "key",
+                "initSqrtPriceX96"
+              ],
+              "properties": {
+                "id": {
+                  "$ref": "Bytes32"
+                },
+                "key": {
+                  "$ref": "PoolKey"
+                },
+                "initSqrtPriceX96": {
+                  "$ref": "UInt"
+                }
+              }
+            },
+            "darkCross": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "proofs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "label",
+            "tx"
+          ],
+          "properties": {
+            "label": {
+              "type": "string"
+            },
+            "tx": {
+              "$ref": "Bytes32"
+            }
+          }
+        }
       }
     }
   },
@@ -994,7 +1098,7 @@ export const schemas = {
         "type": "integer"
       },
       "formula": {
-        "const": "min(200 + ceil(1300*|skew|) + (open ? 0 : 1000), 2500) pips"
+        "const": "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips"
       }
     }
   },
@@ -2319,6 +2423,29 @@ export type Deployment = {
   "verification"?: {
     [key: string]: string;
   };
+  "router"?: Address;
+  "faucet"?: Address;
+  "assets"?: Array<{
+    "symbol": string;
+    "wrappers": Array<{
+      "platform": "Coinbase" | "xStocks";
+      "symbol": string;
+      "token": Address;
+      "adapter": Address;
+      "multiplier": UInt;
+      "decimals": number;
+    }>;
+    "pool": {
+      "id": Bytes32;
+      "key": PoolKey;
+      "initSqrtPriceX96": UInt;
+    };
+    "darkCross": boolean;
+  }>;
+  "proofs"?: Array<{
+    "label": string;
+    "tx": Bytes32;
+  }>;
 };
 
 export type DeploymentToken = {
@@ -2375,7 +2502,7 @@ export type FeesResponse = {
   "poolId": Bytes32;
   "fee": FeeBreakdown;
   "maxFeePips": number;
-  "formula": "min(200 + ceil(1300*|skew|) + (open ? 0 : 1000), 2500) pips";
+  "formula": "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips";
 };
 
 export type FillKind = "PARITY" | "FALL-THROUGH" | "DARK-CROSS" | "DARK-RESIDUAL";

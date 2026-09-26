@@ -78,8 +78,8 @@ NYSE is closed until Mon 2026-09-28 13:30 UTC. Every live swap moves the skew, s
 
 - The header shows `unichain-sepolia · Chain 1301 · NYSE CLOSED`, crank healthy and an indexer lag of about 2 blocks.
 - Convert 100 mcbAAPL to mAAPLx and the **PARITY** badge appears. The quote shows ratio 1.0125 and 101.25 shares.
-- Fee 2.00 base + 2.09 skew + 10.00 closed = **14.09 bps**; fee 0.14266125 mAAPLx; output **101.10733875 mAAPLx** (at time of writing).
-- Talking point: the hook fills the swap from its own inventory inside `beforeSwap` at the share ratio, with no USDC leg. It prices off-hours risk instead of refusing to trade.
+- Fee 2.00 base + 1.29 skew + 0 off-hours = **3.29 bps**; output **101.21668875 mAAPLx** (at time of writing). The trade reduces inventory skew, so it pays no off-hours premium; flip the direction to see the premium (4.93 bps: + 15 bps × post-trade |skew|).
+- Talking point: the hook fills the swap from its own inventory inside `beforeSwap` at the share ratio, with no USDC leg. Off-hours it charges only trades that deepen inventory skew (rebalancing lag), instead of refusing to trade.
 - Executed Converts through `WrapSwapRouter.swapExactIn` (100 mcbAAPL each):
   - Deployer, 101.10227625 mAAPLx out: [0x9b989f6b…ef30](https://sepolia.uniscan.xyz/tx/0x9b989f6b2494ad76114315fd5f9a0c1cac8bb59d5de820759eee9b14dfc2ef30)
   - Owner MetaMask wallet, 101.1035925 mAAPLx out: [0xd1bfee59…1ff1](https://sepolia.uniscan.xyz/tx/0xd1bfee595d7521ca50eb2d95de3012090632982994be5365877ac669e9841ff1)

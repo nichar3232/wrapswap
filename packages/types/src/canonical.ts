@@ -4,7 +4,8 @@ export const ONE = 10n ** 18n;
 export const PIPS = 1_000_000n;
 export const BASE_FEE_PIPS = 200n;
 export const SKEW_FEE_PIPS = 1300n;
-export const CLOSED_FEE_PIPS = 1000n;
+/** Off-hours rebalancing-lag premium at |skew| = 1: charged as ceil(1500 * |post-trade skew|), only when a trade increases |skew|. */
+export const OFF_HOURS_MAX_FEE_PIPS = 1500n;
 export const MAX_FEE_PIPS = 2500n;
 export const PEG_GUARD_BPS = 50n;
 export const CROSS_FEE_PIPS = 500n;
@@ -45,9 +46,27 @@ export type FeeBreakdown = {
   marketOpen: boolean;
 };
 
-export function feeBreakdown(shares0: bigint, shares1: bigint, marketOpen: boolean): FeeBreakdown {
+/** CanonicalShares.offHoursPips: ceil(1500 * |post skew|) if the trade strictly increases |skew|, else 0. */
+export function offHoursPips(shares0: bigint, shares1: bigint, post0: bigint, post1: bigint): bigint {
+  const sum = shares0 + shares1;
+  const postSum = post0 + post1;
+  if (postSum === 0n) return 0n;
+  const diff = abs(shares0 - shares1);
+  const postDiff = abs(post0 - post1);
+  if (postDiff === 0n) return 0n;
+  if (sum !== 0n && mulDivUp(postDiff, sum, postSum) <= diff) return 0n;
+  return mulDivUp(postDiff, OFF_HOURS_MAX_FEE_PIPS, postSum);
+}
+
+/** CanonicalShares.postTradeShares: `shares` canonical shares move in on side 0 (zeroForOne) or side 1; out side floored at 0. */
+export function postTradeShares(shares0: bigint, shares1: bigint, zeroForOne: boolean, shares: bigint): [bigint, bigint] {
+  if (zeroForOne) return [shares0 + shares, shares1 > shares ? shares1 - shares : 0n];
+  return [shares0 > shares ? shares0 - shares : 0n, shares1 + shares];
+}
+
+function breakdown(shares0: bigint, shares1: bigint, marketOpen: boolean, offHours: bigint): FeeBreakdown {
   const s = skewPips(shares0, shares1);
-  const closed = marketOpen ? 0n : CLOSED_FEE_PIPS;
+  const closed = marketOpen ? 0n : offHours;
   const raw = BASE_FEE_PIPS + s + closed;
   return {
     basePips: BASE_FEE_PIPS,
@@ -57,6 +76,29 @@ export function feeBreakdown(shares0: bigint, shares1: bigint, marketOpen: boole
     skewX18: skewX18(shares0, shares1),
     marketOpen,
   };
+}
+
+/**
+ * IParityHook.feeBreakdown (trade-less view): closedPips is the premium a marginal skew-increasing trade pays now,
+ * ceil(1500 * |skew|) off-hours (0 when balanced); a skew-reducing trade pays 0 (see tradeFeeBreakdown).
+ */
+export function feeBreakdown(shares0: bigint, shares1: bigint, marketOpen: boolean): FeeBreakdown {
+  return breakdown(shares0, shares1, marketOpen, skewPips(shares0, shares1, OFF_HOURS_MAX_FEE_PIPS));
+}
+
+/**
+ * Fee of an actual parity fill (IParityHook.quote / beforeSwap): base + pre-trade skew + off-hours premium at the
+ * post-trade skew. `tradeShares` is the fee-independent size: input shares (exact input) or net output shares (exact output).
+ */
+export function tradeFeeBreakdown(
+  shares0: bigint,
+  shares1: bigint,
+  zeroForOne: boolean,
+  tradeShares: bigint,
+  marketOpen: boolean,
+): FeeBreakdown {
+  const [post0, post1] = postTradeShares(shares0, shares1, zeroForOne, tradeShares);
+  return breakdown(shares0, shares1, marketOpen, offHoursPips(shares0, shares1, post0, post1));
 }
 
 export const feeOnGross = (grossOut: bigint, feePips: bigint) => mulDivUp(grossOut, feePips, PIPS);
