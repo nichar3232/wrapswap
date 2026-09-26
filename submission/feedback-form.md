@@ -1,28 +1,49 @@
-# Uniswap hackathon feedback draft
+# Uniswap hackathon feedback form — draft
 
-Source: [official Hackathon Feedback form](https://developers.uniswap.org/hackathon-feedback), retrieved 2026-09-25. This document is a draft; it has not been submitted. Form topics below are paraphrased; use the live form for its exact labels and dropdown options. Personal identity, subjective ratings, consent and unobserved timing are deliberately left for the submitter.
+Placeholders used in this file: `{{URL:repo}}`, `{{URL:feedback-md}}`
 
-| Form field / topic | Draft response |
-| --- | --- |
-| Given name (required) | Submitter's first name |
-| Family name | Submitter's last name |
-| Email (required) | Submitter's contact email |
-| Telegram (required) | Submitter's Telegram handle |
-| Hackathon (required) | ETHGlobal Tokyo 2026, as specified in the project brief; verify the event's exact official label before submitting. |
-| Project completion (required) | Use the final verification status in PROGRESS.md. Do not select completed until the submission run is recorded. |
-| Project description (required) | WrapSwap converts tokenized-stock issuer claims through a canonical share token and a Uniswap v4 parity hook. A second hook crosses sealed batches at an oracle midpoint and routes selected residuals to concentrated liquidity in the settlement transaction. The local Base fork uses explicit mock issuers because native B20 execution is unsupported in generic Anvil. |
-| AI / agentic product (required) | No. An agent helped build it; the product's trading and settlement logic is deterministic. |
-| Successful Uniswap integration (required) | Yes for the implemented v4 contracts and tests; report final fork/demo status from PROGRESS.md. The integration includes custom accounting, ERC-6909 inventory, mined hook permissions, PositionManager liquidity, V4Quoter/StateView and a swap router. |
-| Time to first integration (required) | Submitter should choose the option matching actual elapsed time; no reliable start-to-success measurement has been recorded. |
-| Largest blocker | Native Base B20 calls could not execute under generic Anvil, and release-tag/current-periphery compatibility required resolving the exact core/periphery revisions. We documented the B20 mock explicitly and normalized 8-decimal issuer amounts. |
-| Agentic application difficulty | Not applicable: this is not an agentic trading application. |
-| Documentation rating (required) | Submitter's own 1–5 rating. Evidence: exact-output custom accounting, override-fee storage behavior and hook-originated callback bypass needed source inspection. |
-| Overall support rating (required) | Submitter's own 1–5 rating; no personal support interactions are claimed. |
-| Continue building? (required) | Submitter's decision. Proposed next work: oracle normalization, external security review, live B20 execution, FHE matching and authenticated cross-chain settlement. |
-| Support used (required) | Technical docs and code examples/templates are evidenced by this repository. Do not claim office hours, mentorship or Discord support unless the submitter actually used them. |
-| Missing support | A tested release/compiler compatibility matrix, machine-readable deployment manifest, full mixed-decimal custom-accounting walkthrough, and native Base B20 fork fixture. |
-| Additional feedback | Concrete source-linked feedback: https://github.com/nichar3232/wrapswap/blob/main/FEEDBACK.md . This link is valid only after the public push succeeds. |
-| Follow-up consent | Submitter's choice. |
-| Terms/privacy agreement (required) | Submitter must review and accept personally in the live form. |
+Form: https://developers.uniswap.org/hackathon-feedback. Field labels and order below were fetched from the live form on 2026-09-26 (20 fields). The fetch returned the labels and types but not the dropdown option lists. For each dropdown, pick the option closest to the suggested answer. Fields marked **OWNER** need the submitter's own identity, rating or consent. This draft doesn't fill them in.
 
-The live form has twenty fields/topics including its terms/privacy checkbox. This draft preserves every topic without inventing personal data, ratings or consent.
+| # | Field (exact label) | Req. | Type | Draft answer |
+|---|---|---|---|---|
+| 1 | First name | yes | text | **OWNER** |
+| 2 | Last name | no | text | **OWNER** |
+| 3 | Email | yes | text | **OWNER** |
+| 4 | Telegram handle | yes | text | **OWNER** |
+| 5 | Which hackathon did you participate in? | yes | dropdown | ETHGlobal Tokyo 2026 |
+| 6 | Did you complete a project during the hackathon? | yes | dropdown | Yes. Select this only after the ETHGlobal submission is in (checklist step 5). |
+| 7 | What did you build? | yes | text | See the answer under the table. |
+| 8 | Are you building an AI-powered or agentic project? | yes | dropdown | No. AI coding agents helped build it, but the product's pricing and settlement are deterministic contracts. |
+| 9 | Were you able to successfully integrate Uniswap into your project? | yes | dropdown | Yes |
+| 10 | How long did it take to get your first successful integration working? | yes | dropdown | **OWNER** — no start-to-first-swap time was recorded. Pick honestly. |
+| 11 | What was the biggest blocker you faced? | no | text | See the answer under the table. |
+| 12 | If applicable: what was the hardest part of building an agentic app on Uniswap? | no | text | Leave blank (not an agentic app). |
+| 13 | How helpful was the Uniswap documentation for your use case? | yes | rating 1–5 | **OWNER**. Context: custom-accounting delta signs, the fee-override scope and hook-originated callback skips all needed a source read (FEEDBACK.md §1, §3, §6). |
+| 14 | How would you rate the support Uniswap provided overall? | yes | rating 1–5 | **OWNER**. No office-hours or Discord interactions are recorded in the repo. |
+| 15 | Do you plan to continue building the project you started at this hackathon? | yes | dropdown | **OWNER** |
+| 16 | What type of support did you use? | no | checkbox | ☑ Technical docs ☑ Code examples / templates. Tick others only if you actually used them. |
+| 17 | What support was missing, or could have been better? | no | text | See the answer under the table. |
+| 18 | Any additional feedback? | no | text | See the answer under the table. |
+| 19 | Can we follow up with you about your feedback? | yes | radio Yes/No | **OWNER** |
+| 20 | Terms agreement | yes | checkbox | **OWNER** — read the terms and tick the box yourself. |
+
+## 7. What did you build?
+
+WrapSwap is a Uniswap v4 hook for share-for-share conversion between wrappers of the same stock, no USDC leg. Examples are Coinbase's tokenized AAPL on Base and Backed's xStocks AAPLx. ParityHook runs directly on a pool of the two issuer tokens. It fills swaps from its own ERC-6909 inventory at the adapters' share ratio via beforeSwapReturnDelta, with a dynamic fee: 2 bps base, plus up to 13 bps for inventory skew, plus 10 bps while NYSE is closed, capped at 25 bps. When inventory can't cover a swap, it falls through to the pool's concentrated liquidity under a 50 bps peg guard. A commit-reveal dark cross settles at an oracle mid and routes residuals into the same hook's pool inside one unlock. Swappers are gated to non-US users via the Coinbase Verified Country EAS attestation. On testnet this gate is bypassed with an owner-set demoMode.
+
+## 11. What was the biggest blocker you faced?
+
+Getting custom-accounting deltas right across all four swap cases (direction × exact-in/out) with 6- and 18-decimal tokens. Hooks.sol adds the specified delta to amountSpecified, so a full exact-input fill needs a positive specified delta. We only confirmed that by reading the source. A second blocker was dependency pins: the v4-core v4.0.0 tag doesn't compile with current periphery (PoolOperation.sol), so we had to pin matching commits by hand.
+
+## 17. What support was missing, or could have been better?
+
+- A four-case BeforeSwapDelta sign table and a full-fill helper.
+- A claims-backed hook inventory example: fees and inventory share one ERC-6909 balance per id.
+- Docs stating that the LP-fee override is per swap, never written to slot0, and doesn't apply to the hook-filled portion.
+- HookMiner at a supported (non-test) path, with a CREATE2-proxy broadcast example.
+- CurrencyNotSettled carrying the currency and amount.
+- Synchronized core/periphery tags with a compiler matrix.
+
+## 18. Any additional feedback?
+
+Full source-linked feedback, pinned to v4-core 46c6834 / v4-periphery 9969eec, is at {{URL:feedback-md}}. It has seven sections: beforeSwapReturnDelta ergonomics, ERC-6909 accounting, dynamic fee override on custom-accounting pools, hook address mining, amountSpecified sign conventions, unlock/settle debugging, and docs gaps. Each gives what happened, the exact file or API, and a suggested fix. Repo: {{URL:repo}}.
