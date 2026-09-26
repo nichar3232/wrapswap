@@ -20,7 +20,7 @@ Placeholders referenced: `{{URL:repo}}`, `{{URL:web-live}}`, `{{URL:video}}`, `{
 ## 2. Record Part B on the live site (≈10 min)
 
 - [ ] Open `https://sepolia.uniscan.xyz/address/0x1D2C9335813B8d3fFDCCC9d43aAf73d7871b20c8#code` and confirm the "verified" check shows (block B1).
-- [ ] Open `{{URL:web-live}}`, Convert tab. Check the header says NYSE **CLOSED**, and the quote for 100 mcbAAPL → mAAPLx shows **14.60 bps** and **101.102175 mAAPLx** (block B2). **Only quote; don't execute a swap before recording.**
+- [ ] Run `scripts/dev/live-up`, open the tunnel (DEMO.md §3) and go to `http://localhost:13010/app`, Convert tab. Check the header says NYSE **CLOSED** and chain 1301. The 100 mcbAAPL → mAAPLx quote was **14.33 bps** / **101.10490875 mAAPLx** at time of writing (block B2); read the live figures off the screen. **Only quote; don't execute a swap before recording.**
 - [ ] Open `{{URL:repo-readme-integrations}}` (block B3).
 - [ ] Record blocks B1–B3 (2:20–3:00).
 

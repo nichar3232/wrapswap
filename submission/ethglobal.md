@@ -32,7 +32,7 @@ WrapSwap is share-for-share conversion, no USDC leg. A Uniswap v4 hook, ParityHo
 
 Users only ever hold real issuer securities; shares are internal accounting. Swaps are gated to non-US users through the Coinbase Verified Country EAS attestation. On testnet, an owner-set `demoMode` bypasses the gate so anyone can try it, and that toggle is public on-chain.
 
-The closed-market fee is deliberate: the hook keeps quoting when NYSE is closed and prices the off-hours risk. On Unichain Sepolia this weekend, the same 100 mcbAAPL quote is 14.60 bps (101.102175 mAAPLx out), against 4.60 bps (101.203425 mAAPLx out) with the market open.
+The closed-market fee is deliberate: the hook keeps quoting when NYSE is closed and prices the off-hours risk. On Unichain Sepolia this weekend, the same 100 mcbAAPL quote is 14.33 bps (101.10490875 mAAPLx out, at time of writing), against 4.60 bps (101.203425 mAAPLx out) with the market open on the local fork.
 
 ## How it's made
 

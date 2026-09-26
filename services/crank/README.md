@@ -12,7 +12,7 @@ pnpm exec tsx services/crank/index.ts
 
 | Environment | Requirement / default |
 | --- | --- |
-| `NETWORK` | Required: `anvil` or `unichain-sepolia`. |
+| `NETWORK` | Optional, default `unichain-sepolia`; `anvil` for the local stack. |
 | `RPC_URL` | Required JSON RPC URL. Chain ID must match the manifest. |
 | `CRANK_HEALTH_PORT` | Required health listener port; lane value `18104`. |
 | `CRANK_HEALTH_HOST` | Default `127.0.0.1`; use `0.0.0.0` when needed for container hosting. |
