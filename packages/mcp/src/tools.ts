@@ -345,7 +345,7 @@ export const convert: ToolDef<{
     const tokens = formatUnits(tokensRaw, from.decimals);
     const q = await api.get<any>("/quote", { asset: a.asset, from: from.symbol, to: target.symbol, amount: tokensRaw.toString() });
     const body = { asset: a.asset, from: from.symbol, to: target.symbol, amount: tokens, ...(to ? { recipient: to } : {}) };
-    const r = await relay(api, to ? "/demo/send" : "/demo/convert", body);
+    const r = await relay(api, to ? "/demo/send-unichain" : "/demo/convert", body);
     const hash: string | undefined = r.txHash;
     const data = {
       asset: a.asset,

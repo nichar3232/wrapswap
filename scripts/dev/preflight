@@ -23,7 +23,7 @@ ASSETS=$(jq -r '.assets[].symbol' $M)
 
 # Stack
 h=$(curl -s "$API/health")
-check "api health (chain 1301, lag <= 5)" "$(json "$h" "print('ok' if d.get('ok') and d.get('chainId')==1301 and (d.get('lagBlocks') or 99)<=5 else 'ok=%s lag=%s' % (d.get('ok'), d.get('lagBlocks')))")"
+check "api health (chain 1301, lag <= 5)" "$(json "$h" "print('ok' if d.get('ok') and d.get('chainId')==1301 and (99 if d.get('lagBlocks') is None else int(d['lagBlocks']))<=5 else 'ok=%s lag=%s' % (d.get('ok'), d.get('lagBlocks')))")"
 c=$(curl -s 127.0.0.1:18110/status)
 check "crank" "$(json "$c" "print('ok' if d.get('ok') else 'lastError=%s' % d.get('lastError'))")"
 check "web (local /app)" "$([[ $(curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:13010/app) == 200 ]] && echo ok || echo down)"
@@ -36,15 +36,27 @@ if [[ -f $lock ]] && kill -0 "$(cat "$lock")" 2>/dev/null; then
   check "sui keeper (pid $(cat "$lock"), state written ${age}s ago)" "$([[ $age -le 300 ]] && echo ok || echo stale)"
 else check "sui keeper" "not running (no live pid in $lock)"; fi
 
-# Funnel (public URL) and MCP through it.
-host=${PUBLIC#https://}; ip=$(dig +short @1.1.1.1 "$host" | head -1)
-for p in / /app /developers /api/health /api/assets /api/pay/reserves; do
-  check "funnel $p" "$([[ $(curl -s -o /dev/null -w '%{http_code}' --resolve "$host:443:$ip" "$PUBLIC$p") == 200 ]] && echo ok || echo 'not 200')"
+# Tailscale Funnel: every public ingress IP (public DNS), pinned with --resolve so the request leaves the tailnet and
+# comes back through Funnel. /mcp gets an MCP initialize and a tools/list.
+host=${PUBLIC#https://}
+ingress=$(dig +short @1.1.1.1 "$host" | grep -E '^[0-9.]+$')
+check "funnel: public DNS has ingress IPs" "$([[ -n $ingress ]] && echo ok || echo 'no A records')"
+init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"preflight","version":"1"}}}'
+mcp() { curl -s --max-time 20 --resolve "$host:443:$1" -X POST -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' "${@:2}" "$PUBLIC/mcp"; }
+for ip in $ingress; do
+  for p in / /app /developers /api/health /api/assets /api/pay/reserves; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --resolve "$host:443:$ip" "$PUBLIC$p")
+    check "funnel $ip $p" "$([[ $code == 200 ]] && echo ok || echo "HTTP $code")"
+  done
+  code=$(mcp "$ip" -o /dev/null -w '%{http_code}' -d "$init")
+  check "funnel $ip /mcp (initialize)" "$([[ $code == 200 ]] && echo ok || echo "HTTP $code")"
+  t=$(mcp "$ip" -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | sed -n 's/^data: //p;/^{/p' | head -1)
+  n=$(json "$t" "print(len(d['result']['tools']))")
+  check "funnel $ip /mcp tools/list ($n tools)" "$([[ $n =~ ^[0-9]+$ && $n -gt 0 ]] && echo ok || echo "no tools")"
 done
-t=$(curl -s -m 15 --resolve "$host:443:$ip" -X POST "$PUBLIC/mcp" -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | sed -n 's/^data: //p;/^{/p' | head -1)
-n=$(json "$t" "print(len(d['result']['tools']))")
-check "funnel /mcp tools/list ($n tools)" "$([[ $n =~ ^[0-9]+$ && $n -gt 0 ]] && echo ok || echo "no tools")"
+# From another network entirely: an external fetcher loads /api/health.
+ext=$(curl -s --max-time 60 "https://r.jina.ai/$PUBLIC/api/health" -H 'x-respond-with: text' | head -c 400)
+check "funnel: external fetch of /api/health" "$(grep -q '"ok":true' <<<"$ext" && echo ok || echo 'not reachable from outside')"
 
 # API routes per asset; current dark batch phase per asset.
 for a in $ASSETS; do
@@ -86,11 +98,11 @@ while read a sym tok mult dec hk; do
   done
 done < <(jq -r '.assets[] | .symbol as $a | .darkCrossHook as $h | .wrappers[] | "\($a) \(.symbol) \(.token) \(.multiplier) \(.decimals) \($h)"' $M)
 
-# SUI for gas: the keeper/operator and both demo Send wallets.
+# SUI for gas: the keeper/operator and the relay's two Sui identities (the /demo/send confidential path).
 while read name addr min; do
   mist=$(json "$(suigql "{ address(address: \"$addr\") { balance(coinType: \"0x2::sui::SUI\") { totalBalance } } }")" "print(d['data']['address']['balance']['totalBalance'])")
   check "$name ${addr:0:10}… SUI $(python3 -c "print(int('${mist}')/1e9)" 2>/dev/null) >= $(python3 -c "print($min/1e9)")" "$(ge "$mist" "$min" 2>/dev/null && echo ok || echo low)"
-done < <(printf '%s\n' "sui-operator $(jq -r '.sui.operator' $S) 100000000" "sui-demo-A $DEMO_RELAY_SUI_A_ADDRESS 100000000" "sui-demo-B $DEMO_RELAY_SUI_B_ADDRESS 100000000")
+done < <(printf '%s\n' "sui-operator $(jq -r '.sui.operator' $S) 100000000" "demo-relay-sui-A $DEMO_RELAY_SUI_A_ADDRESS 30000000" "demo-relay-sui-B $DEMO_RELAY_SUI_B_ADDRESS 30000000")
 
 # Sui solvency, read from both chains directly: total_shares on the Sui pool <= shares held by the ShareVault.
 po=$(suigql "{ object(address: \"$pool\") { asMoveObject { contents { json } } } }")
@@ -99,5 +111,7 @@ check "sui pool not paused" "$(json "$po" "print('ok' if d['data']['object']['as
 held=$(cast call "$(jq -r '.evm.shareVault' $S)" 'reserves()(uint256,uint256)' -r $R 2>/dev/null | head -1 | awk '{print $1}')
 check "sui solvency: total_shares $ts <= ShareVault held ${held:-?}" "$(ge "${held:-0}" "$ts" 2>/dev/null && echo ok || echo insolvent)"
 
+st=$(curl -s 127.0.0.1:18210/demo/status)
+check "MCP relay budget token (~/wrapswap-run/env/relay-internal.env)" "$(json "$st" "print('ok' if d['limits'].get('mcpBudgetConfigured') else 'missing')")"
 echo "preflight: $fails failing check(s)"
 exit $((fails > 0))

@@ -51,7 +51,7 @@ if [[ -f $HOME/wrapswap-run/env/demo-relay.env ]]; then
   start relay "RELAY_KEY_FILE=$HOME/wrapswap-run/env/demo-relay.env pnpm exec tsx services/relay/index.ts"
 fi
 # Unison MCP server (Streamable HTTP, stateless) behind /mcp; reads only the public API through the funnel.
-start mcp 'pnpm --dir packages/mcp start:http'
+start mcp "MCP_RELAY_TOKEN_FILE=$HOME/wrapswap-run/env/relay-internal.env UNISON_API_URL=http://127.0.0.1:13010/api pnpm --dir packages/mcp start:http"
 sleep 3; rm -f "$envfile"
 for i in $(seq 60); do curl -sf 127.0.0.1:18210/demo/status >/dev/null && break; sleep 2; done
 curl -sf 127.0.0.1:18210/demo/status >/dev/null && echo "relay healthy" || echo "relay not running"

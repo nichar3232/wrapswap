@@ -45,13 +45,23 @@ Before going on stage: `scripts/dev/preflight`. It prints one PASS/FAIL line per
 - ETH for the crank, deployer and demo relay
 - relay token balances covering a 100-share action per wrapper
 
-**Demo relay** (`services/relay`, started by `live-up` in tmux window `relay`, port 18210, served as `/api/demo/*`):
-- It lets a visitor with no wallet trigger real transactions, signed by a dedicated demo key `0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C`. The key is freshly generated, not mnemonic-derived, and is neither the deployer nor the crank key. It is read only from `~/wrapswap-run/env/demo-relay.env` and never logged or bundled.
-- Limits: 3 actions per 10 minutes per client IP, 100 shares per action.
-- `POST /api/demo/convert` `{asset, from, to, amount}`: WrapSwapRouter swap to the relay.
-- `POST /api/demo/send` `{asset, from, to, amount, recipient}`: the same swap delivered to `recipient`.
-- `POST /api/demo/dark-commit` `{asset, from, amount}`: escrow and commit; the relay reveals in the reveal phase and the crank settles.
-- Each returns the real tx hash. `GET /api/demo/status` shows balances, pending reveals and recent hashes.
+**Demo relay** (`services/relay`, started by `live-up` in tmux window `relay`, port 18210, served as `/api/demo/*`; its public address is in the manifest under `demo.relay`):
+- It signs with a dedicated, freshly generated demo key `0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C`. That key is neither the deployer nor the crank key and is not mnemonic-derived.
+- The Sui path uses two relay Sui identities: A `0xa25a…1a53` pays, and B `0xf755…d44d` receives and withdraws.
+- Keys live only in `~/wrapswap-run/env/demo-relay.env` and `demo-relay-sui.env`, and are never logged or bundled.
+- Budgets:
+  - browsers: 3 actions per 10 minutes per client IP
+  - the MCP server: its own 20 per 10 minutes, identified by the `x-unison-relay-client` token in `~/wrapswap-run/env/relay-internal.env`
+  - 100 shares per action
+- A 429 carries `Retry-After` and `retryAfter`.
+- `POST /api/demo/send` `{asset: AAPL, from, to, amount, recipient}`: **the Sui confidential path.**
+  1. Deposit the source wrapper into ShareVault `0x76B1661dB3858b5455Ae4371291c954fa248Bd5d` on Unichain.
+  2. Once the keeper credits A, A sends a sealed private `pay` to B on Sui.
+  3. B submits a sealed `withdraw` into the **other** issuer's wrapper for `recipient`, and the keeper settles it on Unichain.
+  4. The POST returns the real deposit tx. `GET /api/demo/send/<id>` follows the Sui and settlement hashes (a few minutes; one send at a time, 409 while busy).
+- `POST /api/demo/send-unichain` `{asset, from, to, amount, recipient}`: a Unichain-only router swap delivered to `recipient`.
+- `POST /api/demo/convert` `{asset, from, to, amount}` and `POST /api/demo/dark-commit` `{asset, from, amount}`. The relay reveals commits itself and the crank settles them.
+- Each returns the real tx hash. `GET /api/demo/status` shows balances, Sui identities, pending reveals and recent hashes.
 
 - `NETWORK` defaults to `unichain-sepolia`, with `USE_MOCKS=false`, `deployments/unichain-sepolia.json` and the public externals in `scripts/dev/unichain-sepolia.env`.
 - Secrets come from `~/wrapswap-run/env/onchain.env` (`DEMO_MNEMONIC`, `CRANK_PRIVATE_KEY`, `UNICHAIN_SEPOLIA_RPC_URL`). Override the path with `LIVE_ENV=...`.

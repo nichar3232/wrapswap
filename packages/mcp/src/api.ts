@@ -1,7 +1,20 @@
 // Thin client for the public Unison API (GET routes) and the demo relay (POST /demo/*). No keys, no addresses:
 // everything the tools know comes from these responses.
 
+import { readFileSync } from "node:fs";
+
 export const DEFAULT_API_URL = "https://nichars-mac-mini.tail43cacc.ts.net/api";
+
+/** The relay budget token for the MCP server running on the mini (MCP_RELAY_TOKEN_FILE); absent for local stdio users. */
+const relayToken = (() => {
+  const file = process.env.MCP_RELAY_TOKEN_FILE;
+  if (!file) return undefined;
+  try {
+    return /^MCP_RELAY_TOKEN=([0-9a-f]{64})$/m.exec(readFileSync(file, "utf8"))?.[1];
+  } catch {
+    return undefined;
+  }
+})();
 
 export class ApiError extends Error {
   constructor(
@@ -43,7 +56,11 @@ export class UnisonApi {
   private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
     const r = await this.fetcher(`${this.base}${path}`, {
       method,
-      headers: { accept: "application/json", ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      headers: {
+        accept: "application/json",
+        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(relayToken && path.startsWith("/demo/") ? { "x-unison-relay-client": relayToken } : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(this.timeoutMs),
     });

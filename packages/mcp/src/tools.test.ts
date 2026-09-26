@@ -221,9 +221,9 @@ describe("execution tools", () => {
     expect(r.data.feeSplitSource).toMatch(/on-chain quote at block 1/);
   });
 
-  it("convert with a recipient uses /demo/send", async () => {
+  it("convert with a recipient uses /demo/send-unichain", async () => {
     const to = "0x" + "12".repeat(20);
-    const { api, calls } = fakeApi({ "POST /demo/send": () => ({ body: { txHash: "0xbeef", recipient: to } }) });
+    const { api, calls } = fakeApi({ "POST /demo/send-unichain": () => ({ body: { txHash: "0xbeef", recipient: to } }) });
     const r: any = await convert.run({ asset: "AAPL", fromWrapper: "mcbAAPL", toWrapper: "mAAPLx", amount: "1", recipient: to } as any, api);
     expect(calls.find((c) => c.method === "POST")!.body.recipient).toBe(to);
     expect(r.data.recipient).toBe(to);
