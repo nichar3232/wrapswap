@@ -14,7 +14,7 @@ describe("fee formula pinned to contract output", () => {
   });
   it("the curve's skew mapping reproduces the demo pool (-20% skew)", () => {
     expect(feeAtSkew(-0.2, true).totalPips).toBe(BigInt(DEMO.variants.anvil.parityFill.feePips));
-    expect(feeAtSkew(-0.2, false).totalPips).toBe(BigInt(DEMO.variants["unichain-sepolia"].parityFill.feePips));
+    expect(feeAtSkew(-0.2, false).totalPips).toBe(1460n); // CanonicalShares.t.sol: totalFeePips(8100e18, 12150e18, false)
   });
   it("is symmetric, 2 bps at balance, +10 bps off-hours, capped at 25 bps", () => {
     expect(feeAtSkew(0, true).totalPips).toBe(200n);

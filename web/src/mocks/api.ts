@@ -1,5 +1,6 @@
 import {
   DEMO,
+  canonical,
   parseDeployment,
   type Network,
   type RouteName,
@@ -7,14 +8,51 @@ import {
   type FeeBreakdown,
   type QuoteResponse,
 } from "@wrapswap/types";
-import source from "./deployment.json" with { type: "json" };
+import anvilSource from "./deployment.json" with { type: "json" };
+import unichainSource from "../../../deployments/unichain-sepolia.json" with { type: "json" };
 const str = (x: bigint) => x.toString();
+/** Next Monday 13:30 UTC (NYSE open, EDT) after `now`: demo clock for the closed-market state. */
+const nextMondayOpen = (now = Date.now()) => {
+  const t = new Date(now);
+  t.setUTCHours(13, 30, 0, 0);
+  t.setUTCDate(t.getUTCDate() + ((8 - t.getUTCDay()) % 7 || 7));
+  return Math.floor(t.getTime() / 1000);
+};
+/**
+ * Demo figures. Anvil uses the §10 narrative; the live network has no fixed figures, so demo mode computes them
+ * with the contract's own formula (canonical.*) from the demo inventory, market closed.
+ */
+export function demoVariant(network: Network) {
+  if (network === "anvil") return { ...DEMO.variants.anvil, nextOpen: 1790712000 };
+  const t = DEMO.tokens;
+  const mcb = { spt: t.mcbAAPL.sharesPerTokenX18, decimals: t.mcbAAPL.decimals };
+  const x = { spt: t.mAAPLx.sharesPerTokenX18, decimals: t.mAAPLx.decimals };
+  const fee = canonical.feeBreakdown(8100n * canonical.ONE, 12150n * canonical.ONE, false).totalPips;
+  const fill = canonical.parityQuote(mcb, x, -DEMO.parityFill.amountIn, fee);
+  const residualPips = canonical.BASE_FEE_PIPS + BigInt(DEMO.dark.residual.skewPips) + canonical.CLOSED_FEE_PIPS;
+  const residual = canonical.parityQuote(mcb, x, -BigInt(DEMO.dark.residual.amountIn), residualPips);
+  return {
+    network,
+    chainId: 1301,
+    warpTimestamp: null,
+    marketOpen: false,
+    nextOpen: nextMondayOpen(),
+    parityFill: { feePips: Number(fee), feeBps: canonical.pipsToBps(fee), feeAmount: fill.feeAmount, amountOut: fill.amountOut },
+    residual: {
+      feePips: Number(residualPips),
+      feeBps: canonical.pipsToBps(residualPips),
+      feeAmount: residual.feeAmount,
+      amountOut: residual.amountOut,
+    },
+  };
+}
 export function fixtures(network: Network) {
-  const v = DEMO.variants[network];
+  const v = demoVariant(network);
+  const source = network === "anvil" ? anvilSource : unichainSource;
   const d = parseDeployment({ ...source, network, chainId: v.chainId });
   const [a, b] = d.tokens;
   const timestamp = String(
-    network === "anvil" ? DEMO.variants.anvil.warpTimestamp : 1790424000,
+    network === "anvil" ? DEMO.variants.anvil.warpTimestamp : Math.floor(Date.now() / 1000),
   );
   const fee: FeeBreakdown = {
     basePips: 200,
@@ -96,10 +134,10 @@ export function fixtures(network: Network) {
       block: "100",
       chainTimestamp: timestamp,
       nextTransition: String(
-        v.marketOpen ? 1790712000 : DEMO.variants["unichain-sepolia"].nextOpen,
+        v.nextOpen,
       ),
       nextState: v.marketOpen ? "CLOSED" : "OPEN",
-      secondsUntilTransition: v.marketOpen ? 19800 : 178200,
+      secondsUntilTransition: v.marketOpen ? 19800 : Math.max(0, v.nextOpen - Math.floor(Date.now() / 1000)),
       closedFeePips: 1000,
       source: "chain",
     },

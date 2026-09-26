@@ -1,10 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 import { DEMO, type Network } from "@wrapswap/types";
+import { demoVariant } from "../src/mocks/api";
 import { injectTestWallet, setTxMode } from "./testWallet";
 
 // Mock mode (VITE_USE_MOCKS=true). The default network is Unichain Sepolia: NYSE closed, 14.60 bps.
 const network = (process.env.VITE_NETWORK || "unichain-sepolia") as Network;
-const v = DEMO.variants[network];
+const v = demoVariant(network);
 const account = DEMO.accounts.demo.anvilAddress;
 const RIGHT = network === "unichain-sepolia" ? "0x515" : "0x7a69";
 const RAW_ERROR = /SyntaxError|Unexpected (token|end)|TypeError|ReferenceError|HTTP \d{3}|Failed to fetch|\[object Object\]|undefined|NaN/;

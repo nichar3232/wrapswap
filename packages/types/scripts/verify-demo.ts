@@ -45,9 +45,9 @@ let s = shares(inv);
 eq("skewX18.initial", c.skewX18(s.mcb, s.x), DEMO.skewX18.initial);
 eq("parityFill.skewPips", c.skewPips(s.mcb, s.x), BigInt(DEMO.parityFill.skewPips));
 
-// Step 1: parity fill, both variants.
+// Step 1: parity fill (anvil; the live network has no fixed figures).
 const pf = DEMO.parityFill;
-const variants = [DEMO.variants.anvil, DEMO.variants["unichain-sepolia"]];
+const variants = [DEMO.variants.anvil];
 let grossOut1 = 0n;
 for (const v of variants) {
   const fee = c.feeBreakdown(s.mcb, s.x, v.marketOpen);
@@ -124,11 +124,9 @@ const anvilTs = DEMO.variants.anvil.warpTimestamp;
 const nyLocal = new Date((anvilTs - 4 * 3600) * 1000); // September: EDT (UTC-4)
 eq("anvil warp weekday is Tuesday", nyLocal.getUTCDay(), 2);
 eq("anvil warp local minutes (10:30)", nyLocal.getUTCHours() * 60 + nyLocal.getUTCMinutes(), 630);
-const nextOpen = new Date((DEMO.variants["unichain-sepolia"].nextOpen - 4 * 3600) * 1000);
-eq("sepolia next open is Monday 09:30 EDT", `${nextOpen.getUTCDay()} ${nextOpen.getUTCHours()}:${nextOpen.getUTCMinutes()}`, "1 9:30");
 
 if (failures.length) {
   console.error(`verify-demo: ${failures.length} mismatch(es)\n  ${failures.join("\n  ")}`);
   process.exit(1);
 }
-console.log("verify-demo: §10 ANVIL and UNICHAIN-SEPOLIA variants are arithmetically consistent");
+console.log("verify-demo: §10 ANVIL narrative is arithmetically consistent");

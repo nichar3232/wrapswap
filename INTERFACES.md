@@ -2165,16 +2165,13 @@ Warp the next block to `1790692200` (Tue 2026-09-29 14:30:00 UTC = 10:30 EDT, a 
 - End state: demo wallet 400 mcbAAPL + 601.203425 mAAPLx; A escrow 60.720161625 mAAPLx; B escrow 49.975 mcbAAPL;
   hook feesAccrued(mAAPLx) = 51,100,875,000,000,000.
 
-### Variant UNICHAIN-SEPOLIA (live, real clock, NYSE CLOSED Sat 2026-09-26 – Mon 2026-09-28 13:30 UTC)
+### Unichain Sepolia (live): no fixed figures
 
-Real clock; while `isOpen` is false the closed-market fee applies (next open `1790602200`, Mon 2026-09-28 13:30 UTC).
-
-- Step 1 fee: 200 + 260 + 1000 = **1460 pips = 14.60 bps**; feeAmount = ceil(101.25e18 · 1460 / 1e6) =
-  **147,825,000,000,000,000 wei** (0.147825 mAAPLx); amountOut = **101,102,175,000,000,000,000** (101.102175 mAAPLx).
-- Step 2 residual fee: 200 + 247 + 1000 = 1447 pips = 14.47 bps; feeAmount = 14,650,875,000,000,000;
-  amountOut = 10,110,349,125,000,000,000 (≥ minOut).
-- End state: demo wallet 400 mcbAAPL + 601.102175 mAAPLx; A escrow 60.710036625 mAAPLx; B escrow 49.975 mcbAAPL;
-  hook feesAccrued(mAAPLx) = 162,475,875,000,000,000.
+The live network runs on the real clock with its own seeded inventory, so its quotes are read from the chain (and the
+API), never from this narrative. While `isOpen` is false the closed-market add-on (1000 pips) applies. Recorded proofs
+(receipts status 1, `to` = WrapSwapRouter): deployer swap `0x9b989f6b2494ad76114315fd5f9a0c1cac8bb59d5de820759eee9b14dfc2ef30`
+(100 mcbAAPL → 101.10227625 mAAPLx, block 63573144) and user swap
+`0xd1bfee595d7521ca50eb2d95de3012090632982994be5365877ac669e9841ff1` (100 mcbAAPL → 101.1035925 mAAPLx, block 63574001).
 
 Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings become `bigint`):
 
@@ -2232,12 +2229,6 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
       "parityFill": { "feePips": 460, "feeBps": "4.60", "feeAmount": "46575000000000000", "amountOut": "101203425000000000000" },
       "residual": { "feePips": 447, "feeBps": "4.47", "feeAmount": "4525875000000000", "amountOut": "10120474125000000000" },
       "end": { "demoMAAPLx": "601203425000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60720161625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "51100875000000000" }
-    },
-    "unichain-sepolia": {
-      "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200,
-      "parityFill": { "feePips": 1460, "feeBps": "14.60", "feeAmount": "147825000000000000", "amountOut": "101102175000000000000" },
-      "residual": { "feePips": 1447, "feeBps": "14.47", "feeAmount": "14650875000000000", "amountOut": "10110349125000000000" },
-      "end": { "demoMAAPLx": "601102175000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60710036625000000000", "counterpartyBEscrowMcbAAPL": "49975000", "hookFeesMAAPLx": "162475875000000000" }
     }
   }
 }
@@ -2277,7 +2268,7 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
 | The hook is the settlement engine | `IParityHook` `beforeSwapReturnDelta` inventory fill; `IDarkCrossHook.settle` routes residuals into the ParityHook pool inside one `unlock` (`ResidualRouted`) |
 | Eligibility: Coinbase Verified Country (non-US) EAS, demoMode retained | `IEASEligibility` (`schemaUid`, `trustedAttester`, `restrictedCountry = "US"`), `IEligibility.demoMode/setDemoMode` + `DemoModeSet`; hooks revert `NotEligible` / commit returns false |
 | Demo video on local anvil with NYSE warped to OPEN | §10 Variant ANVIL `warpTimestamp = 1790692200`; `INyseCalendar.isOpen(block.timestamp)`; API `/nyse` `source: "chain"` |
-| Live Unichain Sepolia on real clock; CLOSED weekend +10 bps shown as a feature | `IParityHook.CLOSED_FEE_PIPS = 1000`, `FeeBreakdown.closedPips/marketOpen`, `FeeQuoted`; §10 Variant UNICHAIN-SEPOLIA; `/fees`, `/nyse` |
+| Live Unichain Sepolia on real clock; CLOSED weekend +10 bps shown as a feature | `IParityHook.CLOSED_FEE_PIPS = 1000`, `FeeBreakdown.closedPips/marketOpen`, `FeeQuoted`; §10 Unichain Sepolia (live); `/fees`, `/nyse` |
 | PoolKey sorted, DYNAMIC_FEE_FLAG, hooks = ParityHook | `beforeInitialize` `DynamicFeeRequired`; `Deployment.pool.key` rule (fee 8388608, hooks = parityHook) |
 | Inventory = hook-owned ERC-6909 claims, keeper deposit/withdraw | `IParityHook.depositInventory/withdrawInventory/isKeeper/setKeeper`, `inventory`, `InventoryChanged` |
 | All-or-nothing fill, else zero-delta fall-through; afterSwap 50 bps peg guard | `Quote.fillable`, `InventoryFill` vs `FallThrough`, `PEG_GUARD_BPS = 50`, `PegGuardTripped`, `pegStatus`, `checkPeg`/`PegGuardStatus` |
