@@ -141,6 +141,8 @@ export async function routes(
     "function tokens() view returns (address[])",
     "function amountOf(address token) view returns (uint256)",
   ]);
+  // Older (anvil) manifests carry only the lowercase issuer id; the live manifest names the platform.
+  const platformOf = (issuer: string) => ({ coinbase: "Coinbase", xstocks: "xStocks" })[issuer] ?? issuer;
   // Assets come only from the manifest: `assets[]` (multi-asset) or, for older manifests, `tokens` + `pool`.
   const assetList: any[] =
     d.assets ??
@@ -150,7 +152,7 @@ export async function routes(
         pool: d.pool,
         darkCross: true,
         wrappers: d.tokens.map((t) => ({
-          platform: t.issuer,
+          platform: platformOf(t.issuer),
           symbol: t.symbol,
           token: t.address,
           adapter: t.adapter,
@@ -360,9 +362,10 @@ export async function routes(
     } catch (e) {
       if (!String(e).includes("NoPrice")) throw e;
     }
-    // Seconds left in the phase from the chain's average block time over the last 100 blocks.
-    const earlier = await client.getBlock({ blockNumber: b.number - 100n });
-    const blockMs = (Number(b.timestamp - earlier.timestamp) * 1000) / 100;
+    // Seconds left in the phase from the chain's average block time over the last 100 blocks (fewer on a young chain).
+    const back = b.number < 100n ? b.number : 100n;
+    const earlier = back ? await client.getBlock({ blockNumber: b.number - back }) : b;
+    const blockMs = back ? (Number(b.timestamp - earlier.timestamp) * 1000) / Number(back) : 1000;
     const blocksLeft = phaseEndsBlock > b.number ? Number(phaseEndsBlock - b.number) : 0;
     return {
       batchId,
@@ -795,7 +798,7 @@ export async function routes(
         darkCross: true,
         wrappers: d.tokens
           .filter((t) => t.underlying === symbol)
-          .map((t) => ({ platform: t.issuer, symbol: t.symbol, token: t.address })),
+          .map((t) => ({ platform: platformOf(t.issuer), symbol: t.symbol, token: t.address })),
       }));
     return {
       network: d.network,
