@@ -157,7 +157,7 @@ test("slow and malformed responses never produce blank screens or raw errors", a
   await page.locator("#pane-dark details.dark-history summary").click(); // collapsed by default
   await expect(page.getByText("No settled batches for AAPL yet.")).toBeVisible();
   await tab(page, "Liquidity").click();
-  await expect(page.getByText("LP economics", { exact: true })).toBeVisible();
+  await expect(page.getByText("Pool inventory", { exact: true })).toBeVisible();
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
 });
 

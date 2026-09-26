@@ -5,11 +5,6 @@ const STEPS = [
   { n: 2, chain: "Sui", title: "Pay confidentially", body: "Amount and payee are Seal-encrypted; the pool publishes only a total and a Merkle root." },
   { n: 3, chain: "Unichain", title: "Withdraw", body: "The recipient withdraws into any issuer's wrapper of the same share." },
 ];
-const SEES: [string, string, string, string][] = [
-  ["Public chain", "Hidden", "Visible (submits a sealed payment)", "Hidden"],
-  ["Keeper", "Visible", "Visible", "Visible"],
-  ["Recipient", "Visible", "Only if the memo names them", "Visible"],
-];
 
 /**
  * Send: the confidential payment rail on Sui, bracketed by a Unichain deposit and withdrawal. `children` is the sui
@@ -17,7 +12,7 @@ const SEES: [string, string, string, string][] = [
  */
 export function SendOverview({ children }: { children?: ReactNode }) {
   return (
-    // Two columns on desktop so the page fits one screen: the send itself on the left, what it is and who sees what on the right.
+    // Two equal-height columns on desktop: the send itself on the left, how it works on the right.
     <div className="page send">
       <div className="send-main">{children}</div>
       <div className="send-side">
@@ -35,45 +30,6 @@ export function SendOverview({ children }: { children?: ReactNode }) {
           ))}
         </ol>
         <p className="parity-line">Confidential, not anonymous. Operator-blind enclave on roadmap.</p>
-      </section>
-      <div className="send-grid">
-        <section className="card" aria-label="Who sees what">
-          <h3 className="card-title">Who sees what (payment on Sui)</h3>
-          <div className="table-scroll">
-            <table className="sees">
-              <thead>
-                <tr>
-                  <th />
-                  <th>Amount</th>
-                  <th>Sender</th>
-                  <th>Recipient</th>
-                </tr>
-              </thead>
-              <tbody>
-                {SEES.map(([who, ...cells]) => (
-                  <tr key={who}>
-                    <th scope="row">{who}</th>
-                    {cells.map((c, i) => (
-                      <td key={i} className={c === "Hidden" ? "good" : ""}>
-                        {c}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="muted small">Deposits and withdrawals on Unichain are ordinary token transfers.</p>
-        </section>
-      </div>
-      <section className="card uses">
-        <p>
-          <strong>Private compensation</strong> — payroll, contractors, grants; hides company burn and runway.
-        </p>
-        <p>
-          <strong>Private settlement</strong> — fund-to-fund, OTC, M&amp;A, where the amount itself is exploitable information.
-        </p>
-        <p className="ladder">Dark Cross protects the order before the trade. Send protects the amount after it.</p>
       </section>
       </div>
     </div>
