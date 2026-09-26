@@ -73,6 +73,8 @@ export async function payRoutes(app: FastifyInstance, d = loadPayDeployment(), r
       vaultShares: r.outstanding.toString(),
       vaultSharesHeld: r.held.toString(),
       invariant: p.totalShares === r.outstanding && r.held >= r.outstanding,
+      // The keeper's hard rule: Sui credits never exceed what ShareVault custodies.
+      solvent: p.totalShares <= r.held,
       checkedBlock: r.block.toString(),
     };
   });

@@ -173,3 +173,9 @@ export function sealApproveLeafTx(pkg: string, poolId: string, id: string) {
   tx.moveCall({ target: `${pkg}::pay::seal_approve_leaf`, arguments: [tx.pure.vector('u8', bytes(id)), tx.object(poolId)] });
   return tx;
 }
+
+export function pauseTx(pkg: string, poolId: string, capId: string, paused: boolean) {
+  const tx = new Transaction();
+  tx.moveCall({ target: `${pkg}::pay::${paused ? 'pause' : 'resume'}`, arguments: [tx.object(poolId), tx.object(capId)] });
+  return tx;
+}

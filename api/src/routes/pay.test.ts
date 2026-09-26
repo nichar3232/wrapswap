@@ -33,12 +33,13 @@ async function app(over: Partial<PayReaders> = {}) {
 describe("pay routes", () => {
   it("reports the cross-chain reserves invariant with decimal-string integers", async () => {
     const r = (await (await app()).inject("/pay/reserves")).json();
-    expect(r).toEqual({ suiTotalShares: "5000000000000000000", vaultShares: "5000000000000000000", vaultSharesHeld: "5000000000000000007", invariant: true, checkedBlock: "99" });
+    expect(r).toEqual({ suiTotalShares: "5000000000000000000", vaultShares: "5000000000000000000", vaultSharesHeld: "5000000000000000007", invariant: true, solvent: true, checkedBlock: "99" });
   });
 
   it("flags a broken invariant when custody is short", async () => {
     const r = (await (await app({ reserves: async () => ({ held: 1n, outstanding: 5n * 10n ** 18n, block: 1n }) })).inject("/pay/reserves")).json();
     expect(r.invariant).toBe(false);
+    expect(r.solvent).toBe(false);
   });
 
   it("flags a broken invariant when Sui credits exceed vault shares", async () => {

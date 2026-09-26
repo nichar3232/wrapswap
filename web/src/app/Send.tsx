@@ -162,45 +162,51 @@ async function walrusPut(data: Uint8Array) {
 
 // ---------------------------------------------------------------- assets (/assets)
 
-type Platform = { issuer: string; name: string; symbol: string; address: Address; decimals: number; sharesPerTokenX18: string };
+/** The app's panel contract (window 7): assets and their platforms, built by the host from GET /assets. */
+export type PanelAsset = {
+  symbol: string;
+  platforms: {
+    name: string;
+    token: { address: `0x${string}`; symbol: string; decimals: number; sharesPerTokenX18: string; issuer: string; underlying: string };
+  }[];
+};
+/** One wrapper on one platform, flattened for this panel. */
+type Platform = { platform: string; issuer: string; symbol: string; address: Address; decimals: number; sharesPerTokenX18: string };
 type Asset = { asset: string; platforms: Platform[] };
-const PLATFORM: Record<string, string> = { coinbase: "Coinbase", xstocks: "xStocks" };
-const platformName = (issuer: string) => PLATFORM[issuer] ?? issuer.charAt(0).toUpperCase() + issuer.slice(1);
 
-/** Assets and the platforms (issuer wrappers) each trades on, from GET /assets; the same shape is derived from the
- *  deployment when the route is unreachable. Live multipliers come from /assets when it answers. */
-function useAssets(d: Deployment | undefined): Feed<Asset[]> {
-  const [s, set] = useState<Feed<Asset[]>>({ status: "loading" });
-  useEffect(() => {
-    let on = true;
-    const fromDeployment = (): Asset[] | undefined => {
-      if (!d) return undefined;
-      const by = new Map<string, Platform[]>();
-      for (const t of d.tokens)
-        by.set(t.underlying, [
-          ...(by.get(t.underlying) ?? []),
-          { issuer: t.issuer, name: t.name, symbol: t.symbol, address: t.address as Address, decimals: t.decimals, sharesPerTokenX18: String(t.sharesPerTokenX18) },
-        ]);
-      return [...by].map(([asset, platforms]) => ({ asset, platforms }));
-    };
-    const load = async () => {
-      try {
-        if (config.useMocks) throw new Error("mock data has no /assets");
-        const r = await fetch(`${config.apiUrl}/assets`);
-        if (!r.ok) throw new Error(String(r.status));
-        const body = (await r.json()) as { assets: Asset[] };
-        if (on) set({ status: "ok", data: body.assets.filter((a) => a.platforms.length > 0) });
-      } catch {
-        const fallback = fromDeployment();
-        if (on) set(fallback ? { status: "ok", data: fallback } : { status: "unavailable" });
-      }
-    };
-    void load();
-    return () => {
-      on = false;
-    };
-  }, [d]);
-  return s;
+const fromPanel = (a: PanelAsset): Asset => ({
+  asset: a.symbol,
+  platforms: a.platforms.map((p) => ({ platform: p.name, ...p.token, address: p.token.address as Address })),
+});
+
+/** Assets from the host (window 7 contract) when given; otherwise GET /assets (healthy wrappers only, assets that
+ *  have at least two platforms); while that is unavailable, the deployment's tokens grouped by underlying. */
+function useAssets(d: Deployment | undefined, given: PanelAsset[] | undefined): Feed<Asset[]> {
+  const api = useApi("assets");
+  return useMemo(() => {
+    if (given?.length) return { status: "ok", data: given.map(fromPanel) };
+    if (api.data)
+      return {
+        status: "ok",
+        data: api.data.assets
+          .map((a) => ({
+            asset: a.asset,
+            platforms: a.platforms
+              .filter((p) => p.healthy)
+              .map((p) => ({ platform: p.platform, issuer: p.issuer, symbol: p.symbol, address: p.address as Address, decimals: p.decimals, sharesPerTokenX18: String(p.sharesPerTokenX18) })),
+          }))
+          .filter((a) => a.platforms.length >= 2),
+      };
+    if (api.status === "loading") return { status: "loading" };
+    if (!d) return { status: "unavailable" };
+    const by = new Map<string, Platform[]>();
+    for (const t of d.tokens)
+      by.set(t.underlying, [
+        ...(by.get(t.underlying) ?? []),
+        { platform: t.issuer === "coinbase" ? "Coinbase" : t.issuer === "xstocks" ? "xStocks" : t.issuer, issuer: t.issuer, symbol: t.symbol, address: t.address as Address, decimals: t.decimals, sharesPerTokenX18: String(t.sharesPerTokenX18) },
+      ]);
+    return { status: "ok", data: [...by].map(([asset, platforms]) => ({ asset, platforms })) };
+  }, [given, api.data, api.status, d]);
 }
 
 // ---------------------------------------------------------------- tracker
@@ -253,7 +259,7 @@ type Flow = {
   };
 };
 
-export function Send(props: { d: Deployment | undefined; demo?: boolean }) {
+export function Send(props: { d: Deployment | undefined; assets?: PanelAsset[]; demo?: boolean }) {
   const queryClient = useMemo(() => new QueryClient(), []);
   return (
     <QueryClientProvider client={queryClient}>
@@ -264,7 +270,7 @@ export function Send(props: { d: Deployment | undefined; demo?: boolean }) {
         defaultNetwork="testnet"
       >
         <SuiWalletProvider autoConnect>
-          <SendPanel d={props.d} demo={props.demo ?? (config.useMocks || !injected())} />
+          <SendPanel d={props.d} given={props.assets} demo={props.demo ?? (config.useMocks || !injected())} />
         </SuiWalletProvider>
       </SuiClientProvider>
     </QueryClientProvider>
@@ -274,7 +280,7 @@ export function Send(props: { d: Deployment | undefined; demo?: boolean }) {
 /** Descriptor for the panel list (Portfolio · Move · Send · Liquidity). */
 export const sendPanel = { key: "Send", param: "send", Panel: Send } as const;
 
-function SendPanel({ d, demo }: { d: Deployment | undefined; demo: boolean }) {
+function SendPanel({ d, given, demo }: { d: Deployment | undefined; given: PanelAsset[] | undefined; demo: boolean }) {
   const w = useWallet();
   const sui = useCurrentAccount();
   const live = !demo && config.network === "unichain-sepolia";
@@ -285,7 +291,7 @@ function SendPanel({ d, demo }: { d: Deployment | undefined; demo: boolean }) {
   const tx = useTx<string>();
   const [stage, setStage] = useState<Stage>("Deposit");
   const [flow, setFlow] = useState<Flow>({});
-  const assets = useAssets(d);
+  const assets = useAssets(d, given);
   const [assetIx, setAssetIx] = useState(0);
   const asset = assets.data?.[assetIx];
   const tokens = asset?.platforms;
@@ -571,7 +577,7 @@ function SendPanel({ d, demo }: { d: Deployment | undefined; demo: boolean }) {
     if (!quote) return { label: "Quoting…", disabled: true };
     if (quote.feePips > 2500) return { label: "Fee above your maximum", disabled: true };
     if (known && viewBalance !== undefined && quote.sharesDebited > viewBalance) return { label: "Insufficient balance", disabled: true };
-    return { label: `Withdraw to ${platformName(wt!.issuer)}`, disabled: false, onClick: () => void doWithdraw() };
+    return { label: `Withdraw to ${wt!.platform}`, disabled: false, onClick: () => void doWithdraw() };
   })();
   const primaryButton = (
     <button className="primary wide" disabled={primary.disabled} onClick={primary.onClick} data-testid="send-primary">
@@ -750,7 +756,7 @@ function SendPanel({ d, demo }: { d: Deployment | undefined; demo: boolean }) {
               <select className="token" aria-label="Deposit token" value={depToken} onChange={(e) => setDepToken(Number(e.target.value))}>
                 {tokens?.map((t, i) => (
                   <option key={t.address} value={i}>
-                    {platformName(t.issuer)} · {t.symbol}
+                    {t.platform} · {t.symbol}
                   </option>
                 ))}
               </select>
@@ -808,7 +814,7 @@ function SendPanel({ d, demo }: { d: Deployment | undefined; demo: boolean }) {
                 <select className="token" aria-label="Deliver on platform" value={wdToken} onChange={(e) => setWdToken(Number(e.target.value))}>
                   {tokens?.map((t, i) => (
                     <option key={t.address} value={i}>
-                      {platformName(t.issuer)} · {t.symbol}
+                      {t.platform} · {t.symbol}
                     </option>
                   ))}
                 </select>
