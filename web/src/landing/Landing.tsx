@@ -1,4 +1,4 @@
-import { StrictMode, useRef } from "react";
+import { StrictMode, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { ConvertFlow } from "./ConvertFlow";
 import { Footer, Grain, Nav } from "./chrome";
@@ -40,6 +40,10 @@ document.documentElement.classList.add("deck");
 
 function Landing() {
   const hero = useRef<HTMLElement>(null);
+  // The page renders after the browser's own jump to /#how-it-works etc. (e.g. from /developers), so jump once it exists.
+  useEffect(() => {
+    if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
+  }, []);
   return (
     <>
       <section className="hero" id="product" ref={hero}>
@@ -83,6 +87,9 @@ function Landing() {
             </li>
           ))}
         </ol>
+        <p className="mcp-callout">
+          Agents can use Unison too: connect Claude to the MCP server and ask it to convert. <a href="/developers#agents">MCP setup →</a>
+        </p>
       </section>
 
       <section className="black flow-sec" id="flow" aria-label="Convert flow">

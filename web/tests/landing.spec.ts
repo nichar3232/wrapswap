@@ -145,6 +145,7 @@ test.describe("Landing controls all navigate or scroll", () => {
         [
           ["Architecture", (p) => expectScrolledTo(p, "architecture")],
           ["Contracts", (p) => expectScrolledTo(p, "contracts")],
+          ["MCP", (p) => expectScrolledTo(p, "agents")],
         ],
       ],
     ];
@@ -326,6 +327,41 @@ test.describe("Landing controls all navigate or scroll", () => {
       });
     });
   }
+
+  test("MCP is findable: landing callout, footer link, Developers Agents section with tools, setup and the recorded run", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.locator("#how-it-works .mcp-callout")).toContainText("Agents can use Unison too");
+    await page.locator("#how-it-works .mcp-callout").getByRole("link", { name: "MCP setup →" }).click();
+    await expectScrolledTo(page, "agents");
+    await page.goto("/");
+    await page.locator("footer").getByRole("link", { name: "MCP", exact: true }).click();
+    await expectScrolledTo(page, "agents");
+    const a = page.locator("#agents");
+    // From /developers, the nav's landing links arrive at the section, not the hero.
+    await page.locator("header").getByRole("link", { name: "How it works", exact: true }).click();
+    await expectScrolledTo(page, "how-it-works");
+    await page.goto("/developers#agents");
+    await expect(a.locator(".mcp-endpoint code")).toHaveText("https://nichars-mac-mini.tail43cacc.ts.net/mcp");
+    await expect(a.locator(".mcp-tools li code")).toHaveText([
+      "list_assets()",
+      "get_pool(asset)",
+      "quote_convert(asset, fromWrapper, toWrapper, amount)",
+      "convert(asset, fromWrapper, toWrapper, amount, recipient?)",
+      "get_batch(asset)",
+      "commit_dark_order(asset, side, amount)",
+    ]);
+    await expect(a.locator(".mcp-setup pre")).toHaveText("claude mcp add unison --transport http https://nichars-mac-mini.tail43cacc.ts.net/mcp");
+    await expect(a.locator(".mcp-setup")).toContainText("Settings → Connectors → Add custom connector.");
+    // The transcript comes from the generated file (scripts/gen-mcp-demo.py); check the page against it, not typed values.
+    const demo = JSON.parse(readFileSync(new URL("../../deployments/unichain-sepolia.mcp-demo.json", import.meta.url), "utf8"));
+    const t = page.locator("#agent-transcript");
+    await expect(t.locator("blockquote")).toHaveText(demo.prompt);
+    await expect(t.locator(".mcp-steps code")).toHaveText(demo.steps.map((s: { tool: string }) => new RegExp(`^${s.tool}\\(`)));
+    await expect(t.locator(".tx-card")).toHaveAttribute("href", `https://sepolia.uniscan.xyz/tx/${demo.tx}`);
+    await expect(t.locator(".tx-hash")).toHaveText(demo.tx);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
 
   test("mobile menu opens without chevrons and its items scroll", async ({
     page,

@@ -29,3 +29,18 @@ fixtures, not chain reads):
 
 - `ui-shots/liquidity-no-wallet-1440.png`
 - `ui-shots/liquidity-no-wallet-390.png`
+
+## 2026-09-26 · MCP made visible: /developers#agents, landing callout, nav + footer
+
+- `/developers#agents`: the MCP endpoint, the six tools (read / executes) with one-line descriptions, Claude.ai
+  custom-connector steps, the `claude mcp add unison --transport http <url>` command, and the recorded agent run at
+  `#agent-transcript`: prompt → `get_pool` → `quote_convert` → `convert` → tx on Uniscan.
+- The transcript is generated, not typed. `scripts/gen-mcp-demo.py` parses `submission/mcp-demo.md`, checks its tool
+  calls against the raw `mcp-demo.jsonl`, and reads the receipt from Unichain Sepolia (status 1 at block 63,592,305).
+  It writes `deployments/unichain-sepolia.mcp-demo.json`, and the landing test checks the page against that file.
+- Landing: a one-line callout under How it works links to the Agents section. "MCP" is in the Developers dropdown and
+  the footer.
+- Fix: deep links to the landing page (`/#how-it-works`, used by the nav on /developers) now land on the section.
+  Before, the page rendered after the browser's hash jump and stayed on the hero.
+
+Tests: web unit 40/40 · Playwright mock 23/23 · Playwright live transport 10/10.
