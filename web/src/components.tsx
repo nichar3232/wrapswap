@@ -20,7 +20,7 @@ export function Fees({
   onToggle?: () => void;
 }) {
   return (
-    <div className={`fees${open ? " open" : ""}`} data-testid="fee-breakdown">
+    <div className={`fees${open ? " open" : ""}`}>
       <div className="fee-total">
         <span className="fee-label">
           Fee{" "}

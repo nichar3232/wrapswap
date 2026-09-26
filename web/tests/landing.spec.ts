@@ -42,7 +42,7 @@ test("Landing: Unison brand, proof from deployment, Launch app", async ({
     page.getByRole("button", { name: "Convert", exact: true }),
   ).toBeVisible();
   await page.goto("/app?tab=pool");
-  await expect(page.getByText("Total 20,250 canonical shares")).toBeVisible();
+  await expect(page.getByText("total 20,250 shares", { exact: false })).toBeVisible();
 });
 
 /** The target is scrolled to the top of the viewport, or the page is scrolled to its end. */
@@ -217,7 +217,7 @@ test.describe("Landing controls all navigate or scroll", () => {
       ? JSON.parse(readFileSync(file, "utf8"))
       : undefined;
     await page.goto("/");
-    const diagram = page.locator(".dg-wide");
+    const diagram = page.locator(".dg-main");
     await expect(diagram).toBeVisible();
     for (const text of ["UNICHAIN SEPOLIA · UNISWAP v4", "SUI TESTNET · CONFIDENTIAL PAYMENTS", "ParityHook", "ShareVault"])
       await expect(diagram.getByText(text, { exact: true })).toBeVisible();
@@ -235,8 +235,9 @@ test.describe("Landing controls all navigate or scroll", () => {
       await expect(diagram.locator('a[data-node="parity"]')).toHaveCount(0);
     }
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.locator(".dg-stacked")).toBeVisible();
-    await expect(diagram).toBeHidden();
+    await expect(diagram).toBeVisible();
+    // Below 900px the diagram keeps its size and scrolls inside its own box.
+    expect(await page.locator(".diagram-scroll").evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,

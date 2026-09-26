@@ -84,7 +84,7 @@ function useWalletState(d: Deployment | undefined) {
   const tokens = d?.tokens;
   useEffect(() => {
     if (!address || !tokens) return;
-    if (config.useMocks) {
+    if (config.useMocks || simulatedWallet()) {
       setBalances((b) =>
         b.status === "ok"
           ? b
@@ -121,7 +121,7 @@ function useWalletState(d: Deployment | undefined) {
 
   /** Mock mode: apply a simulated transfer so balances move with the demo. */
   const adjust = useCallback((token: Address, delta: bigint) => {
-    if (!config.useMocks) return setTick((t) => t + 1);
+    if (!config.useMocks && !simulatedWallet()) return setTick((t) => t + 1);
     setBalances((b) => ({
       ...b,
       values: { ...b.values, [token]: (b.values[token] ?? 0n) + delta },

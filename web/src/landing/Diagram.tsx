@@ -116,7 +116,7 @@ function Svg({ l, kind, reduced }: { l: Layout; kind: string; reduced: boolean }
         </marker>
       </defs>
       <g className="dg-zone dg-zone-sui">
-        <rect className="dg-hit" x={0} y={0} width={kind === "wide" ? l.divider.x1 : l.width} height={kind === "wide" ? l.height : l.divider.y1} />
+        <rect className="dg-hit" x={0} y={l.divider.y1} width={l.width} height={l.height - l.divider.y1} />
         <text className="dg-zone-label" x={l.zoneLabels.sui[0]} y={l.zoneLabels.sui[1]}>
           {ZONE_LABELS.sui}
         </text>
@@ -150,8 +150,7 @@ export function Diagram() {
   return (
     <figure className="diagram" aria-label="Architecture">
       <div className="diagram-scroll">
-        <Svg l={layout("wide", data)} kind="wide" reduced={reduced} />
-        <Svg l={layout("stacked", data)} kind="stacked" reduced={reduced} />
+        <Svg l={layout(data)} kind="main" reduced={reduced} />
       </div>
     </figure>
   );

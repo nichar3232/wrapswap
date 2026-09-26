@@ -12,6 +12,7 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   await page.getByRole('button',{name:'Convert',exact:true}).click();
   await page.getByRole('button',{name:/connect wallet/i}).click();
   await page.getByLabel('Conversion amount').fill(formatUnits(DEMO.parityFill.amountIn,DEMO.tokens.mcbAAPL.decimals));
+  await page.getByRole('button',{name:'Details',exact:true}).click(); // route and fee breakdown live behind Details
   await expect(page.getByText('PARITY',{exact:true})).toBeVisible();
   await expect(page.getByTestId('fee-breakdown').getByText(new RegExp(v.parityFill.feeBps.replace('.', '\\.')+'\\s*bps'))).toBeVisible();
   const base=d.tokens.find(x=>x.symbol==='mcbAAPL')!;

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { Deployment } from "@wrapswap/types";
-import { Tip } from "../components";
 import { config } from "../config";
 import type { Feed } from "../hooks/useApi";
 import { useApi } from "../hooks/useApi";
@@ -116,112 +115,81 @@ export function Pool({
 }) {
   const inventory = useApi("inventory"),
     fills = useApi("fills");
+  const [curve, setCurve] = useState(false);
   const skew = inventory.data ? Number(inventory.data.skewX18) / 1e18 : undefined;
   const total = inventory.data ? BigInt(inventory.data.totalShares) : 0n;
+  const split = inventory.data?.tokens.map((t) => ({
+    ...t,
+    dec: d?.tokens.find((x) => x.address === t.address)?.decimals ?? 18,
+    pct: total ? Number((BigInt(t.inventoryShares) * 1000n) / total) / 10 : 0,
+  }));
   return (
-    <div className="stack wide-stack">
-      <section className="card stats" aria-label="Pool state">
-        <div>
-          <span className="stat-k">
-            Fee now <Tip text="The hook's dynamic LP fee for the next swap." />
-          </span>
-          <span className="stat-v">
-            <Val status={fees.status} w="4em">
+    <div className="page">
+      <div className="tiles">
+        <section className="card tile" aria-label="Current fee">
+          <span className="tile-k">Current fee</span>
+          <span className="tile-v">
+            <Val status={fees.status} w="4em" h="1em">
               {fees.data?.fee.totalBps} <small>bps</small>
             </Val>
           </span>
-        </div>
-        <div>
-          <span className="stat-k">Inventory skew</span>
-          <span className="stat-v">
-            <Val status={inventory.status} w="4em">
-              {skew !== undefined && pct(skew)}
-            </Val>
+          <span className="tile-s">
+            {fees.data && !fees.data.fee.marketOpen ? `incl. +${fees.data.fee.closedPips / 100} bps while the market is closed` : "per conversion"}
           </span>
-        </div>
-        <div>
-          <span className="stat-k">Market hours</span>
-          <span className="stat-v">
-            <Val status={nyse.status} w="6em">
-              {nyse.data && (
-                <>
-                  <span className={nyse.data.open ? "good" : "warn"}>{nyse.data.open ? "NYSE open" : "NYSE closed"}</span>
-                  <small> · {nyse.data.nextState.toLowerCase() === "open" ? "opens" : "closes"} in {hours(nyse.data.secondsUntilTransition)}</small>
-                </>
-              )}
-            </Val>
-          </span>
-        </div>
-      </section>
-
-      <section className="card" aria-label="Inventory">
-        <div className="card-head">
-          <span className="label">Hook inventory</span>
-          <Tip text="Canonical shares account for issuer ratios; they are not a user-held security." />
-        </div>
-        {inventory.data && d ? (
-          <>
-            <p className="metric">
-              <span className="unit">Total</span> {amount(inventory.data.totalShares, 18, 2)}{" "}
-              <span className="unit">canonical shares</span>
-            </p>
-            {inventory.data.tokens.map((t) => {
-              const dec = d.tokens.find((x) => x.address === t.address)?.decimals ?? 18;
-              const share = total ? Number((BigInt(t.inventoryShares) * 1000n) / total) / 10 : 0;
-              return (
-                <div className="inv-row" key={t.address}>
-                  <div className="inv-top">
-                    <span className="inv-sym">{t.symbol}</span>
-                    <span>
-                      {amount(t.inventory, dec, 2)} tokens · {amount(t.inventoryShares, 18, 2)} shares
-                    </span>
-                  </div>
-                  <div className="bar" aria-hidden="true">
-                    <span style={{ width: `${share}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-            <label className="skew">
-              <span>
-                Skew <strong>{pct(skew!)}</strong>
+        </section>
+        <section className="card tile" aria-label="Inventory balance">
+          <span className="tile-k">Inventory balance</span>
+          {split && split.length === 2 ? (
+            <>
+              <div className="split" role="img" aria-label={`${split[0].symbol} ${split[0].pct}%, ${split[1].symbol} ${split[1].pct}% of canonical shares`}>
+                <span style={{ width: `${split[0].pct}%` }} />
+                <span style={{ width: `${split[1].pct}%` }} />
+              </div>
+              <div className="split-legend">
+                {split.map((t) => (
+                  <span key={t.address}>
+                    <strong>{t.symbol}</strong> {t.pct.toFixed(1)}% · {amount(t.inventory, t.dec, 0)}
+                  </span>
+                ))}
+              </div>
+              <span className="tile-s">
+                Skew {skew !== undefined && pct(skew)} · total {amount(inventory.data!.totalShares, 18, 0)} shares
               </span>
-              <meter min={-1} max={1} value={skew} aria-label="Inventory skew" />
-            </label>
-          </>
-        ) : (
-          <Val status={inventory.status} w="100%" h="5em">
-            {null}
-          </Val>
-        )}
-      </section>
-
-      <section className="card" aria-label="Fee curve">
-        <div className="card-head">
-          <span className="label">Fee curve</span>
-          <Tip text="Drawn with the same formula ParityHook uses: min(2 + 13 × |skew| + (open ? 0 : 10), 25) bps. The live pool's position is marked." />
-        </div>
-        <FeeCurve
-          key={inventory.data && fees.data ? "live" : "static"}
-          liveSkew={skew}
-          liveOpen={fees.data?.fee.marketOpen}
-        />
-      </section>
+              <meter className="sr-only" min={-1} max={1} value={skew} aria-label="Inventory skew" />
+            </>
+          ) : (
+            <span className="tile-v">
+              <Val status={inventory.status} w="100%" h="1em">
+                {null}
+              </Val>
+            </span>
+          )}
+        </section>
+        <section className="card tile" aria-label="Market">
+          <span className="tile-k">Market</span>
+          <span className="tile-v">
+            <Val status={nyse.status} w="5em" h="1em">
+              {nyse.data && <span className={nyse.data.open ? "good" : "warn"}>{nyse.data.open ? "Open" : "Closed"}</span>}
+            </Val>
+          </span>
+          <span className="tile-s">
+            {nyse.data ? `NYSE ${nyse.data.nextState.toLowerCase() === "open" ? "opens" : "closes"} in ${hours(nyse.data.secondsUntilTransition)}` : " "}
+          </span>
+        </section>
+      </div>
 
       <section className="card" aria-label="Recent fills">
-        <div className="card-head">
-          <span className="label">Recent fills</span>
-        </div>
+        <h2 className="card-title">Recent fills</h2>
         {fills.data ? (
           fills.data.items.length ? (
             <div className="table-scroll">
               <table>
                 <thead>
                   <tr>
-                    <th>Settlement</th>
-                    <th>Token in</th>
-                    <th>Token out</th>
-                    <th>Hook fee</th>
+                    <th>Type</th>
+                    <th>In</th>
+                    <th>Out</th>
+                    <th>Fee</th>
                     <th>Transaction</th>
                   </tr>
                 </thead>
@@ -232,13 +200,13 @@ export function Pool({
                     return (
                       <tr key={f.txHash + f.logIndex}>
                         <td>
-                          {f.kind === "PARITY" ? "Inventory" : f.kind === "FALL-THROUGH" ? "Fall-through" : f.kind === "DARK-RESIDUAL" ? "Dark residual" : "Dark cross"} · ParityHook
+                          {f.kind === "PARITY" ? "Conversion" : f.kind === "FALL-THROUGH" ? "Conversion (AMM)" : f.kind === "DARK-RESIDUAL" ? "Dark Cross residual" : "Dark Cross"}
                         </td>
                         <td>
-                          {amount(f.amountIn, a?.decimals, 6)} {a?.symbol}
+                          {amount(f.amountIn, a?.decimals, 4)} {a?.symbol}
                         </td>
                         <td>
-                          {amount(f.amountOut, b?.decimals, 6)} {b?.symbol}
+                          {amount(f.amountOut, b?.decimals, 4)} {b?.symbol}
                         </td>
                         <td>{f.feePips === null ? "—" : (f.feePips / 100).toFixed(2) + " bps"}</td>
                         <td>
@@ -252,13 +220,25 @@ export function Pool({
             </div>
           ) : (
             <Empty action={<a className="ghost-btn" href="/app?tab=convert">Make the first conversion</a>}>
-              No fills yet. Conversions and Dark Cross residuals will appear here.
+              No fills yet.
             </Empty>
           )
         ) : (
           <Val status={fills.status} w="100%" h="4em">
             {null}
           </Val>
+        )}
+      </section>
+
+      <section className="card quiet">
+        <button type="button" className="disclosure" aria-expanded={curve} onClick={() => setCurve(!curve)}>
+          How fees work
+        </button>
+        {curve && (
+          <>
+            <p className="hint">Fee = 2 bps + up to 13 bps as inventory skews + 10 bps while NYSE is closed, capped at 25 bps.</p>
+            <FeeCurve key={inventory.data && fees.data ? "live" : "static"} liveSkew={skew} liveOpen={fees.data?.fee.marketOpen} />
+          </>
         )}
       </section>
     </div>

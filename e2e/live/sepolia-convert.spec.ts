@@ -38,6 +38,7 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
   await page.getByRole('button', { name: 'Convert', exact: true }).click();
   await page.getByRole('button', { name: /connect wallet/i }).click();
   await page.getByLabel('Conversion amount').fill(formatUnits(DEMO.parityFill.amountIn, base.decimals));
+  await page.getByRole('button',{name:'Details',exact:true}).click(); // route and fee breakdown live behind Details
   await expect(page.getByText('PARITY', { exact: true })).toBeVisible({ timeout: 30000 });
   const convert = page.getByRole('button', { name: /^convert through parityhook$/i });
   await page.getByRole('button', { name: /^approve token$/i }).click();
