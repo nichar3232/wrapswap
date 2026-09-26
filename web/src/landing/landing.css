@@ -457,7 +457,7 @@ section[id] {
   stroke: #8fb0ff;
 }
 .op-line.op-x {
-  stroke: #f5b86b;
+  stroke: #ff7eb9;
 }
 .op-line.op-nav {
   stroke: var(--black-ink);
@@ -483,7 +483,7 @@ section[id] {
   background: #8fb0ff;
 }
 .op-key.op-x {
-  background: #f5b86b;
+  background: #ff7eb9;
 }
 .op-key.op-nav {
   background: repeating-linear-gradient(90deg, var(--black-ink) 0 4px, transparent 4px 8px);
@@ -1101,22 +1101,17 @@ html {
 }
 .cf-node rect {
   stroke-width: 1.25;
-}
-.cf-user rect {
   fill: rgb(91 139 255 / 0.16);
   stroke: rgb(91 139 255 / 0.7);
 }
-.cf-hook rect {
-  fill: rgb(45 190 160 / 0.16);
-  stroke: rgb(45 190 160 / 0.75);
+.cf-dot {
+  fill: #8fb0ff;
+  filter: drop-shadow(0 0 4px rgb(91 139 255 / 0.9));
 }
-.cf-lp rect {
-  fill: rgb(230 170 60 / 0.16);
-  stroke: rgb(230 170 60 / 0.75);
-}
-.cf-neutral rect {
-  fill: rgb(150 155 165 / 0.14);
-  stroke: rgb(150 155 165 / 0.6);
+@media (prefers-reduced-motion: reduce) {
+  .cf-dot {
+    display: none;
+  }
 }
 .cf-title {
   fill: currentColor;
@@ -1165,7 +1160,7 @@ html.deck .hero,
 html.deck .one-price,
 html.deck .how,
 html.deck .flow-sec,
-html.deck .verify {
+html.deck .tech {
   min-height: 100vh;
   scroll-snap-align: start;
 }
@@ -1214,4 +1209,61 @@ html.deck .flow-sec .convert-flow {
 }
 .mcp-callout a {
   color: #8fb0ff;
+}
+
+/* ---------- Last slide: the technical essentials and the way into the app ---------- */
+.tech {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.tech h2 {
+  margin-bottom: 32px;
+  font-size: clamp(32px, 4.4vw, 64px);
+}
+.tech-list {
+  max-width: 900px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 14px;
+  font-size: 17px;
+  color: var(--black-ink-soft);
+}
+.tech-list strong {
+  color: var(--black-ink);
+}
+.tech-list code {
+  font-size: 14px;
+  color: var(--black-ink);
+  overflow-wrap: anywhere;
+}
+.tech-list a {
+  color: #8fb0ff;
+}
+.tech-ctas {
+  margin-top: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+}
+.tech-ctas .ghost {
+  color: var(--black-ink-soft);
+}
+.tech-ctas .ghost:hover {
+  color: var(--black-ink);
+}
+.tech-ctas .launch {
+  height: 44px;
+  padding: 0 22px;
+  background: var(--black-ink);
+  color: #05070d;
+}
+.tech-ctas .ghost {
+  border-color: var(--black-hairline);
+}
+.tech-ctas .ghost:hover {
+  border-color: var(--black-ink);
 }

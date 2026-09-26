@@ -1,6 +1,6 @@
 # Unison: Uniswap prize (Best Uniswap Stack Contribution)
 
-**Live:** https://nichars-mac-mini.tail43cacc.ts.net/app · contracts: Verify footer on every page (`/#verify`) · repo (public), tag `v1-ethglobal-tokyo`
+**Live:** https://nichars-mac-mini.tail43cacc.ts.net/app · contracts: the Verify footer at the bottom of `/app` · repo (public), tag `v1-ethglobal-tokyo`
 
 Unison converts one stock between issuer wrappers, share for share, in Uniswap v4 pools on Unichain Sepolia (AAPL, NVDA, TSLA).
 

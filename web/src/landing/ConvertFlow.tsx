@@ -1,15 +1,15 @@
 /**
- * The Convert flow as a flat inline SVG (no gradients; tints are translucent so it reads on light and dark).
+ * The Convert flow as a flat inline SVG (no gradients; one translucent tint for every node so it reads on light and dark).
+ * Dots travel along each arrow to show what moves between the nodes (hidden with reduced motion).
  * Oracle · peg guard over ParityHook, user sends → ParityHook → user receives, LP inventory below.
  */
-type Kind = "user" | "hook" | "lp" | "neutral";
-type Box = { x: number; y: number; w: number; kind: Kind; title: string; sub: string };
+type Box = { x: number; y: number; w: number; title: string; sub: string };
 
 const H = 56; // every box: 56px tall, two lines
 
 function Node({ b }: { b: Box }) {
   return (
-    <g className={`cf-node cf-${b.kind}`}>
+    <g className="cf-node">
       <rect x={b.x} y={b.y} width={b.w} height={H} rx={10} />
       <text x={b.x + b.w / 2} y={b.y + 23} textAnchor="middle" className="cf-title">
         {b.title}
@@ -20,17 +20,30 @@ function Node({ b }: { b: Box }) {
     </g>
   );
 }
-const Arrow = ({ d }: { d: string }) => <path className="cf-arrow" d={d} markerEnd="url(#cf-head)" />;
+/** An arrow with two dots riding it, offset by half a cycle; `begin` staggers the arrows along the flow. */
+function Arrow({ d, begin = 0 }: { d: string; begin?: number }) {
+  const dur = 2.4;
+  return (
+    <>
+      <path className="cf-arrow" d={d} markerEnd="url(#cf-head)" />
+      {[0, dur / 2].map((offset) => (
+        <circle key={offset} className="cf-dot" r={3.5}>
+          <animateMotion dur={`${dur}s`} begin={`${begin + offset}s`} repeatCount="indefinite" path={d} />
+        </circle>
+      ))}
+    </>
+  );
+}
 
 export function ConvertFlow() {
   const W = 720;
   const top = 0;
-  const oracle: Box = { x: 245, y: top + 24, w: 230, kind: "neutral", title: "Oracle · peg guard", sub: "Stops trade if gap > 50 bps" };
+  const oracle: Box = { x: 245, y: top + 24, w: 230, title: "Oracle · peg guard", sub: "Stops trade if gap > 50 bps" };
   const row2 = top + 124;
-  const sends: Box = { x: 0, y: row2, w: 200, kind: "user", title: "User sends", sub: "100 mcbAAPL, issuer A" };
-  const hook: Box = { x: 245, y: row2, w: 230, kind: "hook", title: "ParityHook, in the v4 pool", sub: "Share for share, minus fee" };
-  const receives: Box = { x: 520, y: row2, w: 200, kind: "user", title: "User receives", sub: "101.08 mAAPLx, issuer B" };
-  const lp: Box = { x: 245, y: row2 + 100, w: 230, kind: "lp", title: "LP inventory", sub: "Takes the other side, earns fee" };
+  const sends: Box = { x: 0, y: row2, w: 200, title: "User sends", sub: "100 mcbAAPL, issuer A" };
+  const hook: Box = { x: 245, y: row2, w: 230, title: "ParityHook, in the v4 pool", sub: "Share for share, minus fee" };
+  const receives: Box = { x: 520, y: row2, w: 200, title: "User receives", sub: "101.08 mAAPLx, issuer B" };
+  const lp: Box = { x: 245, y: row2 + 100, w: 230, title: "LP inventory", sub: "Takes the other side, earns fee" };
   const height = lp.y + H + 2;
   const label = [
     "Oracle and peg guard stop the trade if the gap exceeds 50 bps.",
@@ -50,13 +63,13 @@ export function ConvertFlow() {
           Exchange A price · Exchange B price feed only this
         </text>
         <Node b={oracle} />
-        <Arrow d={`M${W / 2} ${oracle.y + H} L${W / 2} ${row2 - 1}`} />
+        <Arrow d={`M${W / 2} ${oracle.y + H} L${W / 2} ${row2 - 1}`} begin={0} />
         <Node b={sends} />
-        <Arrow d={`M${sends.x + sends.w} ${row2 + H / 2} L${hook.x - 1} ${row2 + H / 2}`} />
+        <Arrow d={`M${sends.x + sends.w} ${row2 + H / 2} L${hook.x - 1} ${row2 + H / 2}`} begin={0.3} />
         <Node b={hook} />
-        <Arrow d={`M${hook.x + hook.w} ${row2 + H / 2} L${receives.x - 1} ${row2 + H / 2}`} />
+        <Arrow d={`M${hook.x + hook.w} ${row2 + H / 2} L${receives.x - 1} ${row2 + H / 2}`} begin={0.9} />
         <Node b={receives} />
-        <Arrow d={`M${W / 2} ${row2 + H} L${W / 2} ${lp.y - 1}`} />
+        <Arrow d={`M${W / 2} ${row2 + H} L${W / 2} ${lp.y - 1}`} begin={0.9} />
         <Node b={lp} />
       </svg>
       <figcaption>Exchange prices never enter the conversion. Only the multipliers do.</figcaption>

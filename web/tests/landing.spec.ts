@@ -1,45 +1,36 @@
 import { existsSync, readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 
-test("Landing: Unison brand, four products; no Developers page, contracts in the Verify footer", async ({
-  page,
-}) => {
-  const file = new URL(
-    "../../deployments/unichain-sepolia.resolved.json",
-    import.meta.url,
-  );
-  const d = existsSync(file)
-    ? JSON.parse(readFileSync(file, "utf8"))
-    : undefined;
+const read = (f: string) => {
+  const u = new URL(`../../deployments/${f}`, import.meta.url);
+  return existsSync(u) ? JSON.parse(readFileSync(u, "utf8")) : undefined;
+};
+
+test("Landing: Unison brand, four slides (hero, one price, flow, under the hood); header is logo, theme, Launch app", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveTitle("Unison");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unison");
+  await expect(page.locator(".hero-copy p")).toHaveText(
+    "One share is one share. Unison converts tokenized stocks across issuers at NAV parity, as a Uniswap v4 hook.",
+  );
   await expect(page.getByText("WrapSwap", { exact: true })).toHaveCount(0);
+  await expect(page.locator("body > #root > section")).toHaveCount(4);
+  // Header: no section links, no dropdowns, no mobile menu.
+  const header = page.locator("header.lnav");
+  await expect(header.getByRole("link")).toHaveText(["", "unison", "Launch app"]);
+  await expect(header.getByRole("link", { name: /Product|How it works|Developers/ })).toHaveCount(0);
+  await expect(header.getByRole("button", { name: /menu/i })).toHaveCount(0);
+  // How it works is the flow diagram alone: no heading, no product cards.
   const how = page.locator("#how-it-works");
-  await expect(how.locator(".steps4 p")).toHaveText([
-    "Convert — Swap one issuer's AAPL wrapper for another's share-for-share, based on what each wrapper represents, not the market price. Fee: 2 bps + skew, to the LP.",
-    "Dark Cross — On-chain dark pool. Orders are sealed until matched, cross at the 30-minute oracle midpoint for a 1 bp venue fee, residual routes through Convert.",
-    "Send — Confidential payment on Sui. Amount hidden by Seal encryption; recipient withdraws into any issuer's wrapper.",
-    "Liquidity — Supply both wrappers, earn every Convert fee. Skew fee rises against imbalance so inventory stays balanced.",
-  ]);
-  await expect(how).not.toContainText(/\b0[1-4]\b|Try it/);
-  expect(await how.locator("h2").evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeLessThanOrEqual(32);
-  expect(await how.locator(".steps4 p").first().evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(14);
-  // One row of four at desktop width.
-  const tops = await how.locator(".steps4 li").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
-  expect(new Set(tops).size).toBe(1);
-  await expect(page.locator("#proof, #developers, #architecture, #agents")).toHaveCount(0);
+  await expect(how.locator("h2, .steps4")).toHaveCount(0);
+  await expect(how.locator(".convert-flow")).toHaveCount(1);
+  // No Verify footer, no Developers page remnants.
+  await expect(page.locator("#verify, footer, #proof, #developers, #architecture, #agents")).toHaveCount(0);
   await expect(page.getByText(/Live on|chain 1301/)).toHaveCount(0);
-  if (!d) await expect(page.locator("#verify")).toContainText("Deployment addresses are being published.");
   await page.getByRole("button", { name: "Toggle color theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("link", { name: "Launch app" }).first().click();
-  await expect(page).toHaveURL(/\/app(\?tab=portfolio)?$/);
-  await expect(
-    page.getByRole("button", { name: "Portfolio", exact: true }),
-  ).toBeVisible();
   await page.goto("/app?tab=pool"); // legacy link → Liquidity
   await expect(page).toHaveURL(/tab=liquidity/);
   await expect(page.getByText(/Inventory · skew/)).toBeVisible();
@@ -85,94 +76,30 @@ async function expectPopup(page: Page, click: () => Promise<void>, url: RegExp) 
 }
 
 test.describe("Landing controls all navigate or scroll", () => {
-  test("nav labels scroll to their sections", async ({ page }) => {
-    await page.goto("/");
-    await page.getByRole("link", { name: "How it works", exact: true }).click();
-    await expectScrolledTo(page, "how-it-works");
-    await expect(page.locator("header").getByRole("link", { name: "Developers" })).toHaveCount(0);
-    await page.goto("/");
-    await page.evaluate(() => scrollTo(0, 40));
-    await page.getByRole("link", { name: "Product", exact: true }).click();
-    await expectScrolledTo(page, "product");
-    await expect.poll(() => page.evaluate(() => scrollY)).toBe(0);
-  });
-
-  test("every dropdown opens, closes, and each item navigates", async ({
-    page,
-  }) => {
-    const menus: [string, [string, (p: Page) => Promise<void>][]][] = [
-      [
-        "Product",
-        [
-          ["Portfolio", (p) => expectAppTab(p, "Portfolio")],
-          ["Move", (p) => expectAppTab(p, "Move")],
-          ["Send", (p) => expectAppTab(p, "Send")],
-          ["Liquidity", (p) => expectAppTab(p, "Liquidity")],
-        ],
-      ],
-      [
-        "How it works",
-        [
-          ["Convert", (p) => expectScrolledTo(p, "how-convert")],
-          ["Dark Cross", (p) => expectScrolledTo(p, "how-dark")],
-          ["Send", (p) => expectScrolledTo(p, "how-send")],
-          ["Liquidity", (p) => expectScrolledTo(p, "how-liquidity")],
-        ],
-      ],
-    ];
-    for (const [menu, items] of menus) {
-      await page.goto("/");
-      const toggle = page.getByRole("button", { name: `${menu} menu` });
-      await toggle.click();
-      await expect(toggle).toHaveAttribute("aria-expanded", "true");
-      await page.keyboard.press("Escape");
-      await expect(toggle).toHaveAttribute("aria-expanded", "false");
-      await toggle.click();
-      await page.locator("h1").click();
-      await expect(toggle).toHaveAttribute("aria-expanded", "false");
-      for (const [label, check] of items) {
-        await page.goto("/");
-        await page.getByRole("button", { name: `${menu} menu` }).click();
-        await page
-          .locator(`#menu-${menu === "How it works" ? "how-it-works" : menu.toLowerCase()}`)
-          .getByRole("link", { name: label, exact: true })
-          .click();
-        await check(page);
-      }
-    }
-  });
-
-  test("CTAs, product cards, brand links, theme and footer", async ({
-    page,
-  }) => {
+  test("CTAs: Launch app (header and last slide), Move your shares, See it onchain; brand links; the chart toggle", async ({ page }) => {
     for (const [where, name] of [
       ["header", "Launch app"],
       [".hero-copy", "Move your shares"],
+      ["#tech", "Launch app"],
     ]) {
       await page.goto("/");
-      await page.locator(where).getByRole("link", { name }).click();
-      await expectAppTab(page, "Portfolio");
+      await page.locator(where).getByRole("link", { name, exact: true }).click();
+      await expect(page).toHaveURL(/\/app(\?tab=\w+)?$/);
+      await expect(page.locator("header nav").getByRole("button", { name: "Portfolio", exact: true })).toBeVisible();
     }
     await page.goto("/");
     await page.getByRole("link", { name: "See it onchain →" }).click();
-    await expectScrolledTo(page, "verify");
-    for (const [i, tab] of ["Move", "Move", "Send", "Liquidity"].entries()) {
-      await page.goto("/");
-      await page.locator("#how-it-works .steps4 a").nth(i).click();
-      await expectAppTab(page, tab);
-      if (i === 1) await expect(page.getByRole("tab", { name: "Dark Cross" })).toHaveAttribute("aria-selected", "true");
-    }
+    await expectScrolledTo(page, "tech");
     for (const name of ["Unison home", "unison"]) {
-      await page.goto("/#verify");
+      await page.goto("/#tech");
       await page.getByRole("link", { name, exact: true }).first().click();
       await expect(page).toHaveURL(/\/$/);
     }
-    await page.goto("/");
-    await page.getByRole("button", { name: "Toggle color theme" }).click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-    await page.getByRole("button", { name: "Toggle color theme" }).click();
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await page.goto("/developers"); // retired: old links land on the technical slide
+    await expect(page).toHaveURL(/\/#tech$/);
+    await expectScrolledTo(page, "tech");
     // "One price" chart: toggling collapses both pool lines onto NAV.
+    await page.goto("/");
     const withUnison = page.getByRole("button", { name: "With Unison" });
     await withUnison.click();
     await expect(withUnison).toHaveAttribute("aria-pressed", "true");
@@ -180,21 +107,15 @@ test.describe("Landing controls all navigate or scroll", () => {
     await page.getByRole("button", { name: "Separate pools" }).click();
     await expect(page.getByText(/Peak spread between issuers/)).toBeVisible();
     await expect(page.locator("#one-price").getByText("Illustrative", { exact: true })).toBeVisible();
-    await expectPopup(
-      page,
-      () => page.locator("footer").getByRole("link", { name: "GitHub ↗" }).click(),
-      /github\.com\/nichar3232\/wrapswap/,
-    );
-    const explorer = page.locator("#verify [data-line=contracts]").getByRole("link");
-    for (let i = 0; i < (await explorer.count()); i++)
-      await expectPopup(page, () => explorer.nth(i).click(), /uniscan\.xyz\/address\/|suiscan\.xyz\/testnet\/object\//);
+    // The xStocks line and its legend key are pink.
+    const pink = "rgb(255, 126, 185)";
+    await expect(page.locator(".op-line.op-x")).toHaveCSS("stroke", pink);
+    await expect(page.locator(".op-key.op-x")).toHaveCSS("background-color", pink);
   });
 
-  test("diagram: the Convert flow on the landing page", async ({ page }) => {
-    const file = new URL("../../deployments/unichain-sepolia.resolved.json", import.meta.url);
-    const d = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : undefined;
+  test("flow diagram: five nodes in one colour, dots moving along every arrow", async ({ page }) => {
     await page.goto("/");
-    const flow = page.locator("#flow .convert-flow");
+    const flow = page.locator("#how-it-works .convert-flow");
     const nodes = [
       ["Oracle · peg guard", "Stops trade if gap > 50 bps"],
       ["User sends", "100 mcbAAPL, issuer A"],
@@ -206,9 +127,49 @@ test.describe("Landing controls all navigate or scroll", () => {
     await expect(flow.locator(".cf-sub")).toHaveText(nodes.map((n) => n[1]));
     await expect(flow.locator(".cf-caption")).toHaveText("Exchange A price · Exchange B price feed only this");
     await expect(flow.locator("figcaption")).toHaveText("Exchange prices never enter the conversion. Only the multipliers do.");
-    expect(await flow.locator("rect").evaluateAll((r) => r.map((x) => x.getAttribute("height")))).toEqual(["56", "56", "56", "56", "56"]);
+    const rects = flow.locator(".cf-node rect");
+    expect(await rects.evaluateAll((r) => r.map((x) => x.getAttribute("height")))).toEqual(["56", "56", "56", "56", "56"]);
+    const colours = await rects.evaluateAll((r) => r.map((x) => `${getComputedStyle(x).fill} ${getComputedStyle(x).stroke}`));
+    expect(new Set(colours).size).toBe(1);
+    // Two dots per arrow, each riding its arrow's path, and actually moving.
+    const arrows = await flow.locator(".cf-arrow").evaluateAll((p) => p.map((x) => x.getAttribute("d")));
+    expect(arrows).toHaveLength(4);
+    const paths = await flow.locator(".cf-dot animateMotion").evaluateAll((m) => m.map((x) => x.getAttribute("path")));
+    expect(paths).toHaveLength(8);
+    expect(new Set(paths)).toEqual(new Set(arrows));
+    const at = () =>
+      flow
+        .locator(".cf-dot")
+        .first()
+        .evaluate((c) => {
+          const r = c.getBoundingClientRect();
+          return `${Math.round(r.x)},${Math.round(r.y)}`;
+        });
+    const first = await at();
+    await expect.poll(at, { timeout: 3000 }).not.toBe(first);
     expect(await flow.evaluate((e) => e.getBoundingClientRect().width)).toBeLessThanOrEqual(720);
     expect(await flow.locator("svg").innerHTML()).not.toMatch(/Gradient/);
+    // Reduced motion hides the dots.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await expect(flow.locator(".cf-dot").first()).toHaveCSS("display", "none");
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+
+  test("last slide: the technical essentials, the recorded agent run, Launch app, ParityHook and GitHub links", async ({ page }) => {
+    const d = read("unichain-sepolia.resolved.json");
+    // From the generated file (scripts/gen-mcp-demo.py), not typed values.
+    const demo = read("unichain-sepolia.mcp-demo.json");
+    await page.goto("/#tech");
+    const t = page.locator("#tech");
+    await expect(t.getByRole("heading", { level: 2 })).toHaveText("Under the hood");
+    await expect(t.locator(".tech-list li strong")).toHaveText(["Uniswap v4 hook.", "Fees.", "Dark Cross.", "Send.", "Agents."]);
+    await expect(t).toContainText("https://nichars-mac-mini.tail43cacc.ts.net/mcp");
+    if (demo) await expect(t.getByRole("link", { name: /^0x[0-9a-f]{8}…[0-9a-f]{6} ↗$/ })).toHaveAttribute("href", `https://sepolia.uniscan.xyz/tx/${demo.tx}`);
+    await expect(t.getByRole("link", { name: "Launch app", exact: true })).toHaveAttribute("href", "/app");
+    if (d)
+      await expectPopup(page, () => t.getByRole("link", { name: "ParityHook on Uniscan ↗" }).click(), new RegExp(`uniscan\\.xyz/address/${d.contracts.parityHook}`, "i"));
+    await expectPopup(page, () => t.getByRole("link", { name: "GitHub ↗" }).click(), /github\.com\/nichar3232\/wrapswap/);
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
@@ -226,18 +187,18 @@ test.describe("Landing controls all navigate or scroll", () => {
         // Styles are injected by the module graph in dev; wait for the rendered landing before reading them.
         await expect(page.locator(".hero h1")).toHaveText("Unison");
         await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).scrollSnapType)).toBe("y mandatory");
-        const ids = ["product", "one-price", "how-it-works", "flow"];
+        const ids = ["product", "one-price", "how-it-works", "tech"];
         const boxes = await page.evaluate(
           (ids) =>
-            [...ids.map((id) => document.getElementById(id)!), document.querySelector("footer#verify")!].map((e) => ({
+            ids.map((id) => document.getElementById(id)!).map((e) => ({
               h: e.getBoundingClientRect().height,
               snap: getComputedStyle(e).scrollSnapAlign,
             })),
           ids,
         );
         for (const [i, b] of boxes.entries()) {
-          expect(b.h, ids[i] ?? "footer").toBeGreaterThanOrEqual(height);
-          expect(b.snap, ids[i] ?? "footer").toBe("start");
+          expect(b.h, ids[i]).toBeGreaterThanOrEqual(height);
+          expect(b.snap, ids[i]).toBe("start");
         }
         expect(boxes[0].h, "hero fits in one viewport").toBe(height);
         // One scroll from the top lands the second section flush with the viewport top: a single arrow step (~40 px,
@@ -265,7 +226,7 @@ test.describe("Landing controls all navigate or scroll", () => {
     });
   }
 
-  test("Verify footer on / and /app: contracts from the manifests, MCP endpoint + command, GitHub; /developers lands on it", async ({ page }) => {
+  test("Verify footer in the app (not on the landing page): contracts from the manifests, MCP endpoint + command, GitHub", async ({ page }) => {
     const read = (f: string) => {
       const u = new URL(`../../deployments/${f}`, import.meta.url);
       return existsSync(u) ? JSON.parse(readFileSync(u, "utf8")) : undefined;
@@ -283,7 +244,7 @@ test.describe("Landing controls all navigate or scroll", () => {
         ]
       : [];
     const cmd = "claude mcp add unison --transport http https://nichars-mac-mini.tail43cacc.ts.net/mcp";
-    for (const path of ["/", "/app?tab=move"]) {
+    for (const path of ["/app?tab=move"]) {
       await page.goto(path);
       const v = page.locator("footer#verify");
       await expect(v.getByRole("heading", { name: "Verify" })).toBeAttached();
@@ -297,37 +258,8 @@ test.describe("Landing controls all navigate or scroll", () => {
       await expect(v.locator("[data-line=mcp] code")).toHaveText(["https://nichars-mac-mini.tail43cacc.ts.net/mcp", cmd]);
       await expect(v.locator("[data-line=source] a")).toHaveAttribute("href", "https://github.com/nichar3232/wrapswap");
     }
-    await page.goto("/developers");
-    await expect(page).toHaveURL(/\/#verify$/);
-    await expectScrolledTo(page, "verify");
-  });
-
-  test("landing MCP callout: one line plus the recorded run as prompt → tools chosen → tx", async ({ page }) => {
-    // From the generated file (scripts/gen-mcp-demo.py), not typed values.
-    const demo = JSON.parse(readFileSync(new URL("../../deployments/unichain-sepolia.mcp-demo.json", import.meta.url), "utf8"));
     await page.goto("/");
-    const c = page.locator("#how-it-works .mcp-callout");
-    await expect(c.locator("p")).toContainText("Agents can use Unison too");
-    const run = c.getByRole("definition");
-    await expect(run).toHaveText([`“${demo.prompt}”`, demo.steps.map((s: { tool: string }) => s.tool).join(" → "), /^0x[0-9a-f]{8}…[0-9a-f]{6} ↗$/]);
-    await expect(run.nth(2).getByRole("link")).toHaveAttribute("href", `https://sepolia.uniscan.xyz/tx/${demo.tx}`);
-    await c.getByRole("link", { name: "MCP endpoint →" }).click();
-    await expectScrolledTo(page, "verify");
+    await expect(page.locator("#verify")).toHaveCount(0);
   });
 
-  test("mobile menu opens without chevrons and its items scroll", async ({
-    page,
-  }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
-    for (const [name, id] of [["How it works", "how-it-works"]]) {
-      await page.goto("/");
-      const menu = page.getByRole("button", { name: "Menu" });
-      await menu.click();
-      await expect(menu).toHaveAttribute("aria-expanded", "true");
-      await expect(page.getByRole("button", { name: /menu$/i })).toHaveCount(1);
-      await page.getByRole("link", { name, exact: true }).click();
-      await expect(menu).toHaveAttribute("aria-expanded", "false");
-      await expectScrolledTo(page, id);
-    }
-  });
 });

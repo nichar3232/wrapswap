@@ -63,3 +63,16 @@ Tests: web unit 40/40 · Playwright mock 23/23 · Playwright live transport 10/1
   chosen, tx), generated from `deployments/unichain-sepolia.mcp-demo.json`.
 - Dropped with the page: the six-tool list, the Claude.ai connector steps and the market-sim link. `/sim.html` is
   still served, and DEMO.md links it directly.
+
+## 2026-09-26 · landing: pink xStocks line, flow diagram as How it works, Under the hood slide, bare header
+
+- The xStocks AAPLx line and its legend key in "One stock. Three prices." are pink (`#ff7eb9`).
+- How it works is just the flow diagram (`#how-it-works`): no heading, no product cards. All five nodes share one
+  colour, and two dots ride each arrow (SVG `animateMotion`, hidden with reduced motion).
+- The Verify footer is off the landing page (it stays in the app). The last slide, `#tech` "Under the hood", has five
+  lines (v4 hook, fees, Dark Cross, Send, agents + the recorded MCP run tx) and Launch app, ParityHook on Uniscan and
+  GitHub. "See it onchain →" and the retired `/developers` both land there.
+- The header is the logo, wordmark, theme toggle and Launch app; Product and How it works are gone, along with the
+  dropdowns and the mobile menu.
+
+Tests: web unit 36/36 · Playwright mock 21/21 · live transport 12/12.
