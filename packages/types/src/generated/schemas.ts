@@ -791,6 +791,30 @@ export const schemas = {
       "faucet": {
         "$ref": "Address"
       },
+      "send": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "shareVault"
+        ],
+        "properties": {
+          "shareVault": {
+            "$ref": "Address"
+          },
+          "deployTx": {
+            "$ref": "Bytes32"
+          },
+          "block": {
+            "$ref": "UInt"
+          },
+          "keeper": {
+            "$ref": "Address"
+          },
+          "suiDeployment": {
+            "type": "string"
+          }
+        }
+      },
       "assets": {
         "type": "array",
         "items": {
@@ -2479,6 +2503,13 @@ export type Deployment = {
   };
   "router"?: Address;
   "faucet"?: Address;
+  "send"?: {
+    "shareVault": Address;
+    "deployTx"?: Bytes32;
+    "block"?: UInt;
+    "keeper"?: Address;
+    "suiDeployment"?: string;
+  };
   "assets"?: Array<{
     "symbol": string;
     "wrappers": Array<{

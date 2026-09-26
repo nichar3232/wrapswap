@@ -904,6 +904,18 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
     "verification": { "type": "object", "additionalProperties": { "type": "string" } },
     "router": { "$ref": "Address" },
     "faucet": { "$ref": "Address" },
+    "send": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shareVault"],
+      "properties": {
+        "shareVault": { "$ref": "Address" },
+        "deployTx": { "$ref": "Bytes32" },
+        "block": { "$ref": "UInt" },
+        "keeper": { "$ref": "Address" },
+        "suiDeployment": { "type": "string" }
+      }
+    },
     "assets": {
       "type": "array",
       "items": {

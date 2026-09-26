@@ -11,6 +11,7 @@ import {IWrapperAdapter} from "./interfaces/IWrapperAdapter.sol";
 import {IParityHook} from "./interfaces/IParityHook.sol";
 import {IWrapSwapRouter} from "./interfaces/IWrapSwapRouter.sol";
 import {CanonicalShares} from "./libraries/CanonicalShares.sol";
+import {FullMath} from "v4-core/src/libraries/FullMath.sol";
 
 /// @title ShareVault
 /// @notice Custody side of Unison Pay. Issuer tokens deposited here back canonical-share credits on the Sui Pool;
@@ -61,6 +62,9 @@ contract ShareVault {
     error FeeAboveMax(uint256 feePips, uint256 maxFeeBps);
     error NotFillable(uint256 grossOut);
     error InsufficientCustody(address token, uint256 held, uint256 needed);
+
+    /// @dev Bounded top-ups of the exact-input amount when the executed trade's fee exceeds the exact-output quote's.
+    uint256 internal constant GROSS_UP_TRIES = 4;
 
     IIssuerRegistry public immutable registry;
     IParityHook public immutable hook;
@@ -178,31 +182,37 @@ contract ShareVault {
         PoolKey memory key = poolKey();
         bool zeroForOne = Currency.unwrap(currency0) == source;
 
-        // Gross-up: ParityHook charges its fee on output, so price the exact net output with the hook's own quote,
-        // which applies grossForNet and the hook-output rounding (ceil on fee, shares and input).
-        IParityHook.Quote memory q = hook.quote(key, zeroForOne, int256(net));
+        // Gross-up: ParityHook charges its fee on output, so start from the hook's own exact-output quote for the net
+        // amount (grossForNet + hook-output rounding), then re-quote the exact-input trade actually executed: the
+        // off-hours fee depends on post-trade skew, which an exact-input trade moves by its (larger) input shares.
+        uint256 amountIn = hook.quote(key, zeroForOne, int256(net)).amountIn;
+        IParityHook.Quote memory q = hook.quote(key, zeroForOne, -int256(amountIn));
+        for (uint256 i; q.amountOut < net && i < GROSS_UP_TRIES; ++i) {
+            amountIn += FullMath.mulDivRoundingUp(amountIn, net - q.amountOut, q.amountOut == 0 ? 1 : q.amountOut) + 1;
+            q = hook.quote(key, zeroForOne, -int256(amountIn));
+        }
         if (uint256(q.fee.totalPips) > w.maxFeeBps * 100) revert FeeAboveMax(q.fee.totalPips, w.maxFeeBps);
-        if (!q.fillable) revert NotFillable(q.grossOut);
+        if (!q.fillable || q.amountOut < net) revert NotFillable(q.grossOut);
         uint256 heldSource = IERC20(source).balanceOf(address(this));
-        if (heldSource < q.amountIn) revert InsufficientCustody(source, heldSource, q.amountIn);
+        if (heldSource < amountIn) revert InsufficientCustody(source, heldSource, amountIn);
 
         (uint256 sptS, uint8 decS) = _ratio(source);
-        sharesDebited = CanonicalShares.toSharesUp(q.amountIn, sptS, decS);
+        sharesDebited = CanonicalShares.toSharesUp(amountIn, sptS, decS);
         _debit(sharesDebited);
 
-        IERC20(source).forceApprove(address(router), q.amountIn);
+        IERC20(source).forceApprove(address(router), amountIn);
         uint256 out = router.swapExactIn(
             IWrapSwapRouter.ExactInputParams({
                 key: key,
                 zeroForOne: zeroForOne,
-                amountIn: uint128(q.amountIn),
+                amountIn: uint128(amountIn),
                 amountOutMin: uint128(net),
                 recipient: w.recipient,
                 deadline: block.timestamp,
                 hookData: ""
             })
         );
-        emit WithdrawalSettled(w.commitment, w.recipient, target, source, q.amountIn, out, sharesDebited);
+        emit WithdrawalSettled(w.commitment, w.recipient, target, source, amountIn, out, sharesDebited);
     }
 
     // ---------------------------------------------------------------- views
@@ -236,9 +246,16 @@ contract ShareVault {
         uint256 net = CanonicalShares.fromSharesDown(shares, sptT, decT);
         if (IERC20(target).balanceOf(address(this)) >= net) return (net, shares, 0, true);
         address source = Currency.unwrap(currency0) == target ? Currency.unwrap(currency1) : Currency.unwrap(currency0);
-        IParityHook.Quote memory q = hook.quote(poolKey(), Currency.unwrap(currency0) == source, int256(net));
+        PoolKey memory key = poolKey();
+        bool zeroForOne = Currency.unwrap(currency0) == source;
+        amountIn = hook.quote(key, zeroForOne, int256(net)).amountIn;
+        IParityHook.Quote memory q = hook.quote(key, zeroForOne, -int256(amountIn));
+        for (uint256 i; q.amountOut < net && i < GROSS_UP_TRIES; ++i) {
+            amountIn += FullMath.mulDivRoundingUp(amountIn, net - q.amountOut, q.amountOut == 0 ? 1 : q.amountOut) + 1;
+            q = hook.quote(key, zeroForOne, -int256(amountIn));
+        }
         (uint256 sptS, uint8 decS) = _ratio(source);
-        return (q.amountIn, CanonicalShares.toSharesUp(q.amountIn, sptS, decS), q.fee.totalPips, false);
+        return (amountIn, CanonicalShares.toSharesUp(amountIn, sptS, decS), q.fee.totalPips, false);
     }
 
     // ---------------------------------------------------------------- internals
