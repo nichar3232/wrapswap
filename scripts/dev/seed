@@ -36,7 +36,8 @@ run 'run()'
 phase() { cast call "$dark" 'currentBatch()(uint256,uint8,uint256)' --rpc-url "$RPC_URL"; }
 # Start at a new COMMIT phase with enough room for all six funding/commit txs.
 for ((i=0;i<180;i++)); do
-  state=$(phase); batch=$(printf '%s\n' "$state" | sed -n '1s/ .*//p'); p=$(printf '%s\n' "$state" | sed -n '2p'); end=$(printf '%s\n' "$state" | sed -n '3s/ .*//p')
+  # cast appends " [1.23e4]" only to large values, so take the first field of each line.
+  state=$(phase); batch=$(awk 'NR==1{print $1}' <<<"$state"); p=$(awk 'NR==2{print $1}' <<<"$state"); end=$(awk 'NR==3{print $1}' <<<"$state")
   head=$(cast block-number --rpc-url "$RPC_URL")
   if [[ $p == 0 ]] && ((end-head >= 8)); then break; fi
   if [[ $NETWORK == anvil ]]; then cast rpc --rpc-url "$RPC_URL" anvil_mine 1 >/dev/null; else sleep 1; fi
@@ -47,7 +48,7 @@ printf '%s\n' "$batch" > "logs/integration/batch-$NETWORK"
 if [[ $NETWORK == base-sepolia ]]; then
   # The crank never reveals. Reveal as the two counterparties before leaving settlement to it.
   for ((i=0;i<180;i++)); do
-    state=$(phase); p=$(printf '%s\n' "$state" | sed -n '2p')
+    state=$(phase); p=$(awk 'NR==2{print $1}' <<<"$state")
     [[ $p == 1 ]] && break
     sleep 1
   done
