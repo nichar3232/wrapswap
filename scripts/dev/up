@@ -11,7 +11,7 @@ export CRANK_PK=${CRANK_PK:-$(cast wallet private-key --mnemonic "$DEMO_MNEMONIC
 bash scripts/install-contracts.sh
 if [[ -f logs/integration/snapshot ]] && [[ -n $(docker compose ps -q --status running anvil) ]]; then
   scripts/dev/reset
-  printf 'Convert: http://127.0.0.1:%s/#convert\nAPI: http://127.0.0.1:%s/health\nCrank: http://127.0.0.1:%s/status\n' "$WEB_PORT" "$API_PORT" "$CRANK_HEALTH_PORT"
+  printf 'Convert: http://127.0.0.1:%s/app?tab=convert\nAPI: http://127.0.0.1:%s/health\nCrank: http://127.0.0.1:%s/status\n' "$WEB_PORT" "$API_PORT" "$CRANK_HEALTH_PORT"
   exit 0
 fi
 docker compose up -d --wait anvil postgres
@@ -27,4 +27,4 @@ scripts/dev/seed
 cast rpc --rpc-url "$RPC_URL" evm_snapshot | tr -d '"' > logs/integration/snapshot
 docker compose up -d --wait indexer api crank web
 scripts/dev/wait-head
-printf 'Convert: http://127.0.0.1:%s/#convert\nAPI: http://127.0.0.1:%s/health\nCrank: http://127.0.0.1:%s/status\n' "$WEB_PORT" "$API_PORT" "$CRANK_HEALTH_PORT"
+printf 'Convert: http://127.0.0.1:%s/app?tab=convert\nAPI: http://127.0.0.1:%s/health\nCrank: http://127.0.0.1:%s/status\n' "$WEB_PORT" "$API_PORT" "$CRANK_HEALTH_PORT"
