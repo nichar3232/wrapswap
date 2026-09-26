@@ -38,7 +38,7 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   const sign=base.address.toLowerCase()===d.pool.key.currency0.toLowerCase()?1n:-1n;
   expect(inv.skewX18).toBe((DEMO.skewX18.afterParityFill*sign).toString());
   await page.getByRole('button',{name:'Pool',exact:true}).click();
-  await expect(page.getByText(/19(?:\.0+)?\s*%/)).toBeVisible();
+  await expect(page.getByText(/19(?:\.0+)?\s*%/).first()).toBeVisible(); // header badge and Pool label both show skew
   const [batch]=await read('darkCrossHook','currentBatch');
   await revealBoth();
   await expect.poll(()=>read('darkCrossHook','settled',[batch]),{timeout:30000}).toBe(true);
