@@ -28,7 +28,10 @@ export type Deployment = {
 export const DEPLOYMENT_PATH = process.env.SUI_DEPLOYMENT ?? join(repoRoot, 'deployments', 'sui-testnet.json');
 export const loadDeployment = (): Deployment => JSON.parse(readFileSync(DEPLOYMENT_PATH, 'utf8'));
 
-export const evmRpcUrl = () => process.env.UNICHAIN_SEPOLIA_RPC_URL ?? 'https://sepolia.unichain.org';
+// sepolia.unichain.org is load-balanced across backends that disagree (pending nonce below latest, logs and state
+// trailing receipts; observed 2026-09-26), so the Sui lane defaults to publicnode, which answered consistently.
+export const EVM_RPC_DEFAULT = 'https://unichain-sepolia-rpc.publicnode.com';
+export const evmRpcUrl = () => process.env.SUI_EVM_RPC_URL ?? EVM_RPC_DEFAULT;
 export function evmKeeperKey(): `0x${string}` {
   const k = process.env.SUI_EVM_KEEPER_KEY ?? process.env.DEPLOYER_PRIVATE_KEY;
   if (!k) throw new Error('no EVM keeper key (SUI_EVM_KEEPER_KEY or DEPLOYER_PRIVATE_KEY in the env file)');

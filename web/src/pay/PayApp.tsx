@@ -66,7 +66,8 @@ const seal = new SealClient({
   verifyKeyServers: false,
   timeout: 20_000,
 });
-const evmRead = createPublicClient({ chain: unichainSepolia, transport: http() });
+// publicnode: sepolia.unichain.org backends disagree on recent state (see services/crank/sui/config.ts).
+const evmRead = createPublicClient({ chain: unichainSepolia, transport: http("https://unichain-sepolia-rpc.publicnode.com") });
 const vaultAbi = parseAbi([
   "function deposit(address issuerToken, uint256 amount, bytes32 suiRecipientTag) returns (uint256)",
   "function quoteWithdrawal(address target, uint256 shares) view returns (uint256 amountIn, uint256 sharesDebited, uint24 feePips, bool direct)",
