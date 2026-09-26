@@ -7,5 +7,5 @@ source scripts/dev/env
 scripts/dev/reset
 docker compose exec -T api pnpm exec tsx scripts/dev/assert-seed.ts
 for service in api crank web; do docker compose exec -T "$service" node scripts/dev/health.mjs "$service"; done
-url="http://127.0.0.1:$WEB_PORT/#convert"
+url="http://127.0.0.1:$WEB_PORT/app?tab=move"
 if command -v open >/dev/null; then open "$url"; elif command -v xdg-open >/dev/null; then xdg-open "$url"; else printf '%s\n' "$url"; fi

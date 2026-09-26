@@ -1,4 +1,4 @@
-# WrapSwap integration
+# Unison integration
 
 **Current result: blocked at the contracts deployment boundary.** On this branch,
 `scripts/dev/up` starts healthy Anvil (31337) and Postgres, then the unchanged
@@ -26,7 +26,7 @@ WEB_PORT and CRANK_HEALTH_PORT. Compose project defaults to `wrapswap-integratio
 No other lane's containers are touched. Services use NETWORK=anvil, USE_MOCKS=false.
 The public local mnemonic is the standard Anvil test mnemonic. Never fund it on mainnet.
 
-The web URL is `http://127.0.0.1:13008/#convert`; `/api` proxies to the API and `/rpc`
+The web URL is `http://127.0.0.1:13008/app?tab=move`; `/api` proxies to the API and `/rpc`
 to Anvil. API and crank currently bind loopback; a small TCP bridge publishes their
 ports on the shared container network namespace. Health checks address the actual
 component endpoints, not synthetic success responses.

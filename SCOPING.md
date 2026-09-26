@@ -1,4 +1,4 @@
-# WrapSwap reframe: contracts scoping report
+# Unison reframe: contracts scoping report
 
 Scope: what has to change in `contracts/` so the implementations meet `INTERFACES.md` as frozen at tag
 `interfaces-frozen` (commit `e9b7bf0`). This file is a report only. Nothing else in the repo was modified.

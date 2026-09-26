@@ -1,4 +1,4 @@
-# WrapSwap crank
+# Unison crank
 
 One long-lived viem/Fastify process uses the same validated `deployments/${NETWORK}.json` as the API. It pushes mock oracle ratios, settles eligible batches after the reveal phase, and checks the parity peg. It never commits or reveals on users' behalf. Batch phases advance with chain block number; no close/reveal transaction exists in the frozen interface.
 

@@ -1,4 +1,4 @@
-# WrapSwap interfaces (frozen for the reframe)
+# Unison interfaces (frozen for the reframe)
 
 Status: FROZEN at tag `interfaces-frozen`. Owner: interfaces lane. Parallel lanes never edit this file, `contracts/src/interfaces/`
 or `packages/types/`; they file requests in `interface-change-requests/<lane>.md` (§8).

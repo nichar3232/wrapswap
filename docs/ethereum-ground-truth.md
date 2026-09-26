@@ -1,6 +1,6 @@
 # Ethereum AAPLx ground truth
 
-Verified 2026-09-25. These are source and read-only RPC observations, not a deployed WrapSwap bridge.
+Verified 2026-09-25. These are source and read-only RPC observations, not a deployed Unison bridge.
 
 ## Issuer-published identity
 

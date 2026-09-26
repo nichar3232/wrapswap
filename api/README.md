@@ -1,4 +1,4 @@
-# WrapSwap API and indexer
+# Unison API and indexer
 
 Share-for-share conversion, no USDC leg. Fastify serves the frozen §5 schemas; viem reads the §1 interfaces from `@wrapswap/types`. No legacy ABI or deployment file is used.
 

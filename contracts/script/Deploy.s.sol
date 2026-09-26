@@ -27,7 +27,7 @@ import {B20MultiplierAdapter} from "../src/adapters/B20MultiplierAdapter.sol";
 import {XStocksMultiplierAdapter} from "../src/adapters/XStocksMultiplierAdapter.sol";
 
 /// @title Deploy
-/// @notice Deploys the WrapSwap reframe (no seeding) and writes deployments/<network>.json in the INTERFACES.md §4
+/// @notice Deploys the Unison reframe (no seeding) and writes deployments/<network>.json in the INTERFACES.md §4
 ///         shape. Network is derived from chainId: 31337 -> anvil, 1301 -> unichain-sepolia (NETWORK, if set, must agree).
 ///
 /// Usage (two phases; forge simulates every broadcast at one block, so block numbers need a read-only pass):

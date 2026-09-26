@@ -47,13 +47,14 @@ Or run it directly: `pnpm --dir packages/mcp start:stdio`. Cursor and other stdi
 | `convert(asset, fromWrapper, toWrapper, amount, recipient?)` | executes | Conversion via the relay (`/demo/convert`, or `/demo/send` with a recipient); tx hash, Uniscan link, fee split. |
 | `get_batch(asset)` | read | Dark Cross batch: phase, seconds remaining; last settled batch (midpoint, crossed, protocol fee, residual, unfilled). |
 | `commit_dark_order(asset, side, amount)` | executes | Sealed order via the relay (`/demo/dark-commit`); commit tx, batch id, settlement block. The relay reveals; the crank settles. |
+| `send_confidential(asset, amount, recipient, withdrawWrapper?, waitSeconds?)` | executes | Confidential send via the relay (`/demo/send`): ShareVault deposit on Unichain → Seal-encrypted pay on Sui → withdrawal into the other issuer's wrapper. AAPL only; one send at a time. |
 
 Wrappers can be named by token symbol (`mcbAAPL`), platform (`Coinbase`) or address. `amount` is in shares and is
 converted to token units with the wrapper's live multiplier. Execution tools reject amounts over 100 shares before
 calling the relay and return the relay's error (limit, revert) verbatim on failure.
 
-`send_confidential` (the Sui confidential transfer) is registered only when the Sui lane reports GO and the relay
-serves a confidential-send route; the relay has no such route yet, so the tool is not exposed.
+`send_confidential` (the Sui confidential transfer) is registered only when the Sui lane reports GO; it is live, so
+`tools/list` returns seven tools.
 
 ## Configuration
 

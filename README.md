@@ -12,7 +12,30 @@ multiplier) and fills conversions at parity from inventory held by the hook in a
 
 The issuer wrappers are testnet mocks with real multipliers. No issuer is represented as having endorsed this project.
 
-App navigation: **Portfolio · Move · Send · Liquidity**. Move holds Convert and Dark Cross.
+App navigation: **Portfolio · Move · Send · Liquidity**. Move holds Convert and Dark Cross. Without a browser wallet,
+`/app` opens on Move and every action runs through a rate-limited demo relay, so nothing needs installing to try it.
+
+## How it works
+
+```
+ issuer multipliers ──► oracle · 50 bps peg guard
+                                │
+ you send wrapper A ──► WrapSwapRouter ──► PoolManager.swap ──► ParityHook.beforeSwap ──► you receive wrapper B
+                                                                  │  (share for share, minus fee,
+                                                                  │   filled from ERC-6909 inventory)
+                                                   LP inventory takes the other side and earns the fee
+```
+
+1. **Canonical shares.** Each wrapper token reports how many underlying shares it represents (its multiplier). Unison
+   converts every amount to shares (1e18 = one share) and never uses the exchange price of either token.
+2. **ParityHook** sits on a Uniswap v4 pool of the two wrappers. `beforeSwap` fills the whole swap from the hook's own
+   inventory at share parity and returns the delta (`beforeSwapReturnDelta`), so the pool's curve is not touched.
+3. **Fee = base + skew.** 2 bps on every conversion, plus a skew fee only when the trade makes inventory more
+   lopsided. Trades that rebalance the pool pay the base fee only. All of it goes to the LP.
+4. **Dark Cross** batches sealed orders, crosses them at the oracle midpoint, and sends any residual through the same
+   ParityHook pool in one `unlock`.
+5. **Send** moves shares confidentially: deposit on Unichain, a Seal-encrypted payment on Sui, and a withdrawal into
+   whichever issuer's wrapper the recipient uses.
 
 ## Verify the integration
 
@@ -84,6 +107,7 @@ How Send maps to the track:
 | --- | --- | --- |
 | **Convert** | Swaps one issuer's wrapper for another's at share parity. The quote shows shares in, base fee, skew fee and shares out. | ParityHook on Unichain Sepolia, reached through WrapSwapRouter. One hook serves a pool for each asset. |
 | **Dark Cross** | You commit a sealed order (side, size, limit), reveal it, and it crosses against the other side at the oracle midpoint. Residuals fill from the ParityHook pool in the same settlement transaction. | One DarkCrossHook per asset. Batches last 20 blocks (12 commit, 6 reveal, 2 settle), and a permissionless crank settles them. |
+| **Liquidity** | Shows each pool's inventory, skew, the fee in each direction and what the LP has earned. In v1 a single pool keeper (a market maker) seeds and rebalances both wrappers and earns 100% of Convert fees; permissionless LP deposits are v2. | ParityHook inventory (`depositInventory` / `withdrawInventory`, keeper-only). |
 | **Send** | Pays someone in shares confidentially. You deposit a wrapper into the ShareVault and send a Seal-encrypted payment on Sui. The recipient withdraws into whichever issuer's wrapper they use. | ShareVault on Unichain Sepolia, plus the Unison Pay pool on Sui testnet (Seal + Walrus). |
 
 ## Fees
@@ -104,7 +128,8 @@ nor the contracts show USD prices.
 
 The Unison MCP server gives an agent the same surface as the app:
 - **Read:** `list_assets`, `get_pool`, `quote_convert`, `get_batch`.
-- **Execute:** `convert` and `commit_dark_order`. They go through the demo relay and are capped at 100 shares per action.
+- **Execute:** `convert`, `commit_dark_order` and `send_confidential`. They go through the demo relay and are capped at
+  100 shares per action.
 
 The server holds no keys and no addresses.
 
@@ -113,7 +138,11 @@ claude mcp add --transport http unison https://nichars-mac-mini.tail43cacc.ts.ne
 pnpm --dir packages/mcp start:stdio                                                       # local, stdio
 ```
 
-Details and the Claude Desktop config: [packages/mcp/README.md](packages/mcp/README.md).
+In Claude.ai: Settings → Connectors → Add custom connector, and paste the endpoint above.
+
+Details and the Claude Desktop config: [packages/mcp/README.md](packages/mcp/README.md). A recorded run, where an agent
+given only "Convert 50 AAPL into whichever wrapper is cheapest right now" chose `get_pool` → `quote_convert` →
+`convert` and settled on-chain: [submission/mcp-demo.md](submission/mcp-demo.md).
 
 ## Market simulation
 
@@ -191,6 +220,23 @@ the API serves it at `/api/pay/reserves`.
 - Hook addresses are mined with HookMiner and deployed through the CREATE2 proxy
   ([contracts/script/DeployFinal.s.sol](contracts/script/DeployFinal.s.sol)).
 
+## Repository layout
+
+| Path | What |
+| --- | --- |
+| [`contracts/`](contracts) | Solidity (Foundry): ParityHook, DarkCrossHook, WrapSwapRouter, ShareVault, adapters, mocks, deploy scripts, tests |
+| [`sui/unison_pay/`](sui/unison_pay) | Move package for confidential payments (Seal + Walrus) |
+| [`api/`](api) | Indexer (Postgres) and the HTTP API the app reads |
+| [`services/crank/`](services/crank) | Crank (oracle ratios, Dark Cross settlement, peg check) and the Sui batch keeper (`sui/`) |
+| [`services/relay/`](services/relay) | Demo relay: signs actions for visitors without a wallet (rate-limited, capped) |
+| [`packages/mcp/`](packages/mcp) | MCP server for agents |
+| [`packages/types/`](packages/types) | Shared types, ABIs and schemas, generated from `INTERFACES.md` and the contract artifacts |
+| [`packages/sim/`](packages/sim) | Market simulation against a Unichain Sepolia fork |
+| [`web/`](web) | Landing page and app (React, Vite) |
+| [`deployments/`](deployments) | Deployment manifests: the only source of addresses for the app, API and docs |
+| [`e2e/`](e2e) | Playwright end-to-end tests: the demo flow, UI states, and live Unichain Sepolia runs (`live/`) |
+| [`submission/`](submission) | Prize write-ups, demo script, recorded agent run |
+
 ## Run it
 
 ```sh
@@ -220,6 +266,12 @@ demo figures.
 ## Submission
 
 [Uniswap prize](submission/uniswap.md) · [Sui prize](submission/sui.md) · [Sui details and all hashes](submission/sui-details.md) · [ETHGlobal submission](submission/ethglobal.md) · [Developer feedback](FEEDBACK.md) · [Demo script](submission/demo-script.md)
+
+## Naming
+
+The product is **Unison**. The repository, the `@wrapswap/*` packages and `WrapSwapRouter` keep the project's working
+name: the router is deployed and verified under that name, and renaming internal identifiers would change nothing a
+user sees.
 
 ## License
 
