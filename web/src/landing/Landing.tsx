@@ -1,9 +1,15 @@
 import { StrictMode, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import deployment from "../../../deployments/base-sepolia.json";
 import { Mark, ThemeToggle } from "../brand";
 import { Halftone } from "./Halftone";
-import { EXPLORER, SWAP_TX, proofRows, short } from "./proof";
+import {
+  EXPLORER,
+  NETWORK_NAME,
+  PROOF_SWAP_TX,
+  deployment,
+  proofRows,
+  short,
+} from "./proof";
 import "../theme.css";
 import "./landing.css";
 
@@ -141,10 +147,15 @@ function Landing() {
 
       <section className="black proof" id="proof">
         <h2>
-          Live on Base Sepolia
-          <span className="chain">chain {deployment.chainId}</span>
+          Live on {NETWORK_NAME}
+          {deployment?.chainId && (
+            <span className="chain">chain {deployment.chainId}</span>
+          )}
         </h2>
-        <div className="table-wrap">
+        {rows.length === 0 && (
+          <p className="pending">Deployment addresses are being published.</p>
+        )}
+        <div className="table-wrap" hidden={rows.length === 0}>
           <table>
             <thead>
               <tr>
@@ -164,7 +175,7 @@ function Landing() {
                   </td>
                   <td className="link">
                     <a href={r.url} target="_blank" rel="noreferrer">
-                      Basescan ↗
+                      Uniscan ↗
                     </a>
                   </td>
                 </tr>
@@ -172,19 +183,21 @@ function Landing() {
             </tbody>
           </table>
         </div>
-        <a
-          className="tx-card"
-          href={`${EXPLORER}/tx/${SWAP_TX}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <span className="tx-label">Real router swap from a user wallet</span>
-          <span className="mono tx-hash">{SWAP_TX}</span>
-          <span className="tx-caption">
-            100 mcbAAPL → mAAPLx via WrapSwapRouter.swapExactIn
-          </span>
-          <span className="tx-go">View on Basescan ↗</span>
-        </a>
+        {PROOF_SWAP_TX && (
+          <a
+            className="tx-card"
+            href={`${EXPLORER}/tx/${PROOF_SWAP_TX}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span className="tx-label">Real router swap from a user wallet</span>
+            <span className="mono tx-hash">{PROOF_SWAP_TX}</span>
+            <span className="tx-caption">
+              100 mcbAAPL → mAAPLx via WrapSwapRouter.swapExactIn
+            </span>
+            <span className="tx-go">View on Uniscan ↗</span>
+          </a>
+        )}
       </section>
 
       <footer className="lfoot" id="developers">

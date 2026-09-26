@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 import { DEMO, type Network } from "@wrapswap/types";
 import { formatUnits } from "viem";
@@ -97,24 +97,34 @@ test("Pool: token inventory, canonical shares, skew and fills", async ({
 test("Landing: Unison brand, proof from deployment, Launch app", async ({
   page,
 }) => {
-  const d = JSON.parse(
-    readFileSync(
-      new URL("../../deployments/base-sepolia.json", import.meta.url),
-      "utf8",
-    ),
+  const file = new URL(
+    "../../deployments/unichain-sepolia.json",
+    import.meta.url,
   );
+  const d = existsSync(file)
+    ? JSON.parse(readFileSync(file, "utf8"))
+    : undefined;
   await page.goto("/");
   await expect(page).toHaveTitle("Unison");
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Unison");
   await expect(page.getByText("WrapSwap", { exact: true })).toHaveCount(0);
   const proof = page.locator("#proof");
-  await expect(
-    proof.getByRole("link", { name: "Basescan ↗" }).first(),
-  ).toHaveAttribute(
-    "href",
-    `https://sepolia.basescan.org/address/${d.contracts.parityHook}`,
+  await expect(proof.getByRole("heading")).toContainText(
+    "Live on Unichain Sepolia",
   );
-  await expect(proof.getByRole("row")).toHaveCount(6);
+  if (d) {
+    await expect(
+      proof.getByRole("link", { name: "Uniscan ↗" }).first(),
+    ).toHaveAttribute(
+      "href",
+      `https://sepolia.uniscan.xyz/address/${d.contracts.parityHook}`,
+    );
+    await expect(proof.getByRole("row")).toHaveCount(6);
+  } else {
+    await expect(
+      proof.getByText("Deployment addresses are being published."),
+    ).toBeVisible();
+  }
   await page.getByRole("button", { name: /switch to dark theme/i }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();

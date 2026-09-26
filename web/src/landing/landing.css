@@ -330,6 +330,12 @@ section[id] {
   letter-spacing: 0;
   color: var(--black-ink-soft);
 }
+.pending {
+  margin: 0;
+  padding: 18px 0;
+  border-top: 1px solid var(--black-hairline);
+  color: var(--black-ink-soft);
+}
 .table-wrap {
   overflow-x: auto;
   border-top: 1px solid var(--black-hairline);
