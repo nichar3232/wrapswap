@@ -29,6 +29,8 @@ const evmWallet = withLatestNonce(createWalletClient({ account: evmAccount, chai
 const evmPublic = createPublicClient({ chain: unichainSepolia, transport: http(evmRpcUrl()) });
 const DEPOSIT = process.env.CLICK_DEPOSIT ?? '5';
 const PAY_SHARES = process.env.CLICK_PAY ?? '3';
+// Larger than the mcbAAPL custody holds, so delivery has to convert through the ParityHook pool.
+const WITHDRAW_SHARES = process.env.CLICK_WITHDRAW ?? '5';
 
 mkdirSync(SHOTS, { recursive: true });
 let n = 0;
@@ -107,11 +109,9 @@ async function openAs(kp: Ed25519Keypair, label: string) {
     }
     return evmPublic.request({ method: method as any, params: params as any });
   });
-  await page.addInitScript(initScript, {
-    suiAddress: kp.toSuiAddress(),
-    suiPublicKey: Array.from(kp.getPublicKey().toRawBytes()),
-    evmAddress: evmAccount.address,
-  });
+  const opts = { suiAddress: kp.toSuiAddress(), suiPublicKey: Array.from(kp.getPublicKey().toRawBytes()), evmAddress: evmAccount.address };
+  // Injected as source text: tsx/esbuild wraps functions in a `__name` helper that does not exist in the page.
+  await page.addInitScript({ content: `var __name = (f) => f; (${initScript.toString()})(${JSON.stringify(opts)});` });
   await page.goto(URL, { waitUntil: 'networkidle' });
   // Connect the Sui wallet through dapp-kit's own modal.
   await page.getByRole('button', { name: 'Connect Slush' }).click();
@@ -160,13 +160,15 @@ try {
   await shot(q, 'payee-balance', 'payee sees the decrypted balance including the payment');
   const wd = q.getByTestId('step-withdraw');
   await wd.locator('select').selectOption({ label: 'mcbAAPL' });
-  await wd.getByLabel('Shares').fill(PAY_SHARES);
-  await wd.getByText(/ParityHook pool on Uniswap v4|share for share/).waitFor(T);
+  await wd.getByLabel('Shares').fill(WITHDRAW_SHARES);
+  await wd.getByText(/ParityHook pool on Uniswap v4/).waitFor(T); // conversion quote for the new amount, not the default
+  await q.waitForTimeout(1_500);
   await shot(q, 'withdraw-quote', 'withdraw quote into mcbAAPL (the other issuer), hook-output gross-up');
   await wd.getByRole('button', { name: /^Withdraw / }).click();
   await wd.getByText(/^Sealed withdrawal submitted/).waitFor(T);
   await shot(q, 'withdraw-sealed', 'sealed withdrawal submitted on Sui');
   await wd.getByText(/^Delivered |^Skipped/).waitFor(T);
+  if (await wd.getByText(/^Skipped/).count()) throw new Error('withdrawal was skipped on Unichain, not delivered');
   await q.waitForTimeout(3_000);
   await shot(q, 'withdraw-delivered', 'ShareVault settled on Unichain through WrapSwapRouter -> ParityHook');
   await pay2.getByRole('button', { name: /Refresh/ }).click();
