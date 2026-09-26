@@ -6,6 +6,16 @@ export const schemas = {
     "type": "string",
     "pattern": "^0x[0-9a-fA-F]{40}$"
   },
+  "AssetQuery": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "asset": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9]{1,16}$"
+      }
+    }
+  },
   "AssetsResponse": {
     "type": "object",
     "additionalProperties": false,
@@ -315,6 +325,74 @@ export const schemas = {
           "null"
         ],
         "pattern": "^(0|[1-9][0-9]*)$"
+      },
+      "asset": {
+        "type": "string"
+      },
+      "crossedShares": {
+        "$ref": "UInt"
+      },
+      "protocolFeeShares": {
+        "$ref": "UInt"
+      },
+      "residualFilled": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "trader",
+            "tokenIn",
+            "amountIn",
+            "amountOut",
+            "feeAmount",
+            "feeShares",
+            "txHash"
+          ],
+          "properties": {
+            "trader": {
+              "$ref": "Address"
+            },
+            "tokenIn": {
+              "$ref": "Address"
+            },
+            "amountIn": {
+              "$ref": "UInt"
+            },
+            "amountOut": {
+              "$ref": "UInt"
+            },
+            "feeAmount": {
+              "$ref": "UInt"
+            },
+            "feeShares": {
+              "$ref": "UInt"
+            },
+            "txHash": {
+              "$ref": "Bytes32"
+            }
+          }
+        }
+      },
+      "unfilledRefunded": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "base",
+          "quote",
+          "shares"
+        ],
+        "properties": {
+          "base": {
+            "$ref": "UInt"
+          },
+          "quote": {
+            "$ref": "UInt"
+          },
+          "shares": {
+            "$ref": "UInt"
+          }
+        }
       }
     }
   },
@@ -327,6 +405,10 @@ export const schemas = {
           "true",
           "false"
         ]
+      },
+      "asset": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9]{1,16}$"
       },
       "limit": {
         "type": "string",
@@ -470,6 +552,12 @@ export const schemas = {
         "$ref": "UInt"
       },
       "participants": {
+        "type": "integer"
+      },
+      "asset": {
+        "type": "string"
+      },
+      "secondsRemaining": {
         "type": "integer"
       },
       "oracle": {
@@ -1042,6 +1130,70 @@ export const schemas = {
             "type": "string"
           },
           "details": {}
+        }
+      }
+    }
+  },
+  "FaucetResponse": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "address",
+      "faucet",
+      "block",
+      "lastClaimAt",
+      "tokens"
+    ],
+    "properties": {
+      "address": {
+        "$ref": "Address"
+      },
+      "faucet": {
+        "$ref": "Address"
+      },
+      "block": {
+        "$ref": "UInt"
+      },
+      "lastClaimAt": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "pattern": "^(0|[1-9][0-9]*)$"
+      },
+      "tokens": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "asset",
+            "symbol",
+            "address",
+            "amount",
+            "nextClaimAt",
+            "claimable"
+          ],
+          "properties": {
+            "asset": {
+              "type": "string"
+            },
+            "symbol": {
+              "type": "string"
+            },
+            "address": {
+              "$ref": "Address"
+            },
+            "amount": {
+              "$ref": "UInt"
+            },
+            "nextClaimAt": {
+              "$ref": "UInt"
+            },
+            "claimable": {
+              "type": "boolean"
+            }
+          }
         }
       }
     }
@@ -1700,6 +1852,158 @@ export const schemas = {
       }
     }
   },
+  "PoolAssetResponse": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "asset",
+      "block",
+      "poolId",
+      "wrappers",
+      "totalShares",
+      "skewX18",
+      "skewPct",
+      "directions",
+      "cheapDirection",
+      "lpFees"
+    ],
+    "properties": {
+      "asset": {
+        "type": "string"
+      },
+      "block": {
+        "$ref": "UInt"
+      },
+      "poolId": {
+        "$ref": "Bytes32"
+      },
+      "wrappers": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "platform",
+            "symbol",
+            "address",
+            "inventory",
+            "inventoryShares"
+          ],
+          "properties": {
+            "platform": {
+              "type": "string"
+            },
+            "symbol": {
+              "type": "string"
+            },
+            "address": {
+              "$ref": "Address"
+            },
+            "inventory": {
+              "$ref": "UInt"
+            },
+            "inventoryShares": {
+              "$ref": "UInt"
+            }
+          }
+        }
+      },
+      "totalShares": {
+        "$ref": "UInt"
+      },
+      "skewX18": {
+        "$ref": "Int"
+      },
+      "skewPct": {
+        "type": "string",
+        "pattern": "^-?[0-9]+\\.[0-9]{2}$"
+      },
+      "directions": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "from",
+            "to",
+            "skewFeePips",
+            "offHoursPips",
+            "totalPips",
+            "totalBps",
+            "reducesImbalance"
+          ],
+          "properties": {
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            },
+            "skewFeePips": {
+              "type": "integer"
+            },
+            "offHoursPips": {
+              "type": "integer"
+            },
+            "totalPips": {
+              "type": "integer"
+            },
+            "totalBps": {
+              "type": "string",
+              "pattern": "^[0-9]+\\.[0-9]{2}$"
+            },
+            "reducesImbalance": {
+              "type": "boolean"
+            }
+          }
+        }
+      },
+      "cheapDirection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "lpFees": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fills",
+          "baseShares",
+          "skewShares",
+          "offHoursShares",
+          "totalShares"
+        ],
+        "properties": {
+          "fills": {
+            "type": "integer"
+          },
+          "baseShares": {
+            "$ref": "UInt"
+          },
+          "skewShares": {
+            "$ref": "UInt"
+          },
+          "offHoursShares": {
+            "$ref": "UInt"
+          },
+          "totalShares": {
+            "$ref": "UInt"
+          }
+        }
+      }
+    }
+  },
   "PoolKey": {
     "type": "object",
     "additionalProperties": false,
@@ -1888,6 +2192,37 @@ export const schemas = {
       },
       "fee": {
         "$ref": "FeeBreakdown"
+      },
+      "asset": {
+        "type": "string"
+      },
+      "sharesIn": {
+        "$ref": "UInt"
+      },
+      "sharesOut": {
+        "$ref": "UInt"
+      },
+      "baseFee": {
+        "$ref": "UInt"
+      },
+      "skewFee": {
+        "$ref": "UInt"
+      },
+      "offHoursFee": {
+        "$ref": "UInt"
+      },
+      "youKeep": {
+        "type": "string",
+        "pattern": "^[0-9]+\\.[0-9]{6}$"
+      },
+      "preSkewX18": {
+        "$ref": "Int"
+      },
+      "postSkewX18": {
+        "$ref": "Int"
+      },
+      "reducesImbalance": {
+        "type": "boolean"
       }
     }
   },
@@ -2165,6 +2500,46 @@ export const schemas = {
           }
         }
       },
+      "protocolFees": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "totalShares",
+          "tokens"
+        ],
+        "properties": {
+          "totalShares": {
+            "$ref": "UInt"
+          },
+          "tokens": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "symbol",
+                "address",
+                "amount",
+                "shares"
+              ],
+              "properties": {
+                "symbol": {
+                  "type": "string"
+                },
+                "address": {
+                  "$ref": "Address"
+                },
+                "amount": {
+                  "$ref": "UInt"
+                },
+                "shares": {
+                  "$ref": "UInt"
+                }
+              }
+            }
+          }
+        }
+      },
       "faucet": {
         "type": [
           "object",
@@ -2240,8 +2615,6 @@ export const schemas = {
     "type": "object",
     "additionalProperties": false,
     "required": [
-      "tokenIn",
-      "tokenOut",
       "amount"
     ],
     "properties": {
@@ -2250,6 +2623,18 @@ export const schemas = {
       },
       "tokenOut": {
         "$ref": "Address"
+      },
+      "asset": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9]{1,16}$"
+      },
+      "from": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9]{1,24}$"
+      },
+      "to": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9]{1,24}$"
       },
       "amount": {
         "type": "string",
@@ -2304,6 +2689,10 @@ export const schemas = {
 export type SchemaName = keyof typeof schemas;
 
 export type Address = `0x${string}`;
+
+export type AssetQuery = {
+  "asset"?: string;
+};
 
 export type AssetsResponse = {
   "network": string;
@@ -2371,10 +2760,28 @@ export type BatchSummary = {
   "settledTx": `0x${string}` | null;
   "settledBlock": string | null;
   "settledAt": string | null;
+  "asset"?: string;
+  "crossedShares"?: UInt;
+  "protocolFeeShares"?: UInt;
+  "residualFilled"?: Array<{
+    "trader": Address;
+    "tokenIn": Address;
+    "amountIn": UInt;
+    "amountOut": UInt;
+    "feeAmount": UInt;
+    "feeShares": UInt;
+    "txHash": Bytes32;
+  }>;
+  "unfilledRefunded"?: {
+    "base": UInt;
+    "quote": UInt;
+    "shares": UInt;
+  };
 };
 
 export type BatchesQuery = {
   "settled"?: "true" | "false";
+  "asset"?: string;
   "limit"?: string;
   "cursor"?: string;
 };
@@ -2409,6 +2816,8 @@ export type CurrentBatchResponse = {
   "blockNumber": UInt;
   "batchOrigin": UInt;
   "participants": number;
+  "asset"?: string;
+  "secondsRemaining"?: number;
   "oracle": {
     "midX18": string | null;
     "updatedAt": string | null;
@@ -2538,6 +2947,21 @@ export type ErrorResponse = {
     "message": string;
     "details"?: unknown;
   };
+};
+
+export type FaucetResponse = {
+  "address": Address;
+  "faucet": Address;
+  "block": UInt;
+  "lastClaimAt": string | null;
+  "tokens": Array<{
+    "asset": string;
+    "symbol": string;
+    "address": Address;
+    "amount": UInt;
+    "nextClaimAt": UInt;
+    "claimable": boolean;
+  }>;
 };
 
 export type FeeBreakdown = {
@@ -2692,6 +3116,42 @@ export type PageQuery = {
   "cursor"?: string;
 };
 
+export type PoolAssetResponse = {
+  "asset": string;
+  "block": UInt;
+  "poolId": Bytes32;
+  "wrappers": Array<{
+    "platform": string;
+    "symbol": string;
+    "address": Address;
+    "inventory": UInt;
+    "inventoryShares": UInt;
+  }>;
+  "totalShares": UInt;
+  "skewX18": Int;
+  "skewPct": string;
+  "directions": Array<{
+    "from": string;
+    "to": string;
+    "skewFeePips": number;
+    "offHoursPips": number;
+    "totalPips": number;
+    "totalBps": string;
+    "reducesImbalance": boolean;
+  }>;
+  "cheapDirection": {
+    "from": string;
+    "to": string;
+  };
+  "lpFees": {
+    "fills": number;
+    "baseShares": UInt;
+    "skewShares": UInt;
+    "offHoursShares": UInt;
+    "totalShares": UInt;
+  };
+};
+
 export type PoolKey = {
   "currency0": Address;
   "currency1": Address;
@@ -2739,6 +3199,16 @@ export type QuoteResponse = {
   "feeAmount": UInt;
   "feeToken": Address;
   "fee": FeeBreakdown;
+  "asset"?: string;
+  "sharesIn"?: UInt;
+  "sharesOut"?: UInt;
+  "baseFee"?: UInt;
+  "skewFee"?: UInt;
+  "offHoursFee"?: UInt;
+  "youKeep"?: string;
+  "preSkewX18"?: Int;
+  "postSkewX18"?: Int;
+  "reducesImbalance"?: boolean;
 };
 
 export type Route = "PARITY" | "FALL-THROUGH" | "DARK" | "BLOCKED-PEG" | "BLOCKED-ELIGIBILITY";
@@ -2803,6 +3273,15 @@ export type StatsResponse = {
       "shares": UInt;
     }>;
   };
+  "protocolFees"?: {
+    "totalShares": UInt;
+    "tokens": Array<{
+      "symbol": string;
+      "address": Address;
+      "amount": UInt;
+      "shares": UInt;
+    }>;
+  };
   "faucet": {
     "address": Address;
     "claims": number;
@@ -2819,8 +3298,11 @@ export type StatsResponse = {
 };
 
 export type SwapQuery = {
-  "tokenIn": Address;
-  "tokenOut": Address;
+  "tokenIn"?: Address;
+  "tokenOut"?: Address;
+  "asset"?: string;
+  "from"?: string;
+  "to"?: string;
   "amount": string;
   "kind"?: "exactIn" | "exactOut";
 };
@@ -2914,7 +3396,7 @@ export const routes = [
     "name": "currentBatch",
     "method": "GET",
     "path": "/batches/current",
-    "query": null,
+    "query": "AssetQuery",
     "response": "CurrentBatchResponse",
     "backing": "chain: DarkCrossHook.currentBatch, participants, IPriceOracle.getMid"
   },
@@ -2967,6 +3449,22 @@ export const routes = [
     "backing": "file: deployments/${NETWORK}.json (tokens, pool/pools, dark); chain: IWrapperAdapter.ratio, IssuerRegistry.active"
   },
   {
+    "name": "poolAsset",
+    "method": "GET",
+    "path": "/pool/:asset",
+    "query": null,
+    "response": "PoolAssetResponse",
+    "backing": "chain: ParityHook.inventory, inventoryShares, quote (both directions); table: parity_fills, parity_fee_quotes"
+  },
+  {
+    "name": "faucet",
+    "method": "GET",
+    "path": "/faucet/:address",
+    "query": null,
+    "response": "FaucetResponse",
+    "backing": "chain: TestShareFaucet.tokens, amountOf, nextClaimAt; table: faucet_claims"
+  },
+  {
     "name": "stats",
     "method": "GET",
     "path": "/stats",
@@ -3002,6 +3500,8 @@ export type RouteResponses = {
   "fills": FillListResponse;
   "eligibility": EligibilityResponse;
   "assets": AssetsResponse;
+  "poolAsset": PoolAssetResponse;
+  "faucet": FaucetResponse;
   "stats": StatsResponse;
   "crankStatus": CrankStatusResponse;
 };
@@ -3015,13 +3515,15 @@ export type RouteQueries = {
   "quote": SwapQuery;
   "route": RouteQuery;
   "nyse": Record<string, never>;
-  "currentBatch": Record<string, never>;
+  "currentBatch": AssetQuery;
   "batches": BatchesQuery;
   "batch": Record<string, never>;
   "orders": PageQuery;
   "fills": FillsQuery;
   "eligibility": EligibilityQuery;
   "assets": Record<string, never>;
+  "poolAsset": Record<string, never>;
+  "faucet": Record<string, never>;
   "stats": StatsQuery;
   "crankStatus": Record<string, never>;
 };

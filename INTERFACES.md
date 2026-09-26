@@ -1127,13 +1127,15 @@ that cannot be read is an error, never a default. Chain-read values carry the `b
   { "name": "quote", "method": "GET", "path": "/quote", "query": "SwapQuery", "response": "QuoteResponse", "backing": "chain: ParityHook.quote" },
   { "name": "route", "method": "GET", "path": "/route", "query": "RouteQuery", "response": "RouteResponse", "backing": "chain: IEligibility.check, ParityHook.quote, V4Quoter simulation, DarkCrossHook.currentBatch, IPriceOracle.getMid; table: eligibility_checks (insert)" },
   { "name": "nyse", "method": "GET", "path": "/nyse", "query": null, "response": "NyseResponse", "backing": "chain: latest block timestamp, NyseCalendar.isOpen, nextTransition" },
-  { "name": "currentBatch", "method": "GET", "path": "/batches/current", "query": null, "response": "CurrentBatchResponse", "backing": "chain: DarkCrossHook.currentBatch, participants, IPriceOracle.getMid" },
+  { "name": "currentBatch", "method": "GET", "path": "/batches/current", "query": "AssetQuery", "response": "CurrentBatchResponse", "backing": "chain: DarkCrossHook.currentBatch, participants, IPriceOracle.getMid" },
   { "name": "batches", "method": "GET", "path": "/batches", "query": "BatchesQuery", "response": "BatchListResponse", "backing": "view: v_dark_batches" },
   { "name": "batch", "method": "GET", "path": "/batches/:batchId", "query": null, "response": "BatchDetailResponse", "backing": "view: v_dark_batches, v_dark_orders, v_fills; table: dark_forfeits, dark_residual_skips" },
   { "name": "orders", "method": "GET", "path": "/orders/:address", "query": "PageQuery", "response": "OrderListResponse", "backing": "view: v_dark_orders" },
   { "name": "fills", "method": "GET", "path": "/fills", "query": "FillsQuery", "response": "FillListResponse", "backing": "view: v_fills" },
   { "name": "eligibility", "method": "GET", "path": "/eligibility/:address", "query": "EligibilityQuery", "response": "EligibilityResponse", "backing": "chain: IEligibility.check, demoMode; table: eligibility_checks (insert), eligibility_denials" },
   { "name": "assets", "method": "GET", "path": "/assets", "query": null, "response": "AssetsResponse", "backing": "file: deployments/${NETWORK}.json (tokens, pool/pools, dark); chain: IWrapperAdapter.ratio, IssuerRegistry.active" },
+  { "name": "poolAsset", "method": "GET", "path": "/pool/:asset", "query": null, "response": "PoolAssetResponse", "backing": "chain: ParityHook.inventory, inventoryShares, quote (both directions); table: parity_fills, parity_fee_quotes" },
+  { "name": "faucet", "method": "GET", "path": "/faucet/:address", "query": null, "response": "FaucetResponse", "backing": "chain: TestShareFaucet.tokens, amountOf, nextClaimAt; table: faucet_claims" },
   { "name": "stats", "method": "GET", "path": "/stats", "query": "StatsQuery", "response": "StatsResponse", "backing": "view: v_fills; table: faucet_claims; chain: IWrapperAdapter.sharesPerToken, TestShareFaucet.nextClaimAt" },
   { "name": "crankStatus", "method": "GET", "path": "/status", "query": null, "response": "CrankStatusResponse", "backing": "crank process on CRANK_HEALTH_PORT (§7), not the API" }
 ]
@@ -1157,10 +1159,13 @@ Path parameters: `:batchId` is a `UInt`; `:address` is an `Address`. Pagination:
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["tokenIn", "tokenOut", "amount"],
+  "required": ["amount"],
   "properties": {
     "tokenIn": { "$ref": "Address" },
     "tokenOut": { "$ref": "Address" },
+    "asset": { "type": "string", "pattern": "^[A-Za-z0-9]{1,16}$" },
+    "from": { "type": "string", "pattern": "^[A-Za-z0-9]{1,24}$" },
+    "to": { "type": "string", "pattern": "^[A-Za-z0-9]{1,24}$" },
     "amount": { "type": "string", "pattern": "^[1-9][0-9]*$" },
     "kind": { "enum": ["exactIn", "exactOut"] }
   }
@@ -1446,7 +1451,17 @@ reasons visible in the fields (it never 503s). `addresses.tokens` is keyed by sy
     "shares": { "$ref": "UInt" },
     "feeAmount": { "$ref": "UInt" },
     "feeToken": { "$ref": "Address" },
-    "fee": { "$ref": "FeeBreakdown" }
+    "fee": { "$ref": "FeeBreakdown" },
+    "asset": { "type": "string" },
+    "sharesIn": { "$ref": "UInt" },
+    "sharesOut": { "$ref": "UInt" },
+    "baseFee": { "$ref": "UInt" },
+    "skewFee": { "$ref": "UInt" },
+    "offHoursFee": { "$ref": "UInt" },
+    "youKeep": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{6}$" },
+    "preSkewX18": { "$ref": "Int" },
+    "postSkewX18": { "$ref": "Int" },
+    "reducesImbalance": { "type": "boolean" }
   }
 }
 ```
@@ -1539,6 +1554,8 @@ Route decision, first match wins:
     "blockNumber": { "$ref": "UInt" },
     "batchOrigin": { "$ref": "UInt" },
     "participants": { "type": "integer" },
+    "asset": { "type": "string" },
+    "secondsRemaining": { "type": "integer" },
     "oracle": {
       "type": "object",
       "additionalProperties": false,
@@ -1571,7 +1588,33 @@ Route decision, first match wins:
     "participants": { "type": "integer" },
     "settledTx": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{64}$" },
     "settledBlock": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" },
-    "settledAt": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" }
+    "settledAt": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" },
+    "asset": { "type": "string" },
+    "crossedShares": { "$ref": "UInt" },
+    "protocolFeeShares": { "$ref": "UInt" },
+    "residualFilled": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["trader", "tokenIn", "amountIn", "amountOut", "feeAmount", "feeShares", "txHash"],
+        "properties": {
+          "trader": { "$ref": "Address" },
+          "tokenIn": { "$ref": "Address" },
+          "amountIn": { "$ref": "UInt" },
+          "amountOut": { "$ref": "UInt" },
+          "feeAmount": { "$ref": "UInt" },
+          "feeShares": { "$ref": "UInt" },
+          "txHash": { "$ref": "Bytes32" }
+        }
+      }
+    },
+    "unfilledRefunded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base", "quote", "shares"],
+      "properties": { "base": { "$ref": "UInt" }, "quote": { "$ref": "UInt" }, "shares": { "$ref": "UInt" } }
+    }
   }
 }
 ```
@@ -1695,6 +1738,7 @@ Route decision, first match wins:
   "additionalProperties": false,
   "properties": {
     "settled": { "enum": ["true", "false"] },
+    "asset": { "type": "string", "pattern": "^[A-Za-z0-9]{1,16}$" },
     "limit": { "type": "string", "pattern": "^([1-9]|[1-9][0-9]|1[0-9][0-9]|200)$" },
     "cursor": { "type": "string", "pattern": "^[0-9]+:[0-9]+$" }
   }
@@ -1753,6 +1797,28 @@ last claim time (indexer) and `nextClaimAt` (read on chain).
       }
     },
     "feesEarned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalShares", "tokens"],
+      "properties": {
+        "totalShares": { "$ref": "UInt" },
+        "tokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["symbol", "address", "amount", "shares"],
+            "properties": {
+              "symbol": { "type": "string" },
+              "address": { "$ref": "Address" },
+              "amount": { "$ref": "UInt" },
+              "shares": { "$ref": "UInt" }
+            }
+          }
+        }
+      }
+    },
+    "protocolFees": {
       "type": "object",
       "additionalProperties": false,
       "required": ["totalShares", "tokens"],
@@ -1872,6 +1938,122 @@ DarkCrossHook pair belongs to it. The UI builds its asset/platform pickers from 
               "batchBlocks": { "type": "integer" }
             }
           }
+        }
+      }
+    }
+  }
+}
+```
+
+`?asset=SYMBOL` on `/quote` (with `from`/`to` as wrapper symbols or platform names, e.g. `from=coinbase&to=xstocks`),
+`/batches` and `/batches/current` selects the asset from `GET /assets`; `/quote` still accepts `tokenIn`/`tokenOut`.
+Share figures are 1e18-scaled canonical shares. `youKeep` = sharesOut / sharesIn (6 decimals). Fee splits:
+`baseFee`/`skewFee`/`offHoursFee` divide the fee (in shares) by the quoted pip components; LP fee totals split each
+indexed fill's fee by the `FeeQuoted` breakdown emitted in the same transaction. `protocolFees` are Dark Cross
+cross fees (5 bps per side), the only protocol revenue. `secondsRemaining` uses the chain's recent block time.
+
+```json wrapswap:schema AssetQuery
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": { "asset": { "type": "string", "pattern": "^[A-Za-z0-9]{1,16}$" } }
+}
+```
+
+`GET /pool/:asset`
+
+```json wrapswap:schema PoolAssetResponse
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["asset", "block", "poolId", "wrappers", "totalShares", "skewX18", "skewPct", "directions", "cheapDirection", "lpFees"],
+  "properties": {
+    "asset": { "type": "string" },
+    "block": { "$ref": "UInt" },
+    "poolId": { "$ref": "Bytes32" },
+    "wrappers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["platform", "symbol", "address", "inventory", "inventoryShares"],
+        "properties": {
+          "platform": { "type": "string" },
+          "symbol": { "type": "string" },
+          "address": { "$ref": "Address" },
+          "inventory": { "$ref": "UInt" },
+          "inventoryShares": { "$ref": "UInt" }
+        }
+      }
+    },
+    "totalShares": { "$ref": "UInt" },
+    "skewX18": { "$ref": "Int" },
+    "skewPct": { "type": "string", "pattern": "^-?[0-9]+\\.[0-9]{2}$" },
+    "directions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "to", "skewFeePips", "offHoursPips", "totalPips", "totalBps", "reducesImbalance"],
+        "properties": {
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "skewFeePips": { "type": "integer" },
+          "offHoursPips": { "type": "integer" },
+          "totalPips": { "type": "integer" },
+          "totalBps": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{2}$" },
+          "reducesImbalance": { "type": "boolean" }
+        }
+      }
+    },
+    "cheapDirection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to"],
+      "properties": { "from": { "type": "string" }, "to": { "type": "string" } }
+    },
+    "lpFees": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fills", "baseShares", "skewShares", "offHoursShares", "totalShares"],
+      "properties": {
+        "fills": { "type": "integer" },
+        "baseShares": { "$ref": "UInt" },
+        "skewShares": { "$ref": "UInt" },
+        "offHoursShares": { "$ref": "UInt" },
+        "totalShares": { "$ref": "UInt" }
+      }
+    }
+  }
+}
+```
+
+`GET /faucet/:address`: per-token claim amounts and the account's next claim time (the faucet has one cooldown per
+account, repeated per token).
+
+```json wrapswap:schema FaucetResponse
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["address", "faucet", "block", "lastClaimAt", "tokens"],
+  "properties": {
+    "address": { "$ref": "Address" },
+    "faucet": { "$ref": "Address" },
+    "block": { "$ref": "UInt" },
+    "lastClaimAt": { "type": ["string", "null"], "pattern": "^(0|[1-9][0-9]*)$" },
+    "tokens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset", "symbol", "address", "amount", "nextClaimAt", "claimable"],
+        "properties": {
+          "asset": { "type": "string" },
+          "symbol": { "type": "string" },
+          "address": { "$ref": "Address" },
+          "amount": { "$ref": "UInt" },
+          "nextClaimAt": { "$ref": "UInt" },
+          "claimable": { "type": "boolean" }
         }
       }
     }

@@ -136,7 +136,47 @@ export async function routes(
   const allTokens = deploymentTokens(d);
   const faucetAbi = parseAbi([
     "function nextClaimAt(address account) view returns (uint256)",
+    "function tokens() view returns (address[])",
+    "function amountOf(address token) view returns (uint256)",
   ]);
+  // Assets come only from the manifest: `assets[]` (multi-asset) or, for older manifests, `tokens` + `pool`.
+  const assetList: any[] =
+    d.assets ??
+    [
+      {
+        symbol: d.tokens[0].underlying,
+        pool: d.pool,
+        darkCross: true,
+        wrappers: d.tokens.map((t) => ({
+          platform: t.issuer,
+          symbol: t.symbol,
+          token: t.address,
+          adapter: t.adapter,
+          decimals: t.decimals,
+        })),
+      },
+    ];
+  const assetOf = (symbol: string) => {
+    const a = assetList.find(
+      (a) => a.symbol.toLowerCase() === String(symbol).toLowerCase(),
+    );
+    if (!a) throw fault("NOT_FOUND", `Unknown asset ${symbol}`);
+    return a;
+  };
+  const assetOfToken = (address: string) =>
+    assetList.find((a) => a.wrappers.some((w: any) => eq(w.token, address)));
+  const wrapperIn = (a: any, name: string) =>
+    a.wrappers.find((w: any) =>
+      [w.symbol, w.platform].some(
+        (x: string) => x.toLowerCase() === String(name).toLowerCase(),
+      ),
+    );
+  const darkAsset = assetOfToken(d.dark.baseToken);
+  const sharesOfToken = async (address: string, amount: bigint, b: any) => {
+    const t = await token(address, b);
+    return canonical.toSharesDown(amount, t.sharesPerTokenX18, t.decimals);
+  };
+  const abs = (x: bigint) => (x < 0n ? -x : x);
   const token = async (address: string, b: any) => {
     const t = allTokens.find((t) => eq(t.address, address))!;
     const [ratio, active] = await Promise.all([
@@ -190,21 +230,32 @@ export async function routes(
       block: b.number,
     };
   };
-  const quote = async (q: any, b: any) => {
+  const quote = async (q0: any, b: any) => {
+    const q = { ...q0 };
+    if (q.asset) {
+      const a = assetOf(q.asset),
+        from = wrapperIn(a, q.from ?? ""),
+        to = wrapperIn(a, q.to ?? "");
+      if (!from || !to) throw fault("NOT_FOUND", "Unknown wrapper for asset");
+      q.tokenIn = getAddress(from.token);
+      q.tokenOut = getAddress(to.token);
+    }
+    if (!q.tokenIn || !q.tokenOut)
+      throw fault("BAD_REQUEST", "Pass tokenIn and tokenOut, or asset, from and to");
+    const asset = assetOfToken(q.tokenIn);
     if (
       eq(q.tokenIn, q.tokenOut) ||
-      ![q.tokenIn, q.tokenOut].every((a) =>
-        d.tokens.some((t) => eq(t.address, a)),
-      )
+      !asset?.wrappers.some((w: any) => eq(w.token, q.tokenOut))
     )
       throw fault("NOT_FOUND", "Unknown token pair");
+    const pool = asset.pool;
     const kind = q.kind ?? "exactIn",
       amountSpecified = BigInt(q.amount) * (kind === "exactIn" ? -1n : 1n),
-      zeroForOne = eq(q.tokenIn, d.pool.key.currency0);
+      zeroForOne = eq(q.tokenIn, pool.key.currency0);
     const result = await read(
       "parityHook",
       "quote",
-      [d.pool.key, zeroForOne, amountSpecified],
+      [pool.key, zeroForOne, amountSpecified],
       b.number,
     );
     const [input, outputToken] = await Promise.all([
@@ -223,9 +274,33 @@ export async function routes(
           "INTERNAL",
           "On-chain quote disagrees with frozen rounding rules",
         );
+    // Share-denominated view: fee split by the quoted pip components; skew before/after from inventory shares.
+    const sharesIn = BigInt(result.shares),
+      sharesOut = canonical.toSharesDown(
+        BigInt(result.amountOut),
+        outputToken.sharesPerTokenX18,
+        outputToken.decimals,
+      ),
+      feeShares = canonical.toSharesDown(
+        BigInt(result.feeAmount),
+        outputToken.sharesPerTokenX18,
+        outputToken.decimals,
+      ),
+      totalPips = BigInt(result.fee.totalPips),
+      baseFee = totalPips ? (feeShares * BigInt(result.fee.basePips)) / totalPips : 0n,
+      offHoursFee = totalPips ? (feeShares * BigInt(result.fee.closedPips)) / totalPips : 0n;
+    const [inv0, inv1] = await Promise.all(
+      [pool.key.currency0, pool.key.currency1].map((c: string) =>
+        read("parityHook", "inventoryShares", [c], b.number),
+      ),
+    );
+    const [post0, post1] = canonical.postTradeShares(inv0, inv1, zeroForOne, sharesIn);
+    const preSkewX18 = BigInt(result.fee.skewX18),
+      postSkewX18 = canonical.skewX18(post0, post1);
+    const keep = sharesIn ? (sharesOut * 1_000_000n) / sharesIn : 0n;
     return {
       block: b.number,
-      poolId: d.pool.id,
+      poolId: pool.id,
       tokenIn: q.tokenIn,
       tokenOut: q.tokenOut,
       kind,
@@ -234,6 +309,16 @@ export async function routes(
       ...result,
       feeToken: q.tokenOut,
       fee: fee(result.fee),
+      asset: asset.symbol,
+      sharesIn,
+      sharesOut,
+      baseFee,
+      skewFee: feeShares - baseFee - offHoursFee,
+      offHoursFee,
+      youKeep: `${keep / 1_000_000n}.${(keep % 1_000_000n).toString().padStart(6, "0")}`,
+      preSkewX18,
+      postSkewX18,
+      reducesImbalance: abs(postSkewX18) < abs(preSkewX18),
     };
   };
   const current = async (b: any) => {
@@ -268,6 +353,10 @@ export async function routes(
     } catch (e) {
       if (!String(e).includes("NoPrice")) throw e;
     }
+    // Seconds left in the phase from the chain's average block time over the last 100 blocks.
+    const earlier = await client.getBlock({ blockNumber: b.number - 100n });
+    const blockMs = (Number(b.timestamp - earlier.timestamp) * 1000) / 100;
+    const blocksLeft = phaseEndsBlock > b.number ? Number(phaseEndsBlock - b.number) : 0;
     return {
       batchId,
       phase: phases[Number(phase)],
@@ -275,8 +364,57 @@ export async function routes(
       blockNumber: b.number,
       batchOrigin: d.dark.batchOrigin,
       participants: participants.length,
+      asset: darkAsset?.symbol ?? d.tokens[0].underlying,
+      secondsRemaining: Math.ceil((blocksLeft * blockMs) / 1000),
       oracle,
     };
+  };
+  // Per-batch share-denominated detail: crossed shares, protocol (cross) fees, residual fills, unfilled refunds.
+  const enrichBatches = async (items: any[], b: any) => {
+    if (!items.length) return items;
+    const rows = await sql(
+      "SELECT batch_id::text AS id, kind, account, token_in, token_out, amount_in::text AS amount_in, amount_out::text AS amount_out, fee_amount::text AS fee_amount, tx_hash FROM v_fills WHERE chain_id=$1 AND batch_id = ANY($2::numeric[]) AND kind IN ('DARK-CROSS','DARK-RESIDUAL')",
+      [d.chainId, items.map((i) => String(i.batchId))],
+    );
+    return Promise.all(
+      items.map(async (i) => {
+        const mine = rows.filter((r) => r.id === String(i.batchId));
+        let protocolFeeShares = 0n;
+        for (const r of mine.filter((r) => r.kind === "DARK-CROSS"))
+          protocolFeeShares += await sharesOfToken(r.tokenOut, BigInt(r.feeAmount ?? 0), b);
+        const residualFilled = await Promise.all(
+          mine
+            .filter((r) => r.kind === "DARK-RESIDUAL")
+            .map(async (r) => ({
+              trader: getAddress(r.account),
+              tokenIn: getAddress(r.tokenIn),
+              amountIn: BigInt(r.amountIn),
+              amountOut: BigInt(r.amountOut),
+              feeAmount: BigInt(r.feeAmount ?? 0),
+              feeShares: await sharesOfToken(r.tokenOut, BigInt(r.feeAmount ?? 0), b),
+              txHash: r.txHash,
+            })),
+        );
+        const routed = (t: string) =>
+          residualFilled.filter((r) => eq(r.tokenIn, t)).reduce((s, r) => s + r.amountIn, 0n);
+        const base = BigInt(i.residualBaseIn ?? 0) - routed(d.dark.baseToken),
+          quoteLeft = BigInt(i.residualQuoteIn ?? 0) - routed(d.dark.quoteToken);
+        return {
+          ...i,
+          asset: darkAsset?.symbol ?? d.tokens[0].underlying,
+          crossedShares: await sharesOfToken(d.dark.baseToken, BigInt(i.crossedBase ?? 0), b),
+          protocolFeeShares,
+          residualFilled,
+          unfilledRefunded: {
+            base,
+            quote: quoteLeft,
+            shares:
+              (await sharesOfToken(d.dark.baseToken, base, b)) +
+              (await sharesOfToken(d.dark.quoteToken, quoteLeft, b)),
+          },
+        };
+      }),
+    );
   };
   const page = async (
     source: string,
@@ -588,21 +726,30 @@ export async function routes(
       source: "chain",
     };
   });
-  get("/batches/current", "CurrentBatchResponse", async () =>
-    current(await block()),
+  get(
+    "/batches/current",
+    "CurrentBatchResponse",
+    async (req) => {
+      if (req.query.asset && assetOf(req.query.asset) !== darkAsset)
+        throw fault("NOT_FOUND", `No Dark Cross for ${req.query.asset}`);
+      return current(await block());
+    },
+    "AssetQuery",
   );
   get(
     "/batches",
     "BatchListResponse",
     async (req) => {
-      const settled = req.query.settled;
-      return page(
+      const { settled, asset, ...q } = req.query;
+      if (asset && assetOf(asset) !== darkAsset) return { items: [], nextCursor: null };
+      const result = await page(
         batchSource,
-        req.query,
+        q,
         settled ? " AND settled=$2" : "",
         settled ? [settled === "true"] : [],
         (r) => selectFields(r, batchFields),
       );
+      return { ...result, items: await enrichBatches(result.items, await block()) };
     },
     "BatchesQuery",
   );
@@ -698,6 +845,108 @@ export async function routes(
       ),
     };
   });
+  get("/pool/:asset", "PoolAssetResponse", async (req) => {
+    const a = assetOf(req.params.asset),
+      pool = a.pool,
+      b = await block();
+    const wrappers = await Promise.all(
+      a.wrappers.map(async (w: any) => {
+        const [inventory, inventoryShares] = await Promise.all(
+          ["inventory", "inventoryShares"].map((fn) =>
+            read("parityHook", fn, [w.token], b.number),
+          ),
+        );
+        return { platform: w.platform, symbol: w.symbol, address: getAddress(w.token), inventory, inventoryShares };
+      }),
+    );
+    const side = (c: string) => wrappers.find((w) => eq(w.address, c))!.inventoryShares as bigint;
+    const s0 = side(pool.key.currency0),
+      s1 = side(pool.key.currency1),
+      skewX18 = canonical.skewX18(s0, s1);
+    // Each direction: the on-chain quote for one whole `from` token.
+    const directions = await Promise.all(
+      wrappers.flatMap((from) =>
+        wrappers
+          .filter((to) => to !== from)
+          .map(async (to) => {
+            const t = allTokens.find((t) => eq(t.address, from.address))!;
+            const zeroForOne = eq(from.address, pool.key.currency0);
+            const r = await read("parityHook", "quote", [pool.key, zeroForOne, -(10n ** BigInt(t.decimals))], b.number);
+            const [p0, p1] = canonical.postTradeShares(s0, s1, zeroForOne, BigInt(r.shares));
+            return {
+              from: from.symbol,
+              to: to.symbol,
+              skewFeePips: Number(r.fee.skewPips),
+              offHoursPips: Number(r.fee.closedPips),
+              totalPips: Number(r.fee.totalPips),
+              totalBps: canonical.pipsToBps(r.fee.totalPips),
+              reducesImbalance: abs(canonical.skewX18(p0, p1)) < abs(skewX18),
+            };
+          }),
+      ),
+    );
+    const cheap = directions.reduce((m, x) => (x.totalPips < m.totalPips ? x : m));
+    // LP fees: each indexed fill's fee split by the FeeQuoted breakdown emitted earlier in the same transaction.
+    const fills = await sql(
+      "SELECT f.fee_amount::text AS fee, f.token_out, q.base_pips, q.skew_pips, q.closed_pips, q.total_pips FROM parity_fills f LEFT JOIN LATERAL (SELECT base_pips, skew_pips, closed_pips, total_pips FROM parity_fee_quotes q WHERE q.chain_id=f.chain_id AND q.tx_hash=f.tx_hash AND q.pool_id=f.pool_id AND q.log_index<f.log_index ORDER BY q.log_index DESC LIMIT 1) q ON true WHERE f.chain_id=$1 AND f.pool_id=$2",
+      [d.chainId, pool.id.toLowerCase()],
+    );
+    const lp = { fills: fills.length, baseShares: 0n, skewShares: 0n, offHoursShares: 0n, totalShares: 0n };
+    for (const f of fills) {
+      const total = await sharesOfToken(f.tokenOut, BigInt(f.fee), b);
+      lp.totalShares += total;
+      if (!f.totalPips) continue;
+      const base = (total * BigInt(f.basePips)) / BigInt(f.totalPips),
+        off = (total * BigInt(f.closedPips)) / BigInt(f.totalPips);
+      lp.baseShares += base;
+      lp.offHoursShares += off;
+      lp.skewShares += total - base - off;
+    }
+    const hundredths = (skewX18 * 10000n) / canonical.ONE;
+    return {
+      asset: a.symbol,
+      block: b.number,
+      poolId: pool.id,
+      wrappers,
+      totalShares: s0 + s1,
+      skewX18,
+      skewPct: `${hundredths < 0n ? "-" : ""}${abs(hundredths) / 100n}.${(abs(hundredths) % 100n).toString().padStart(2, "0")}`,
+      directions,
+      cheapDirection: { from: cheap.from, to: cheap.to },
+      lpFees: lp,
+    };
+  });
+  get("/faucet/:address", "FaucetResponse", async (req) => {
+    checked("Address", req.params.address);
+    if (!d.faucet) throw fault("NOT_FOUND", "No faucet in the deployment");
+    const b = await block();
+    const call = (functionName: any, args: any[] = []) =>
+      client.readContract({ address: d.faucet!, abi: faucetAbi, functionName, args, blockNumber: b.number }) as Promise<any>;
+    const [list, next] = await Promise.all([call("tokens"), call("nextClaimAt", [req.params.address])]);
+    const [last] = await sql(
+      "SELECT max(\"timestamp\")::text AS t FROM faucet_claims WHERE chain_id=$1 AND account=$2",
+      [d.chainId, req.params.address.toLowerCase()],
+    );
+    return {
+      address: req.params.address,
+      faucet: d.faucet,
+      block: b.number,
+      lastClaimAt: last?.t ?? null,
+      tokens: await Promise.all(
+        (list as string[]).map(async (t) => {
+          const w = allTokens.find((x) => eq(x.address, t));
+          return {
+            asset: w?.underlying ?? "UNKNOWN",
+            symbol: w?.symbol ?? t,
+            address: getAddress(t),
+            amount: await call("amountOf", [t]),
+            nextClaimAt: next,
+            claimable: next <= b.timestamp,
+          };
+        }),
+      ),
+    };
+  });
   get(
     "/stats",
     "StatsResponse",
@@ -741,6 +990,17 @@ export async function routes(
         for (const r of kinds) byKind[r.kind] = r.n;
         return { byKind, fills: kinds.reduce((n, r) => n + r.n, 0), sharesVolume, assets };
       };
+      const crossFees = await sql(
+        "SELECT token_out, sum(fee_amount)::text AS amount FROM v_fills WHERE chain_id=$1 AND kind='DARK-CROSS' GROUP BY token_out",
+        [d.chainId],
+      );
+      const protocolTokens = await Promise.all(
+        crossFees.map(async (r) => {
+          const t = allTokens.find((t) => eq(t.address, r.tokenOut))!;
+          const amount = BigInt(r.amount);
+          return { symbol: t.symbol, address: t.address, amount, shares: await shares(t.address, amount) };
+        }),
+      );
       const [cursor, total, fees] = await Promise.all([
         sql("SELECT last_block FROM indexer_cursor WHERE chain_id=$1", [d.chainId]),
         volume(),
@@ -803,6 +1063,10 @@ export async function routes(
             .reduce((s, t) => s + t.shares, 0n),
         })),
         feesEarned: { totalShares: tokens.reduce((s, t) => s + t.shares, 0n), tokens },
+        protocolFees: {
+          totalShares: protocolTokens.reduce((s, t) => s + t.shares, 0n),
+          tokens: protocolTokens,
+        },
         faucet,
         wallet,
       };
@@ -820,7 +1084,7 @@ export async function routes(
     )[0];
     if (!batch) throw fault("NOT_FOUND", "Unknown batch");
     return {
-      batch: selectFields(batch, batchFields),
+      batch: (await enrichBatches([selectFields(batch, batchFields)], await block()))[0],
       orders: (
         await sql(
           "SELECT * FROM v_dark_orders WHERE chain_id=$1 AND batch_id=$2",

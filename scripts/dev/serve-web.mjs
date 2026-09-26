@@ -1,6 +1,6 @@
 // Production web server for the live stack: serves the static build (dist/web) with an SPA fallback, and proxies
 // /api → API_PORT, /crank → CRANK_HEALTH_PORT and /rpc → RPC_URL (so a keyed RPC stays server-side).
-// /api, /crank and /rpc share a fixed-window per-IP rate limit; behind Tailscale Funnel the client IP comes from
+// /api/pay/* goes to the Sui pay-api (PAY_API_URL). /api, /crank and /rpc share a fixed-window per-IP rate limit; behind Tailscale Funnel the client IP comes from
 // X-Forwarded-For (only trusted when the socket peer is loopback).
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -12,6 +12,8 @@ const apiPort = Number(process.env.API_PORT || 18010);
 const crankPort = Number(process.env.CRANK_HEALTH_PORT || 18110);
 const rpcUrl = process.env.RPC_URL;
 const limit = Number(process.env.RATE_LIMIT_PER_MIN || 600);
+// Sui payments API (the Sui keeper's pay-api) until the sui branch mounts /pay routes in the API itself.
+const payUrl = process.env.PAY_API_URL || 'http://127.0.0.1:5402';
 if (!rpcUrl) throw Error('RPC_URL is required');
 
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
@@ -66,7 +68,9 @@ async function file(res, path) {
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
   const p = url.pathname;
-  if (p === '/api' || p.startsWith('/api/')) {
+  if (p.startsWith('/api/pay/')) {
+    if (!limited(req, res)) await proxy(req, res, `${payUrl}${p.slice(4)}${url.search}`);
+  } else if (p === '/api' || p.startsWith('/api/')) {
     if (!limited(req, res)) await proxy(req, res, `http://127.0.0.1:${apiPort}${p.slice(4) || '/'}${url.search}`);
   } else if (p === '/crank' || p.startsWith('/crank/')) {
     if (!limited(req, res)) await proxy(req, res, `http://127.0.0.1:${crankPort}${p.slice(6) || '/'}${url.search}`);
