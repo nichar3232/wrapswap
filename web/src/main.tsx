@@ -5,6 +5,7 @@ import { Mark } from "./brand";
 import { config } from "./config";
 import { useApi, type FeedStatus } from "./hooks/useApi";
 import { amount } from "./lib/format";
+import { assetsOf } from "./app/assets";
 import { Liquidity } from "./app/Liquidity";
 import { Move } from "./app/Move";
 import { Portfolio } from "./app/Portfolio";
@@ -179,6 +180,8 @@ function App() {
     pool = useApi("pool"),
     crank = useApi("crankStatus");
   const d = deployment.data ?? fallbackDeployment;
+  const assetsFeed = useApi("assets", "", 30000);
+  const assets = assetsOf(assetsFeed.data, d);
   const [tab, setTabState] = useState<Tab>(initialTab);
   const [intent, setIntent] = useState<MoveIntent>();
   const moveFrom = (fromToken: string) => {
@@ -294,11 +297,11 @@ function App() {
             <section key={t} className="panel" aria-label={t} inert={i !== index} aria-hidden={i !== index} data-panel={TAB_PARAM[t]}>
               <div className="panel-inner">
                 {t === "Portfolio" ? (
-                  <Portfolio d={d} onMove={moveFrom} />
+                  <Portfolio d={d} assets={assets} onMove={moveFrom} />
                 ) : t === "Move" ? (
-                  <Move d={d} pool={pool} intent={intent} />
+                  <Move d={d} assets={assets} pool={pool} intent={intent} />
                 ) : (
-                  <Liquidity d={d} fees={fees} nyse={nyse} onMove={moveFrom} />
+                  <Liquidity d={d} assets={assets} fees={fees} nyse={nyse} onMove={moveFrom} />
                 )}
               </div>
             </section>

@@ -6,7 +6,7 @@ import { config } from "../config";
 import { useApi, type Feed } from "../hooks/useApi";
 import { amount } from "../lib/format";
 import { allowance, approve, convertExactIn, darkSend, isDemo, swapOutcome, verifyOrder } from "../wallet";
-import { assetsOf, toShares, type Platform } from "./assets";
+import { toShares, type Asset, type Platform } from "./assets";
 import { BatchTimeline, blocksToCross } from "./BatchTimeline";
 import { pipsToBps, quoteSummary } from "./fees";
 import { SwapAnatomy, type SwapPath } from "./SwapAnatomy";
@@ -53,9 +53,18 @@ type Sealed = {
   residualOut?: bigint;
 };
 
-export function Move({ d, pool, intent }: { d: Deployment | undefined; pool: Feed<"pool">; intent?: MoveIntent }) {
+export function Move({
+  d,
+  assets,
+  pool,
+  intent,
+}: {
+  d: Deployment | undefined;
+  assets: Asset[];
+  pool: Feed<"pool">;
+  intent?: MoveIntent;
+}) {
   const w = useWallet();
-  const assets = assetsOf(d);
   const [assetIx, setAssetIx] = useState(0);
   const asset = assets[assetIx];
   const [step, setStep] = useState(0);
@@ -133,8 +142,9 @@ export function Move({ d, pool, intent }: { d: Deployment | undefined; pool: Fee
   const history = useApi("batches", "", 8000);
   const accountFills = useApi("fills", sealed && w.address ? `account=${w.address}` : null, 6000);
   const mid = batch.data?.oracle.midX18 ? BigInt(batch.data.oracle.midX18) : undefined;
-  const base = d?.tokens.find((t) => t.address === d.dark.baseToken),
-    quoteTok = d?.tokens.find((t) => t.address === d.dark.quoteToken);
+  const pair = asset?.darkCross;
+  const base = asset?.platforms.find((p) => p.token.address.toLowerCase() === pair?.baseToken.toLowerCase())?.token,
+    quoteTok = asset?.platforms.find((p) => p.token.address.toLowerCase() === pair?.quoteToken.toLowerCase())?.token;
   const sellBase = !!a && !!base && a.address === base.address;
   let limit = mid ?? 0n;
   try {

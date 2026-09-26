@@ -1,43 +1,13 @@
-import { useEffect, useState } from "react";
-import type { Deployment, FillView } from "@wrapswap/types";
+import { useState } from "react";
+import type { Deployment } from "@wrapswap/types";
 import { config } from "../config";
-import { request, useApi, type Feed } from "../hooks/useApi";
+import { useApi, type Feed } from "../hooks/useApi";
 import { amount } from "../lib/format";
-import { assetsOf, platformName, toShares, type Asset, type Platform } from "./assets";
+import { platformName, toShares, type Asset, type Platform } from "./assets";
 import { FeeCurve, hours, pct } from "./FeeCurve";
 import { pipsToBps, tradeFee, type Inventory } from "./fees";
 import { fmtShares } from "./Move";
 import { Empty, Hex, Val } from "./ui";
-
-/** Every fill, paged to the end (no /stats route yet); totals are computed from these real rows. */
-function useAllFills() {
-  const [state, setState] = useState<{ items?: FillView[]; failed?: boolean }>({});
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    let live = true;
-    (async () => {
-      const items: FillView[] = [];
-      let cursor: string | null = null;
-      try {
-        for (let page = 0; page < 20; page++) {
-          const r: { items: FillView[]; nextCursor: string | null } = await request("fills", `limit=100${cursor ? `&cursor=${cursor}` : ""}`);
-          items.push(...r.items);
-          cursor = r.nextCursor;
-          if (!cursor) break;
-        }
-        if (live) setState({ items });
-      } catch {
-        if (live) setState((s) => ({ ...s, failed: true }));
-      }
-    })();
-    const t = setTimeout(() => setTick((x) => x + 1), 20000);
-    return () => {
-      live = false;
-      clearTimeout(t);
-    };
-  }, [tick]);
-  return state;
-}
 
 /** A beam that tips toward the side holding more inventory; each pan shows the fee for moving out of that platform. */
 function Balance({ sides }: { sides: { p: Platform; bps: number; cheap: boolean; shares: bigint }[] }) {
@@ -149,24 +119,24 @@ function AssetLiquidity({
 
 export function Liquidity({
   d,
+  assets,
   fees,
   nyse,
   onMove,
 }: {
   d: Deployment | undefined;
+  assets: Asset[];
   fees: Feed<"fees">;
   nyse: Feed<"nyse">;
   onMove: (fromToken: string) => void;
 }) {
   const inventory = useApi("inventory");
   const fills = useApi("fills");
-  const all = useAllFills();
+  const stats = useApi("stats", "", 15000);
   const [curve, setCurve] = useState(false);
-  const assets = assetsOf(d);
   const skew = inventory.data ? Number(inventory.data.skewX18) / 1e18 : undefined;
-  const conversions = all.items?.filter((f) => f.kind === "PARITY" || f.kind === "FALL-THROUGH");
-  const volume = conversions?.reduce((s, f) => s + BigInt(f.shares ?? "0"), 0n);
-  const feeTokens = inventory.data?.tokens.filter((t) => BigInt(t.feesAccrued) > 0n);
+  const conversions = stats.data ? stats.data.byKind.PARITY + stats.data.byKind["FALL-THROUGH"] : undefined;
+  const crosses = stats.data ? stats.data.byKind["DARK-CROSS"] : undefined;
   return (
     <div className="page">
       <div className="liq-top">
@@ -178,27 +148,32 @@ export function Liquidity({
         <section className="card tile" aria-label="Volume converted">
           <span className="tile-k">Volume converted</span>
           <span className="tile-v">
-            <Val status={all.items ? "ok" : all.failed ? "unavailable" : "loading"} w="4em" h="1em">
-              {volume !== undefined && fmtShares(volume)} <small>shares</small>
+            <Val status={stats.status} w="4em" h="1em">
+              {stats.data && fmtShares(stats.data.sharesVolume)} <small>shares</small>
             </Val>
           </span>
-          <span className="tile-s">{conversions ? `${conversions.length} conversion${conversions.length === 1 ? "" : "s"}` : " "}</span>
+          <span className="tile-s">
+            {conversions !== undefined ? `${conversions} instant move${conversions === 1 ? "" : "s"} · ${crosses} sealed cross fill${crosses === 1 ? "" : "s"}` : " "}
+          </span>
         </section>
         <section className="card tile" aria-label="Fees earned">
           <span className="tile-k">Fees earned by inventory</span>
           <span className="tile-v">
-            <Val status={inventory.status} w="4em" h="1em">
-              {feeTokens && feeTokens.length === 0 ? "0" : feeTokens?.map((t) => {
-                const tok = d?.tokens.find((x) => x.address === t.address);
-                return (
-                  <span key={t.address} className="fee-earned">
-                    {amount(t.feesAccrued, tok?.decimals ?? 18, 4)} <small>{t.symbol}</small>
-                  </span>
-                );
-              })}
+            <Val status={stats.status} w="4em" h="1em">
+              {stats.data && fmtShares(stats.data.feesEarned.totalShares)} <small>shares</small>
             </Val>
           </span>
-          <span className="tile-s">accrued by ParityHook</span>
+          <span className="tile-s">
+            {stats.data
+              ? stats.data.feesEarned.tokens
+                  .filter((t) => BigInt(t.amount) > 0n)
+                  .map((t) => {
+                    const tok = d?.tokens.find((x) => x.address === t.address);
+                    return `${amount(t.amount, tok?.decimals ?? 18, 4)} ${t.symbol}`;
+                  })
+                  .join(" · ") || "none yet"
+              : " "}
+          </span>
         </section>
         <section className="card tile" aria-label="Market">
           <span className="tile-k">Market</span>

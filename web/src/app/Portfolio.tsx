@@ -3,20 +3,17 @@ import { config } from "../config";
 import { useApi } from "../hooks/useApi";
 import { amount } from "../lib/format";
 import { isDemo } from "../wallet";
-import { assetsOf, platformName, toShares } from "./assets";
+import { platformName, toShares, type Asset } from "./assets";
 import { fmtShares } from "./Move";
 import { Hex, Skeleton, Val } from "./ui";
 import { useWallet } from "./wallet";
 
 /** Home: what you hold, per asset and platform, with one action per row. */
-export function Portfolio({ d, onMove }: { d: Deployment | undefined; onMove: (fromToken: string) => void }) {
+export function Portfolio({ d, assets, onMove }: { d: Deployment | undefined; assets: Asset[]; onMove: (fromToken: string) => void }) {
   const w = useWallet();
-  const assets = assetsOf(d);
-  const moves = useApi("fills", w.address ? `account=${w.address}` : null, 15000);
-  const tokens = d?.tokens ?? [];
-  const recent = (moves.data?.items ?? []).filter(
-    (f) => (f.kind === "PARITY" || f.kind === "FALL-THROUGH") && f.account.toLowerCase() === w.address?.toLowerCase(),
-  );
+  const stats = useApi("stats", w.address ? `address=${w.address}` : null, 15000);
+  const tokens = assets.flatMap((a) => a.platforms.map((p) => p.token));
+  const recent = stats.data?.wallet?.recent ?? [];
 
   return (
     <div className="page portfolio">
@@ -103,7 +100,10 @@ export function Portfolio({ d, onMove }: { d: Deployment | undefined; onMove: (f
                       ? `${fmtShares(toShares(BigInt(f.amountIn), ti))} → ${fmtShares(toShares(BigInt(f.amountOut), to))} ${ti.underlying} shares · ${platformName(ti)} → ${platformName(to)}`
                       : f.kind}
                   </span>
-                  <span className="muted">{f.feePips === null ? "" : `${(f.feePips / 100).toFixed(2)} bps`}</span>
+                  <span className="muted">
+                    {f.kind === "PARITY" || f.kind === "FALL-THROUGH" ? "Instant" : "Sealed cross"}
+                    {f.feePips === null ? "" : ` · ${(f.feePips / 100).toFixed(2)} bps`}
+                  </span>
                   <Hex value={f.txHash} kind="tx" simulated={config.useMocks} />
                 </li>
               );

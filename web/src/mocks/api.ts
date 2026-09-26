@@ -244,6 +244,30 @@ export function fixtures(network: Network) {
       nextCursor: null,
     },
     orders: { items: [], nextCursor: null },
+    assets: {
+      network,
+      chainId: d.chainId,
+      block: "100",
+      assets: [
+        {
+          asset: a.underlying,
+          platforms: d.tokens.map((t) => ({
+            issuer: t.issuer,
+            symbol: t.symbol,
+            name: t.name,
+            address: t.address,
+            decimals: t.decimals,
+            adapter: t.adapter,
+            adapterKind: t.adapterKind,
+            sharesPerTokenX18: t.sharesPerTokenX18,
+            healthy: true,
+            mock: t.mock,
+          })),
+          pools: [{ poolId: d.pool.id, ...d.pool.key }],
+          darkCross: { hook: d.contracts.darkCrossHook, baseToken: d.dark.baseToken, quoteToken: d.dark.quoteToken, batchBlocks: d.dark.batchBlocks },
+        },
+      ],
+    },
   } satisfies Partial<RouteResponses>;
 }
 export function mockResponse(
@@ -303,6 +327,33 @@ export function mockResponse(
             feePips: q.fee.totalPips,
           },
       dark: null,
+    };
+  }
+  if (name === "stats") {
+    // Built from the same mock fills, so totals and rows agree.
+    const items = f.fills.items;
+    const byKind = { PARITY: 0, "FALL-THROUGH": 0, "DARK-CROSS": 0, "DARK-RESIDUAL": 0 };
+    for (const x of items) byKind[x.kind]++;
+    const sharesOf = (x: (typeof items)[number]) => BigInt(x.shares ?? "0");
+    const volume = items.reduce((s, x) => s + sharesOf(x), 0n);
+    const earning = items.filter((x) => x.kind === "PARITY" || x.kind === "DARK-RESIDUAL");
+    const tokens = f.deployment.tokens.map((t) => {
+      const amount = earning.filter((x) => x.tokenOut === t.address).reduce((s, x) => s + BigInt(x.feeAmount ?? "0"), 0n);
+      return { symbol: t.symbol, address: t.address, amount: str(amount), shares: str((amount * BigInt(t.sharesPerTokenX18)) / 10n ** BigInt(t.decimals)) };
+    });
+    const feeShares = tokens.reduce((s, t) => s + BigInt(t.shares), 0n);
+    const address = p.get("address");
+    const mine = address ? items.filter((x) => x.account.toLowerCase() === address.toLowerCase()) : [];
+    return {
+      indexedBlock: "100",
+      fills: items.length,
+      byKind,
+      sharesVolume: str(volume),
+      byAsset: [{ asset: f.deployment.tokens[0].underlying, fills: items.length, sharesVolume: str(volume), feesEarnedShares: str(feeShares) }],
+      feesEarned: { totalShares: str(feeShares), tokens },
+      wallet: address
+        ? { address, fills: mine.length, sharesVolume: str(mine.reduce((s, x) => s + sharesOf(x), 0n)), recent: mine.slice(0, 10) }
+        : null,
     };
   }
   if (name === "eligibility")
