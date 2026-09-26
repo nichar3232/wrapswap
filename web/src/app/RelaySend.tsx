@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { isAddress, parseUnits } from "viem";
 import { fmtShares } from "../lib/format";
-import { relayAmount, relaySend, relaySendJob, relayStatus, type RelaySendJob } from "../relay";
+import { RelayError, relayAmount, relaySend, relaySendJob, relayStatus, type RelaySendJob, type RelaySendStep } from "../relay";
 import { toShares, type Asset } from "./assets";
 import { RelayLimitNote, useRelayCooldown } from "./relayUi";
 import { useTx } from "./tx";
@@ -9,6 +9,16 @@ import { CopyButton, Spinner, TxPanel, shortHex } from "./ui";
 import { useWallet } from "./wallet";
 
 const DONE = ["settled", "skipped", "failed"];
+/**
+ * The four legs, in order. POST /demo/send returns only the deposit; GET /demo/send/<id> adds the Sui pay, the Sui
+ * withdraw and the Unichain settlement over the next few minutes. Each row fills in when its hash arrives.
+ */
+const LEGS: { key: string; label: string; chain: RelaySendStep["chain"]; find: (s: RelaySendStep[]) => RelaySendStep | undefined }[] = [
+  { key: "deposit", label: "Deposit into ShareVault", chain: "unichain", find: (s) => s.find((x) => x.chain === "unichain" && /deposit/i.test(x.step)) ?? s.find((x) => x.chain === "unichain") },
+  { key: "pay", label: "Sealed pay on Sui", chain: "sui", find: (s) => s.find((x) => x.chain === "sui" && /pay/i.test(x.step)) },
+  { key: "withdraw", label: "Sealed withdraw on Sui", chain: "sui", find: (s) => s.find((x) => x.chain === "sui" && /withdraw/i.test(x.step)) },
+  { key: "settle", label: "Settlement on Unichain", chain: "unichain", find: (s) => s.filter((x) => x.chain === "unichain" && !/deposit/i.test(x.step)).at(-1) },
+];
 const STATUS: Record<RelaySendJob["status"], string> = {
   deposited: "Deposited on Unichain · waiting for the keeper to credit Sui",
   credited: "Credited on Sui · sealing the payment",
@@ -33,6 +43,8 @@ export function RelaySend({ assets }: { assets: Asset[] }) {
   const [recipient, setRecipient] = useState("");
   const [job, setJob] = useState<RelaySendJob>();
   const [busyNote, setBusyNote] = useState<string | null>(null);
+  /** The relay answered 409: another Sui send holds the queue. */
+  const [conflict, setConflict] = useState(false);
   const tx = useTx<unknown>();
   const cooldown = useRelayCooldown(w.relay);
 
@@ -54,14 +66,20 @@ export function RelaySend({ assets }: { assets: Asset[] }) {
       clearInterval(id);
     };
   }, [w.relay, job?.id]);
-  // Follow the job until it settles.
+  // Follow the job until it settles (a missed poll is retried on the next tick).
+  const jobId = job?.id,
+    finished = !!job && DONE.includes(job.status);
   useEffect(() => {
-    if (!job || DONE.includes(job.status)) return;
+    if (!jobId || finished) return;
+    let live = true;
     const id = setInterval(() => {
-      relaySendJob(job.id).then(setJob, () => undefined);
+      relaySendJob(jobId).then((j) => live && setJob(j), () => undefined);
     }, 4000);
-    return () => clearInterval(id);
-  }, [job]);
+    return () => {
+      live = false;
+      clearInterval(id);
+    };
+  }, [jobId, finished]);
 
   if (!w.relay)
     return (
@@ -93,11 +111,17 @@ export function RelaySend({ assets }: { assets: Asset[] }) {
           : "";
 
   const run = async () => {
+    setConflict(false);
     const done = await tx.run("Send (demo relay)", async (onHash) => {
-      const j = await relaySend({ asset: asset.symbol, from: from.token.symbol, to: to.token.symbol, amount: relayAmount(input), recipient });
-      onHash(j.depositTx);
-      setJob(j);
-      return { hash: j.depositTx, simulated: false, result: "sent" };
+      try {
+        const j = await relaySend({ asset: asset.symbol, from: from.token.symbol, to: to.token.symbol, amount: relayAmount(input), recipient });
+        onHash(j.depositTx);
+        setJob(j);
+        return { hash: j.depositTx, simulated: false, result: "sent" };
+      } catch (e) {
+        if (e instanceof RelayError && e.status === 409) setConflict(true);
+        throw e;
+      }
     });
     if (done) tx.reset();
   };
@@ -105,6 +129,7 @@ export function RelaySend({ assets }: { assets: Asset[] }) {
   return (
     <section className="card relay-send" aria-label="Send shares">
       <h3 className="card-title">Send {asset.symbol} shares · demo relay</h3>
+      <p className="hint">Send moves AAPL wrappers only: the ShareVault holds AAPL.</p>
       {job ? (
         <>
           <p className="review-line">
@@ -116,21 +141,29 @@ export function RelaySend({ assets }: { assets: Asset[] }) {
             {job.error ? ` · ${job.error}` : ""}
           </p>
           <ol className="relay-steps" aria-label="Send transactions">
-            {job.steps.map((s) => (
-              <li key={s.tx}>
-                <span className="chip">{s.chain === "sui" ? "Sui" : "Unichain"}</span>
-                <span className="relay-step">{s.step}</span>
-                <span className="hex">
-                  <span className="mono" title={s.tx}>
-                    {shortHex(s.tx)}
-                  </span>
-                  <CopyButton value={s.tx} label="Copy transaction" />
-                  <a className="ext" href={s.url} target="_blank" rel="noreferrer" aria-label={`View on ${s.chain === "sui" ? "Suiscan" : "Uniscan"}`}>
-                    ↗
-                  </a>
-                </span>
-              </li>
-            ))}
+            {LEGS.map((leg) => {
+              const s = leg.find(job.steps);
+              const waiting = !s && !DONE.includes(job.status);
+              return (
+                <li key={leg.key} className={s ? "leg-done" : "leg-wait"} data-leg={leg.key}>
+                  <span className="chip">{leg.chain === "sui" ? "Sui" : "Unichain"}</span>
+                  <span className="relay-step">{s?.step ?? leg.label}</span>
+                  {s ? (
+                    <span className="hex">
+                      <span className="mono" title={s.tx}>
+                        {shortHex(s.tx)}
+                      </span>
+                      <CopyButton value={s.tx} label="Copy transaction" />
+                      <a className="ext" href={s.url} target="_blank" rel="noreferrer" aria-label={`View on ${s.chain === "sui" ? "Suiscan" : "Uniscan"}`}>
+                        ↗
+                      </a>
+                    </span>
+                  ) : (
+                    <span className="muted small">{waiting ? <><Spinner /> waiting</> : "—"}</span>
+                  )}
+                </li>
+              );
+            })}
           </ol>
           {DONE.includes(job.status) && (
             <button type="button" className="ghost-btn" onClick={() => setJob(undefined)}>
@@ -158,7 +191,11 @@ export function RelaySend({ assets }: { assets: Asset[] }) {
             Recipient on Unichain (receives {to.token.symbol})
           </label>
           <input id="relay-recipient" className="addr-input mono" spellCheck={false} value={recipient} onChange={(e) => setRecipient(e.target.value.trim())} />
-          {busyNote && <p className="hint">A Sui send is already running on the relay ({busyNote}); yours can start when it finishes.</p>}
+          {(busyNote || conflict) && (
+            <p className="block-reason" role="status" data-testid="relay-one-at-a-time">
+              One send at a time: the demo relay is already running a Sui send{busyNote ? ` (${busyNote})` : ""}. Yours can start when it finishes, usually within a few minutes.
+            </p>
+          )}
           {blocked && raw > 0n && <p className="block-reason">{blocked}</p>}
           <button className="primary wide" disabled={!!blocked || tx.busy || cooldown > 0 || !!busyNote} onClick={() => void run()}>
             {tx.busy && <Spinner />}

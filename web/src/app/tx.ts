@@ -119,7 +119,7 @@ export function humanize(e: unknown): string {
     return e.status === 429
       ? `Demo limit reached: ${e.message}. Next action in ${duration(e.retryAfter ?? 600)}.`
       : e.code === "BUSY"
-        ? "A Sui send is already in progress on the demo relay. Retry in a few minutes."
+        ? "One send at a time: the demo relay is already running a Sui send. Retry in a few minutes."
         : e.code === "OVER_LIMIT"
           ? "The demo relay moves at most 100 shares per action."
           : e.code === "UNAVAILABLE"
