@@ -881,7 +881,7 @@ section[id] {
 /* ---------- Pass 3: full-height sections, snap, view transition ---------- */
 /* Proximity, not mandatory: Developers and Proof are taller than 100svh at 800px, so mandatory would trap readers. */
 html {
-  scroll-snap-type: y proximity;
+  scroll-snap-type: none;
 }
 .hero,
 .one-price,
