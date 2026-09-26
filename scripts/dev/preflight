@@ -85,7 +85,7 @@ while read name addr min; do
 done < <(printf '%s\n' "crank $CRANK 3000000000000000" "deployer $DEPLOYER 5000000000000000" "demo-relay $RELAY 3000000000000000"
   jq -r '.evm[] | "\(.label) \(.address) \(.minWei)"' $W)
 
-# Demo relay: every wrapper covers one max action (100 shares) and is approved to the router and its DarkCrossHook.
+# Demo relay: every wrapper holds at least 100 shares (a floor, not a cap) and is approved to the router and its DarkCrossHook.
 ROUTER=$(jq -r '.router' $M)
 while read a sym tok mult dec hk; do
   bal=$(cast call "$tok" 'balanceOf(address)(uint256)' "$RELAY" -r $R 2>/dev/null | awk '{print $1}')
@@ -111,7 +111,5 @@ check "sui pool not paused" "$(json "$po" "print('ok' if d['data']['object']['as
 held=$(cast call "$(jq -r '.evm.shareVault' $S)" 'reserves()(uint256,uint256)' -r $R 2>/dev/null | head -1 | awk '{print $1}')
 check "sui solvency: total_shares $ts <= ShareVault held ${held:-?}" "$(ge "${held:-0}" "$ts" 2>/dev/null && echo ok || echo insolvent)"
 
-st=$(curl -s 127.0.0.1:18210/demo/status)
-check "MCP relay budget token (~/wrapswap-run/env/relay-internal.env)" "$(json "$st" "print('ok' if d['limits'].get('mcpBudgetConfigured') else 'missing')")"
 echo "preflight: $fails failing check(s)"
 exit $((fails > 0))

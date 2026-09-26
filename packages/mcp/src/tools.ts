@@ -5,8 +5,6 @@ import { z } from "zod";
 import { ApiError, UnisonApi, errorMessage } from "./api.js";
 import { SHARE_DECIMALS, bps, formatUnits, parseUnits, shares, tokensForShares } from "./units.js";
 
-/** Largest amount the demo relay executes per call, in canonical shares. Enforced here before any POST. */
-export const RELAY_CAP_SHARES = 100;
 export const EXPLORER = "https://sepolia.uniscan.xyz";
 
 export type ToolResult = { summary: string; data: unknown };
@@ -359,12 +357,6 @@ export const getPortfolio: ToolDef<{ address: typeof address }> = {
 
 // ---------------------------------------------------------------- execution (demo relay)
 
-function capCheck(sharesRaw: bigint) {
-  if (sharesRaw > parseUnits(RELAY_CAP_SHARES, SHARE_DECIMALS)) {
-    throw new Error(`The demo relay executes at most ${RELAY_CAP_SHARES} shares per call; split the order or reduce the amount.`);
-  }
-}
-
 async function relay(api: UnisonApi, path: string, body: unknown): Promise<any> {
   try {
     return await api.post(path, body);
@@ -389,10 +381,9 @@ export const convert: ToolDef<{
   description:
     "Execute a share-for-share conversion on Unichain Sepolia through the Unison demo relay: converts `amount` shares of the source " +
     "wrapper into the target wrapper, delivered to `recipient` if given (else kept by the relay's demo account). " +
-    `Max ${RELAY_CAP_SHARES} shares per call; the relay also allows 3 actions per 10 minutes per client. Returns the transaction ` +
-    "hash, a Uniscan link, the amount received and the fee split (baseFee, skewFee in shares, from the on-chain quote taken " +
+    "Returns the transaction hash, a Uniscan link, the amount received and the fee split (baseFee, skewFee in shares, from the on-chain quote taken " +
     "immediately before execution). Spends testnet funds: when asked for the cheapest conversion, call get_pool and use its " +
-    "cheapDirection, then quote_convert. On failure returns the relay's real reason (limit, revert, slippage).",
+    "cheapDirection, then quote_convert. On failure returns the relay's real reason (revert, slippage, balance).",
   inputSchema: {
     asset,
     fromWrapper: wrapper("Source"),
@@ -406,8 +397,7 @@ export const convert: ToolDef<{
     const from = resolveWrapper(a, fromWrapper);
     const target = resolveWrapper(a, toWrapper);
     if (from.address === target.address) throw new Error("fromWrapper and toWrapper are the same wrapper.");
-    const { sharesRaw, tokensRaw } = sharesToTokens(from, amount);
-    capCheck(sharesRaw);
+    const { tokensRaw } = sharesToTokens(from, amount);
     const tokens = formatUnits(tokensRaw, from.decimals);
     const q = await api.get<any>("/quote", { asset: a.asset, from: from.symbol, to: target.symbol, amount: tokensRaw.toString() });
     const body = { asset: a.asset, from: from.symbol, to: target.symbol, amount: tokens, ...(to ? { recipient: to } : {}) };
@@ -452,7 +442,7 @@ export const commitDarkOrder: ToolDef<{ asset: typeof asset; side: typeof side; 
   description:
     "Commit a sealed order to the asset's Dark Cross batch through the Unison demo relay (for the relay's demo account). Opposite " +
     "sides cross at the oracle midpoint for a 1 bp protocol fee and no skew fee; any residual converts through the pool at base + " +
-    `skew, and anything the pool cannot fill is refunded. Max ${RELAY_CAP_SHARES} shares per call, 3 relay actions per 10 minutes. ` +
+    "skew, and anything the pool cannot fill is refunded. `amount` is in shares of the stock. " +
     "The relay sets a limit 0.2% through the mid and reveals automatically; the crank settles. Returns the commit transaction, " +
     "batch id and the block/seconds until settlement; follow up with get_batch. Use convert instead for immediate execution.",
   inputSchema: { asset, side, amount: amountShares },
@@ -465,7 +455,6 @@ export const commitDarkOrder: ToolDef<{ asset: typeof asset; side: typeof side; 
     const quote = resolveWrapper(a, dc.quoteToken!);
     const lock = s === "sell" ? base : quote;
     const { sharesRaw, tokensRaw } = sharesToTokens(lock, amount);
-    capCheck(sharesRaw);
     const r = await relay(api, "/demo/dark-commit", { asset: a.asset, from: lock.symbol, amount: formatUnits(tokensRaw, lock.decimals) });
     const cur = await api.get<any>("/batches/current", { asset: a.asset }).catch(() => undefined);
     const batchBlocks = BigInt(dc.batchBlocks ?? 20);

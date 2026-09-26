@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type ToolDef, RELAY_CAP_SHARES, resolveAsset, resolveWrapper } from "./tools.js";
+import { type ToolDef, resolveAsset, resolveWrapper } from "./tools.js";
 import { ApiError, errorMessage } from "./api.js";
 import { SHARE_DECIMALS, formatUnits, parseUnits, shares, tokensForShares } from "./units.js";
 
@@ -57,7 +57,7 @@ export const sendConfidential: ToolDef<typeof inputSchema> = {
     "Send `amount` shares of a stock to a recipient privately. The relay deposits one issuer's wrapper into the Unison ShareVault " +
     "on Unichain, pays the recipient on Sui with a sealed (Seal/Walrus) instruction so amount and counterparty are not public, then " +
     "withdraws on Unichain into `withdrawWrapper` (the other issuer) for the recipient. The Sui transfer is fee-free; the cross-issuer " +
-    `withdrawal pays the normal conversion fee. AAPL only for now; max ${RELAY_CAP_SHARES} shares; one send at a time (BUSY otherwise). ` +
+    `withdrawal pays the normal conversion fee. AAPL only for now; one send at a time (BUSY otherwise). ` +
     "Returns the deposit transaction and each step so far (Unichain and Sui links) plus a tracking URL; the whole flow takes a few " +
     "minutes. Use convert with a recipient for a plain public transfer.",
   inputSchema,
@@ -69,9 +69,6 @@ export const sendConfidential: ToolDef<typeof inputSchema> = {
     if (!from) throw new Error(`${a.asset} has no second issuer wrapper to send from.`);
     const sharesRaw = parseUnits(amount, SHARE_DECIMALS);
     if (sharesRaw === 0n) throw new Error("Amount must be greater than zero.");
-    if (sharesRaw > parseUnits(RELAY_CAP_SHARES, SHARE_DECIMALS)) {
-      throw new Error(`The demo relay executes at most ${RELAY_CAP_SHARES} shares per call; reduce the amount.`);
-    }
     const tokensRaw = tokensForShares(sharesRaw, BigInt(from.sharesPerTokenX18), from.decimals);
     if (tokensRaw === 0n) throw new Error(`Amount is below one raw unit of ${from.symbol}.`);
     let job: Job;

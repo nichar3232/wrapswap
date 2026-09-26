@@ -107,6 +107,6 @@ Tests: web unit 36/36 · Playwright mock 24/24 · live transport 12/12.
   The after-state shows each leg (In, Out with the multiplier, fee, tx link), the new holdings, and a cost comparison:
   the fee actually paid vs. an illustrative sell + rebuy (0.10% taker per side + 0.25% gap = 45 bps, labelled "not a
   quote").
-- Relay: the budget counter is gone from the app, and so is the app's 100-share check. The relay itself takes any size
-  for conversions and dark commits (they settle back to the relay) and keeps the 100-share cap only where shares go
-  to someone else (`send`, `send-unichain`). The per-IP limit (3 per 10 min) stays; a 429 still explains itself.
+- Relay: the budget counter and the 100-share check are gone. Merged with `fe45732` from another session, which
+  removed the relay's rate limit, budgets and size cap entirely (relay, web and MCP); the relay adds
+  `/demo/convert-all` on top.

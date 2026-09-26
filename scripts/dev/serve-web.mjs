@@ -33,10 +33,8 @@ async function body(req) {
 }
 async function proxy(req, res, target) {
   try {
-    // Upstreams rate-limit per client IP: pass it on (X-Forwarded-For is only trusted from loopback peers).
+    // Pass the client IP on (X-Forwarded-For is only trusted from loopback peers).
     const headers = { 'content-type': req.headers['content-type'] ?? 'application/json', 'x-forwarded-for': clientIp(req) };
-    // The MCP server's relay budget token (checked by the relay; useless without the secret).
-    if (req.headers['x-unison-relay-client']) headers['x-unison-relay-client'] = String(req.headers['x-unison-relay-client']);
     if (req.headers.accept) headers.accept = req.headers.accept;
     const r = await fetch(target, { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : await body(req) });
     const out = Buffer.from(await r.arrayBuffer());

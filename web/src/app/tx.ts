@@ -117,12 +117,10 @@ function providerRevertData(e: unknown, depth = 0): Hex | undefined {
 export function humanize(e: unknown): string {
   if (e instanceof RelayError)
     return e.status === 429
-      ? `Demo limit reached: ${e.message}. Next action in ${duration(e.retryAfter ?? 600)}.`
+      ? `Too many requests from this network: ${e.message}. Retry in ${duration(e.retryAfter ?? 60)}.`
       : e.code === "BUSY"
         ? "One send at a time: the demo relay is already running a Sui send. Retry in a few minutes."
-        : e.code === "OVER_LIMIT"
-          ? "The demo relay moves at most 100 shares per action."
-          : e.code === "UNAVAILABLE"
+        : e.code === "UNAVAILABLE"
             ? "The demo relay didn't respond. Retry, or connect a wallet."
             : `The demo relay refused: ${e.message}.`;
   if (e instanceof WalletError)

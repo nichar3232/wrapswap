@@ -54,12 +54,7 @@ Before going on stage, run `pnpm preflight` (`scripts/dev/preflight`). It prints
 - It signs with a dedicated, freshly generated demo key `0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C`. That key is neither the deployer nor the crank key and is not mnemonic-derived.
 - The Sui path uses two relay Sui identities: A `0xa25a…1a53` pays, and B `0xf755…d44d` receives and withdraws.
 - Keys live only in `~/wrapswap-run/env/demo-relay.env` and `demo-relay-sui.env`, and are never logged or bundled.
-- Budgets:
-  - browsers: 3 actions per 10 minutes per client IP (`POST /api/demo/convert-all` counts as one)
-  - the MCP server: its own 20 per 10 minutes, identified by the `x-unison-relay-client` token in `~/wrapswap-run/env/relay-internal.env`
-  - 100 shares per action for the actions that pay out to someone else (`send`, `send-unichain`); conversions and
-    dark commits settle back to the relay and take any size
-- A 429 carries `Retry-After` and `retryAfter`.
+- No budget, no rate limit and no per-action size cap: an action is bounded only by the relay account's balances and the pool's inventory. (The web server's general limit of 600 requests per minute per IP still applies to every route.)
 - `POST /api/demo/convert-all` `{to?}`: every other wrapper balance of every asset into `to` (default xStocks), one
   swap per asset. The app's "Convert all to xStocks" button uses it when no wallet is connected.
 - `POST /api/demo/send` `{asset: AAPL, from, to, amount, recipient}`: **the Sui confidential path.**
@@ -185,7 +180,7 @@ NETWORK=unichain-sepolia RPC_URL=https://sepolia.unichain.org pnpm exec tsx scri
 ### 4.7 Agents (MCP)
 
 - Remote endpoint: `https://nichars-mac-mini.tail43cacc.ts.net/mcp` (Streamable HTTP). Run `claude mcp add --transport http unison <url>`, then ask for a quote or a convert.
-- Tools: `list_assets`, `get_pool`, `quote_convert`, `get_batch`, `get_portfolio`, `convert`, `commit_dark_order`. Execution goes through the relay with the MCP budget (20 actions per 10 minutes, 100 shares per action). See [packages/mcp/README.md](packages/mcp/README.md).
+- Tools: `list_assets`, `get_pool`, `quote_convert`, `get_batch`, `get_portfolio`, `convert`, `commit_dark_order`. Execution goes through the relay (no budget, no size cap). See [packages/mcp/README.md](packages/mcp/README.md).
 
 ### 4.8 Market simulation (simulated, not live)
 

@@ -7,7 +7,6 @@ import { createUnisonServer } from "./server.js";
 import { toolsFor } from "./registry.js";
 import { sendConfidential } from "./send.js";
 import {
-  RELAY_CAP_SHARES,
   allTools,
   commitDarkOrder,
   convert,
@@ -224,13 +223,10 @@ describe("read tools", () => {
 });
 
 describe("execution tools", () => {
-  it("enforce the relay cap before any POST", async () => {
-    const { api, calls } = fakeApi();
-    await expect(
-      convert.run({ asset: "AAPL", fromWrapper: "mcbAAPL", toWrapper: "mAAPLx", amount: String(RELAY_CAP_SHARES + 1) } as any, api),
-    ).rejects.toThrow(/at most 100 shares/);
-    await expect(commitDarkOrder.run({ asset: "AAPL", side: "sell", amount: "100.000001" } as any, api)).rejects.toThrow(/at most 100/);
-    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  it("post amounts over 100 shares to the relay (no client-side cap)", async () => {
+    const { api, calls } = fakeApi({ "POST /demo/convert": () => ({ body: { txHash: "0xabc", quotedOut: "0" } }) });
+    await convert.run({ asset: "AAPL", fromWrapper: "mAAPLx", toWrapper: "mcbAAPL", amount: "250" } as any, api).catch(() => undefined);
+    expect(calls.find((c) => c.method === "POST")?.body).toMatchObject({ amount: "250" });
   });
 
   it("convert posts whole tokens to /demo/convert and returns the tx link and fee split", async () => {
@@ -280,8 +276,8 @@ describe("execution tools", () => {
   it("report a relay that is not live", async () => {
     const { api } = fakeApi();
     await expect(commitDarkOrder.run({ asset: "AAPL", side: "buy", amount: "5" } as any, api)).rejects.toThrow(/not live yet/);
-    const { api: limitedApi } = fakeApi({ "POST /demo/dark-commit": () => ({ status: 429, body: { error: { code: "RATE_LIMITED", message: "3 demo actions per 10 minutes" } } }) });
-    await expect(commitDarkOrder.run({ asset: "AAPL", side: "buy", amount: "5" } as any, limitedApi)).rejects.toThrow("RATE_LIMITED: 3 demo actions per 10 minutes");
+    const { api: failingApi } = fakeApi({ "POST /demo/dark-commit": () => ({ status: 502, body: { error: { code: "CHAIN", message: "insufficient funds" } } }) });
+    await expect(commitDarkOrder.run({ asset: "AAPL", side: "buy", amount: "5" } as any, failingApi)).rejects.toThrow("CHAIN: insufficient funds");
   });
 });
 
@@ -314,9 +310,9 @@ describe("send_confidential", () => {
     expect(r.data.track).toBe("https://unison.test/api/demo/send/s1");
   }, 20_000);
 
-  it("surfaces BUSY and the cap", async () => {
+  it("surfaces BUSY; amounts over 100 shares reach the relay", async () => {
     const { api } = fakeApi({ "POST /demo/send": () => ({ status: 409, body: { error: { code: "BUSY", message: "a Sui send is in progress (s0, paid); retry in a few minutes" } } }) });
     await expect(sendConfidential.run({ asset: "AAPL", amount: "1", recipient: "0x" + "12".repeat(20), withdrawWrapper: "mAAPLx" } as any, api)).rejects.toThrow(/BUSY: a Sui send is in progress/);
-    await expect(sendConfidential.run({ asset: "AAPL", amount: "101", recipient: "0x" + "12".repeat(20), withdrawWrapper: "mAAPLx" } as any, api)).rejects.toThrow(/at most 100/);
+    await expect(sendConfidential.run({ asset: "AAPL", amount: "101", recipient: "0x" + "12".repeat(20), withdrawWrapper: "mAAPLx" } as any, api)).rejects.toThrow(/BUSY/);
   });
 });

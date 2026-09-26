@@ -5,8 +5,8 @@ share-for-share conversions between issuer wrappers (Coinbase, xStocks), and exe
 All sizes are shares of the stock; there is no USD anywhere.
 
 The server holds no keys and no addresses. It reads the public Unison API (GET routes) and executes through the demo
-relay (`POST /demo/*`), which signs with a funded testnet demo account and gives this server its own budget of 20
-actions per 10 minutes. The server itself caps every execution at 100 shares.
+relay (`POST /demo/*`), which signs with a funded testnet demo account. The relay has no per-action size cap and no
+rate limit; an action is bounded only by the relay account's balances and the pool's inventory.
 
 ## Remote (Streamable HTTP)
 
@@ -51,8 +51,8 @@ Or run it directly: `pnpm --dir packages/mcp start:stdio`. Cursor and other stdi
 | `send_confidential(asset, amount, recipient, withdrawWrapper?, waitSeconds?)` | executes | Confidential send via the relay (`/demo/send`): ShareVault deposit on Unichain → Seal-encrypted pay on Sui → withdrawal into the other issuer's wrapper. AAPL only; one send at a time. |
 
 Wrappers can be named by token symbol (`mcbAAPL`), platform (`Coinbase`) or address. `amount` is in shares and is
-converted to token units with the wrapper's live multiplier. Execution tools reject amounts over 100 shares before
-calling the relay and return the relay's error (limit, revert) verbatim on failure.
+converted to token units with the wrapper's live multiplier. Execution tools return the relay's error (revert,
+balance, slippage) verbatim on failure.
 
 `send_confidential` (the Sui confidential transfer) is registered only when the Sui lane reports GO; it is live, so
 `tools/list` returns eight tools.

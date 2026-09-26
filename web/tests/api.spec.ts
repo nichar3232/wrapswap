@@ -161,9 +161,9 @@ test("slow and malformed responses never produce blank screens or raw errors", a
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
 });
 
-// ---- Demo relay (no wallet): real actions through POST /api/demo/*, rate-limited per IP.
+// ---- Demo relay (no wallet): real actions through POST /api/demo/*, no size cap and no relay rate limit.
 const RELAY = "0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C";
-const status = { ok: true, address: RELAY, ethWei: "1", tokens: [], limits: { actionsPer10Min: 3, maxShares: "100" }, pendingReveals: [], recent: [] };
+const status = { ok: true, address: RELAY, ethWei: "1", tokens: [], pendingReveals: [], recent: [] };
 const tx = (n: number) => "0x" + n.toString(16).padStart(64, "0");
 async function relay(page: Page, routes: Record<string, (r: import("@playwright/test").Route) => Promise<void>>) {
   await page.route(/^https?:\/\/[^/]+\/api\/demo\//, async (route) => {
@@ -175,28 +175,25 @@ async function relay(page: Page, routes: Record<string, (r: import("@playwright/
   });
 }
 
-test("no wallet: the demo relay connects itself; no budget counter, no 100-share cap; a 429 still explains itself", async ({ page }) => {
+test("no wallet: the demo relay connects itself; 250 shares posts with no cap; a web-server 429 never locks the button", async ({ page }) => {
   await api(page, undefined, { wallet: false });
-  const posted: unknown[] = [];
+  let posted: unknown;
   await relay(page, {
     "/convert": async (r) => {
-      posted.push(r.request().postDataJSON());
-      await r.fulfill({ status: 429, headers: { "retry-after": "125" }, json: { error: { code: "RATE_LIMITED", message: "3 demo actions per 10 minutes" } } });
+      posted = r.request().postDataJSON();
+      await r.fulfill({ status: 429, headers: { "retry-after": "30" }, json: { error: { code: "RATE_LIMITED", message: "600 requests per minute" } } });
     },
   });
   await page.goto("/app?tab=move&asset=AAPL");
   await expect(page.getByRole("button", { name: /^Account 0x8f2e/ })).toBeVisible();
   await expect(page.locator("header").getByText("Demo", { exact: true })).toBeVisible();
-  // Over 100 shares goes to the relay: the app no longer blocks it.
   await convert(page).getByLabel("Amount", { exact: true }).fill("250");
-  await expect(convert(page)).not.toContainText("at most 100 shares");
+  await expect(convert(page).getByText(/at most 100 shares/)).toHaveCount(0);
   await convert(page).getByRole("button", { name: "Convert", exact: true }).click();
-  expect(posted[0]).toEqual({ asset: "AAPL", from: expect.stringMatching(/^m/), to: expect.stringMatching(/^m/), amount: "250" });
-  await expect(convert(page).getByText(/Demo limit reached/)).toBeVisible();
+  expect(posted).toEqual({ asset: "AAPL", from: expect.stringMatching(/^m/), to: expect.stringMatching(/^m/), amount: "250" });
+  await expect(convert(page).getByText(/Too many requests from this network: 600 requests per minute\. Retry in 30s\./)).toBeVisible();
   await expect(page.getByTestId("relay-cooldown")).toHaveCount(0);
   await expect(convert(page).getByRole("button", { name: "Convert", exact: true })).toBeEnabled();
-  await page.getByRole("tab", { name: "Dark Cross" }).click();
-  await expect(page.locator("#pane-dark").getByTestId("relay-cooldown")).toHaveCount(0);
 });
 
 test("no wallet: Send returns the deposit at once, then reveals Sui pay, Sui withdraw and Unichain settle as they arrive", async ({ page }) => {
