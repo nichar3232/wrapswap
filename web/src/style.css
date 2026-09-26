@@ -2896,3 +2896,51 @@ table.sees th[scope="row"] {
 .relay-steps li.leg-wait {
   color: var(--muted);
 }
+
+/* Liquidity: the LP screen title; who supplies inventory (keeper-only in v1) */
+.page-title {
+  margin: 0 0 20px;
+  font-family: var(--display);
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.card.keeper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 20px;
+}
+.card.keeper .lp-line {
+  flex: 1 1 420px;
+}
+.keeper-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.keeper-act button small {
+  margin-left: 6px;
+  color: var(--muted);
+}
+/* Portfolio, disconnected: one card */
+.connect-card {
+  display: grid;
+  gap: 14px;
+  max-width: 520px;
+  margin: 0 auto;
+}
+.link-btn {
+  justify-self: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 15px;
+  cursor: pointer;
+}
+.link-btn:hover {
+  text-decoration: underline;
+}

@@ -15,7 +15,7 @@ const SendPanel = lazy(() => import("./app/Send").then((m) => ({ default: m.send
 import { Hex, Skeleton, shortHex } from "./app/ui";
 import type { Token } from "./app/assets";
 import { WalletProvider, useWallet } from "./app/wallet";
-import { injected, isDemo } from "./wallet";
+import { injected, isDemo, simulatedWallet } from "./wallet";
 import { RelaySend } from "./app/RelaySend";
 import { Boundary } from "./app/Boundary";
 import type { MoveIntent } from "./app/types";
@@ -30,7 +30,8 @@ const LEGACY: Record<string, Tab> = { convert: "Move", dark: "Move", pool: "Liqu
 const initialAsset = () => (new URLSearchParams(location.search).get("asset") ?? "").toUpperCase();
 const initialTab = (): Tab => {
   const p = new URLSearchParams(location.search).get("tab") ?? "";
-  return TABS.find((t) => TAB_PARAM[t] === p) ?? LEGACY[p] ?? "Portfolio";
+  // No ?tab=: with no wallet to connect, open Move → Convert (it works through the demo relay); otherwise Portfolio.
+  return TABS.find((t) => TAB_PARAM[t] === p) ?? LEGACY[p] ?? (injected() || simulatedWallet() ? "Portfolio" : "Move");
 };
 const CHAIN = CHAINS[config.network];
 
@@ -337,13 +338,13 @@ function App() {
         </div>
       </header>
       <main id="main" className="app-main" onWheel={onWheel}>
-        <h1 className="sr-only">{tab}</h1>
+        {tab !== "Liquidity" && <h1 className="sr-only">{tab}</h1>}
         <div className={`track${still ? " still" : ""}`} style={{ transform: `translateX(${-index * 100}%)` }}>
           {TABS.map((t, i) => (
             <section key={t} className="panel" aria-label={t} inert={i !== index} aria-hidden={i !== index} data-panel={TAB_PARAM[t]}>
               <div className="panel-inner">
                 {t === "Portfolio" ? (
-                  <Portfolio d={d} assets={assets} onMove={moveFrom} />
+                  <Portfolio d={d} assets={assets} onMove={moveFrom} onTry={() => setTab("Move")} />
                 ) : t === "Move" ? (
                   <Move d={d} asset={asset} pool={pool} batch={batch} intent={intent} />
                 ) : t === "Send" ? (

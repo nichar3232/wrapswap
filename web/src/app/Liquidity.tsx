@@ -3,6 +3,7 @@ import type { Feed } from "../hooks/useApi";
 import { amount, fmtShares } from "../lib/format";
 import type { Asset } from "./assets";
 import { keeperSetInventory, skewPct } from "./fees";
+import { Tip } from "../components";
 import { Skeleton, Val } from "./ui";
 
 type Wrapper = PoolAssetResponse["wrappers"][number];
@@ -51,6 +52,9 @@ function Balance({ wrappers, skewX18 }: { wrappers: Wrapper[]; skewX18: string }
   );
 }
 
+const KEEPER_WHY =
+  "Keeper only in v1: one inventory supplier keeps the multiplier attestations and wrapper whitelisting simple. Permissionless deposits come in v2.";
+
 /**
  * Liquidity for the selected asset, from GET /pool/:asset: inventory per wrapper, skew, the fee each direction pays
  * now, and what the LP has earned. Display-only: depositInventory / withdrawInventory are keeper-only.
@@ -75,6 +79,7 @@ export function Liquidity({ asset, pool, onMove }: { asset: Asset | undefined; p
   const baseBps = (x: Direction) => ((x.totalPips - x.skewFeePips) / 100).toFixed(2);
   return (
     <div className="page liquidity">
+      <h1 className="page-title">Pool inventory &amp; LP economics</h1>
       <div className="liq-top">
         <section className="card liq-hero" aria-label={`${asset.symbol} fee by direction`}>
           <span className="tile-k">{asset.symbol} · fee by direction now</span>
@@ -127,6 +132,21 @@ export function Liquidity({ asset, pool, onMove }: { asset: Asset | undefined; p
           )}
         </section>
       </div>
+      <section className="card keeper" aria-label="Who supplies inventory">
+        <p className="lp-line">
+          <strong>Who supplies inventory:</strong> in v1 a single pool keeper (a market maker) seeds and rebalances both wrappers and earns 100% of
+          Convert fees. Permissionless LP deposits are v2.
+        </p>
+        <div className="keeper-act">
+          <button type="button" className="ghost-btn" disabled aria-describedby="keeper-why">
+            Add inventory <small>keeper only in v1</small>
+          </button>
+          <Tip text={KEEPER_WHY} />
+          <span id="keeper-why" className="sr-only">
+            {KEEPER_WHY}
+          </span>
+        </div>
+      </section>
       <section className="card lp" aria-label="LP economics">
         <h2 className="card-title">LP economics</h2>
         <div className="tiles">

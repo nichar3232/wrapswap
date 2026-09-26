@@ -58,7 +58,7 @@ test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on
     ["Liquidity", "unavailable"],
     ["Move", "Same share, converted at parity"], // platforms from the committed manifest
     ["Send", "Confidential, not anonymous"],
-    ["Portfolio", "AAPL"],
+    ["Portfolio", "Connect a wallet to see your shares"],
   ]) {
     await tab(page, t).click();
     await expect(page.locator(`[data-panel="${t.toLowerCase()}"]`).getByText(text, { exact: false }).first()).toBeVisible();
@@ -81,6 +81,29 @@ test("wallet button: Connect until clicked, Connecting… only in flight, back t
   await expect(btn).toHaveText("Connecting…");
   await expect(btn).toHaveText("Connect", { timeout: 7000 });
   await expect(btn).toBeEnabled();
+});
+
+test("no wallet: /app opens Move → Convert; Portfolio shows one Connect card with a way to try a conversion", async ({ page }) => {
+  await api(page, (_, v) => v, { wallet: false });
+  await page.goto("/app");
+  await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
+  await expect(page).toHaveURL(/tab=move/);
+  await expect(page.getByRole("tab", { name: "Convert" })).toHaveAttribute("aria-selected", "true");
+  await tab(page, "Portfolio").click();
+  const p = page.locator('[data-panel="portfolio"]');
+  await expect(p.locator(".card")).toHaveCount(1);
+  await expect(p.getByRole("heading", { name: "Connect a wallet to see your shares" })).toBeVisible();
+  await expect(p.getByRole("button", { name: "Connect", exact: true })).toBeVisible();
+  await expect(p.locator(".asset")).toHaveCount(0);
+  await expect(p).not.toContainText("—");
+  await p.getByRole("button", { name: "or try a conversion without a wallet →" }).click();
+  await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
+});
+
+test("with a browser wallet, /app still opens Portfolio", async ({ page }) => {
+  await api(page);
+  await page.goto("/app");
+  await expect(tab(page, "Portfolio")).toHaveAttribute("aria-current", "page");
 });
 
 test("degraded names only the failing feeds; everything else stays live", async ({ page }) => {
@@ -133,7 +156,7 @@ test("slow and malformed responses never produce blank screens or raw errors", a
   await page.getByRole("tab", { name: "Dark Cross" }).click();
   await expect(page.getByText("No settled batches for AAPL yet.")).toBeVisible();
   await tab(page, "Liquidity").click();
-  await expect(page.getByText("LP economics")).toBeVisible();
+  await expect(page.getByText("LP economics", { exact: true })).toBeVisible();
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
 });
 

@@ -188,6 +188,20 @@ test("Liquidity: inventory, skew, fee each direction, cheap-direction CTA prefil
   // A 4,050 sh gap from 2 fills worth 0.0223 sh of base fees: the keeper set it, not conversions.
   await expect(l.getByRole("region", { name: "AAPL inventory" }).getByTestId("keeper-set")).toHaveText("Inventory set by pool keeper");
   await expect(l.getByRole("button", { name: /deposit|withdraw|add liquidity/i })).toHaveCount(0); // keeper-only
+  await expect(l.getByRole("heading", { level: 1 })).toHaveText("Pool inventory & LP economics");
+  await expect(tab(page, "Liquidity")).toHaveText("Liquidity");
+  const keeper = l.getByRole("region", { name: "Who supplies inventory" });
+  await expect(keeper).toContainText(
+    "Who supplies inventory: in v1 a single pool keeper (a market maker) seeds and rebalances both wrappers and earns 100% of Convert fees. Permissionless LP deposits are v2.",
+  );
+  const add = keeper.getByRole("button", { name: /^Add inventory/ });
+  await expect(add).toBeDisabled();
+  await expect(add).toContainText("keeper only in v1");
+  await expect(add).toHaveAccessibleDescription(/one inventory supplier keeps the multiplier attestations and wrapper whitelisting simple/);
+  await expect(keeper.locator(".tip")).toHaveAttribute("data-tip", /one inventory supplier keeps the multiplier attestations and wrapper whitelisting simple/);
+  // The keeper block sits above LP economics.
+  const [kY, lpY] = await Promise.all([keeper, l.getByRole("region", { name: "LP economics" })].map((x) => x.evaluate((e) => e.getBoundingClientRect().top)));
+  expect(kY).toBeLessThan(lpY);
   await l.getByRole("button", { name: "Cheap direction now: Coinbase → xStocks" }).click();
   await expect(tab(page, "Move")).toHaveAttribute("aria-current", "page");
   await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toHaveAttribute("aria-checked", "true");
