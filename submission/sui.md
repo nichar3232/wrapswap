@@ -231,7 +231,25 @@ Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T13:05:52.515Z (DEMO_CHECK=1
 
 ### Browser click-through
 
-{{CLICK}}
+Run on 2026-09-26 against live Sui testnet and Unichain Sepolia, with the keeper running as `pnpm dev:sui-keeper` and the page served from a production build. Eleven screenshots are in `~/wrapswap-run/status/sui-shots/`; harness: `services/crank/sui/clickthrough.ts`.
+
+How it was driven: headless Chromium can't operate the Slush or MetaMask extensions, so the harness injects stand-ins that sign with the same demo keys. One is an EIP-1193 provider in the MetaMask path; the other is a wallet-standard Sui wallet that dapp-kit lists as "Demo Wallet (test harness)". Everything else is real: the `/pay` page, both chains, the Seal key servers, Walrus and the keeper. To do the same by hand, import the two Sui keys into Slush and `DEMO_MNEMONIC` index 1 into MetaMask.
+
+| # | Step | Evidence |
+| --- | --- | --- |
+| 1 | Payer connects MetaMask (Unichain Sepolia) and a Sui wallet | `01-connected.png` |
+| 2 | **Deposit (Unichain):** 5 mAAPLx into ShareVault | [`0xd1233137…`](https://sepolia.uniscan.xyz/tx/0xd12331373eda55ea0d5051faf5d990467484a95c476df21276ec9a8ed6d1c478), `02-deposit-sent.png` |
+| 3 | Keeper credits 5 shares on Sui | `credit_deposit` [`E5fRnCYrxY…`](https://suiscan.xyz/testnet/tx/E5fRnCYrxYdZH71ffhNtPbBPsjRGNBHj8ZvT2MVrNR92), manifest [`S2v48k13Tf…`](https://walruscan.com/testnet/blob/S2v48k13TfQ_bJE_2QUlan4npJMkzwMVKHYzK0dckHY), `03-deposit-credited.png` |
+| 4 | Payer decrypts their balance in the browser (Seal `seal_approve_leaf`, Merkle proof checked against the Sui root) | `04-payer-balance.png` |
+| 5 | **Pay (Sui):** 3 shares to the payee, sealed to batch 9; countdown "batching for privacy" | `05-pay-batching.png` |
+| 6 | Window closes, keeper applies batch 9, total unchanged | `apply_batch` [`Hx1x3k2vVo…`](https://suiscan.xyz/testnet/tx/Hx1x3k2vVo75XnwfAsbfmxeHw5wFwgWgA1rY9XhWSNgN), manifest [`JW5hPuu5iA…`](https://walruscan.com/testnet/blob/JW5hPuu5iAXZIR3UECCMM48L49X8tQl_gCrzrIeQfSE), `06-pay-applied.png` |
+| 7 | Payee connects and decrypts their balance, which now includes the 3 shares | `07-payee-balance.png` |
+| 8 | **Withdraw (Unichain):** payee asks for 5 shares as mcbAAPL, the other issuer; live quote 14.34 bps, grossed up | `08-withdraw-quote.png` |
+| 9 | Sealed withdrawal applied into escrow (batch 10) | `apply_batch` [`DASnveERtY…`](https://suiscan.xyz/testnet/tx/DASnveERtYhVtqEqJpHBF5ojZtBJq6K2wPWznLrx6RLp), `09-withdraw-sealed.png` |
+| 10 | ShareVault converts mAAPLx → mcbAAPL through WrapSwapRouter → ParityHook and delivers **4.938271 mcbAAPL** (= 5 shares ÷ 1.0125) | `settleWithdrawals` [`0xb888dea9…`](https://sepolia.uniscan.xyz/tx/0xb888dea982444f740ebee34489101ebbc3534d8103157d6415901b0f3b10b974), `10-withdraw-delivered.png` |
+| 11 | Keeper debits 5.00718 shares on Sui (the unused fee reservation is refunded); reserves back to 1:1 | `debit_withdrawal` [`9rncFYg7wF…`](https://suiscan.xyz/testnet/tx/9rncFYg7wFKKUL5P3iRnPcxJauHgHe3dXxr6bJNoKtB2), manifest [`ZHsXOhGhwM…`](https://walruscan.com/testnet/blob/ZHsXOhGhwMCXo3igBjZhxT727w-6UYNC4qpm07GpAxk), `11-payee-after.png` |
+
+After the run, `GET /pay/reserves` returned `suiTotalShares == vaultShares == 31.0548993375` with `invariant: true`.
 
 ## Tests
 
@@ -250,6 +268,8 @@ Run: `DEMO_CHECK=1 scripts/dev/sui-demo`, 2026-09-26T13:05:52.515Z (DEMO_CHECK=1
 6. **Transfer restrictions unverified.** Native issuer behaviour on a generic node returned `OpcodeNotFound`, including an attempted holder transfer; that doesn't prove transfers are allowlisted. Mocks are used. Delivering a gated wrapper to an arbitrary recipient may fail in production, and in that case the withdrawal skips and the credit is restored.
 7. **Testnet only.** Walrus has no public mainnet publisher, the Seal servers used are testnet open-mode servers, and the issuer tokens are mocks.
 8. **Tax and regulation.** Paying with tokenized equity is jurisdiction-specific and is not determined by the protocol. Transferring a security as payment is not the same regulated activity as trading it.
-9. **Cut from the plan for time.** zkLogin, sponsored gas, batch sharding (a single Batch per window serialises submits), dollar-denominated send, Postgres indexing and `/pay/history`.
+9. **Relayer gas.** Each withdrawal settles inside `try/catch`, so a caller that trusts `eth_estimateGas` can hand the vault too little gas; the conversion then runs out of gas and is *skipped* (credit restored). This happened once on 1301 (`WithdrawalSkipped`, `FailedInnerCall`). The keeper sets an explicit limit of 300k gas plus 600k per withdrawal. A future vault revision should enforce a `gasleft()` floor per withdrawal on chain.
+10. **Settlement gap.** Between `settleWithdrawals` on Unichain and `debit_withdrawal` on Sui (seconds), the vault is below the Sui total. `/pay/reserves` reports `invariant: false` for that interval; the UI shows it as "settling" for up to 60 s before calling it a mismatch.
+11. **Cut from the plan for time.** zkLogin, sponsored gas, batch sharding (a single Batch per window serialises submits), dollar-denominated send, Postgres indexing and `/pay/history`.
 
 READY FOR MERGE
