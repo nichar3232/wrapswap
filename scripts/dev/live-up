@@ -28,6 +28,10 @@ docker start $PG >/dev/null 2>&1 || docker run -d --name $PG \
   -p 127.0.0.1:$PG_PORT:5432 postgres:16 >/dev/null
 until docker exec $PG pg_isready -U wrapswap -d wrapswap >/dev/null 2>&1; do sleep 1; done
 sleep 2
+# A minimal manifest is expanded from the chain (no hardcoded addresses) before anything loads it.
+if grep -q '"parityHook"' "deployments/$NETWORK.json" && ! grep -q '"network"' "deployments/$NETWORK.json"; then
+  pnpm exec tsx scripts/dev/resolve-deployment.ts
+fi
 pnpm db:migrate
 pnpm exec vite build --config web/vite.config.ts
 S=wrapswap-live

@@ -5,7 +5,7 @@ test("Landing: Unison brand, proof from deployment, Launch app", async ({
   page,
 }) => {
   const file = new URL(
-    "../../deployments/unichain-sepolia.json",
+    "../../deployments/unichain-sepolia.resolved.json",
     import.meta.url,
   );
   const d = existsSync(file)
@@ -210,7 +210,7 @@ test.describe("Landing controls all navigate or scroll", () => {
     page,
   }) => {
     const file = new URL(
-      "../../deployments/unichain-sepolia.json",
+      "../../deployments/unichain-sepolia.resolved.json",
       import.meta.url,
     );
     const d = existsSync(file)

@@ -12,7 +12,7 @@ for (const [key, topic] of Object.entries(topics))
     const p = projection(name, e.args, { contract: log.address }, deployment);
     expect(p?.sql).toContain("INSERT INTO");
   });
-it("covers all 32 frozen events", () => expect(eventNames).toHaveLength(32));
+it("covers all 35 frozen events", () => expect(eventNames).toHaveLength(35));
 it("ignores denials not called by deployment hooks", () =>
   expect(
     projection(

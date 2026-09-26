@@ -163,11 +163,11 @@ export const DEMO = {
       warpTimestamp: null,
       marketOpen: false,
       nextOpen: 1790602200,
-      seedBlock: 63580006,
-      label: "Seed state at deploy block 63580006, market closed",
+      seedBlock: 63586745,
+      label: "Seed state at deploy block 63586745",
       seedInventory: {
-        mcbAAPL: 8888888889n,
-        mAAPLx: 11000000000000000000000n,
+        mcbAAPL: 7901234568n,
+        mAAPLx: 12000000000000000000000n,
       },
       parityFill: {
         feePips: 200,

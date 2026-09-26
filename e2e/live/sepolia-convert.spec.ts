@@ -23,7 +23,15 @@ test('live Convert: approve then swapExactIn through WrapSwapRouter', async ({ p
       // The public Unichain RPC intermittently reports a stale pending nonce (0); use max(latest, pending).
       const [latest, pending] = await Promise.all((['latest', 'pending'] as const).map((blockTag) =>
         chain.getTransactionCount({ address: account(1).address, blockTag })));
-      const hash = await wallet(1).sendTransaction({ to: tx.to, data: tx.data, value: BigInt(tx.value || 0), chain: null, nonce: Math.max(latest, pending) });
+      // A just-mined approve can be missing on the backend that estimates gas for the next tx: retry briefly.
+      let hash: `0x${string}` | undefined;
+      for (let attempt = 0; !hash; attempt++)
+        try {
+          hash = await wallet(1).sendTransaction({ to: tx.to, data: tx.data, value: BigInt(tx.value || 0), chain: null, nonce: Math.max(latest, pending) });
+        } catch (e) {
+          if (attempt >= 5) throw e;
+          await new Promise((r) => setTimeout(r, 2000));
+        }
       hashes.push(hash);
       return hash;
     }

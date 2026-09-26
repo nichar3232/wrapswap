@@ -1,9 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { createPublicClient, createWalletClient, http } from 'viem';
 import { mnemonicToAccount } from 'viem/accounts';
-import { parseDeployment, abis } from '@wrapswap/types';
+import { parseDeployment, abis, isMinimalManifest } from '@wrapswap/types';
 export const network = process.env.NETWORK || 'unichain-sepolia';
-export const deployment = () => parseDeployment(JSON.parse(readFileSync(`deployments/${network}.json`, 'utf8')));
+const manifestJson = (p: string) => JSON.parse(readFileSync(p, 'utf8'));
+// A minimal manifest is read through its chain-resolved expansion (scripts/dev/resolve-deployment.ts).
+export const deployment = () => {
+  const raw = manifestJson(`deployments/${network}.json`);
+  return parseDeployment(isMinimalManifest(raw) ? manifestJson(`deployments/${network}.resolved.json`) : raw);
+};
 export const rpc = process.env.RPC_URL || `http://127.0.0.1:${process.env.ANVIL_PORT || 18508}`;
 export const chain = createPublicClient({transport:http(rpc)});
 export const account = (index:number) => mnemonicToAccount(process.env.DEMO_MNEMONIC || 'test test test test test test test test test test test junk', {addressIndex:index});

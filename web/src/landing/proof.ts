@@ -13,7 +13,7 @@ type ProofDeployment = {
 
 // Globbed rather than imported so the build still passes before the deployment file lands.
 const files = import.meta.glob<ProofDeployment>(
-  "../../../deployments/unichain-sepolia.json",
+  "../../../deployments/unichain-sepolia.resolved.json",
   { eager: true, import: "default" },
 );
 export const deployment: ProofDeployment | undefined = Object.values(files)[0];

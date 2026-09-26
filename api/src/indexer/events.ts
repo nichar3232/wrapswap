@@ -43,7 +43,11 @@ const tables: Record<string, string> = {
   Committed: "dark_commits",
   Revealed: "dark_reveals",
   RevealRejected: "dark_reveal_rejections",
-  Crossed: "dark_crosses",
+  Crossed: "dark_batch_crosses",
+  CrossFilled: "dark_crosses",
+  ResidualFilled: "dark_residual_fills",
+  Unfilled: "dark_unfilled",
+  Converted: "parity_conversions",
   ResidualRouted: "dark_residuals",
   ResidualSkipped: "dark_residual_skips",
   Forfeited: "dark_forfeits",
@@ -53,6 +57,14 @@ const tables: Record<string, string> = {
   MidUpdated: "oracle_mids",
   Claimed: "faucet_claims",
 };
+/** Every DarkCrossHook in the manifest (one per asset in a multi-asset manifest). */
+export const darkHooks = (d: Deployment) => [
+  ...new Set(
+    [d.contracts.darkCrossHook, ...(d.assets ?? []).map((a) => a.darkCrossHook)]
+      .filter(Boolean)
+      .map((a) => a!.toLowerCase()),
+  ),
+];
 /** Pool key for a ParityHook pool id: any `assets[].pool` in a multi-asset manifest, else the single `pool`. */
 export function poolKeyOf(d: Deployment, poolId: string) {
   const pool = [...(d.assets ?? []).map((a) => a.pool), d.pool].find(
@@ -83,7 +95,9 @@ export function accepts(log: any, d: Deployment) {
       INyseCalendar: "calendar",
     } as Record<string, string>
   )[owner];
-  const candidates = contract
+  const candidates = contract === "darkCrossHook"
+    ? darkHooks(d)
+    : contract
     ? [d.contracts[contract as keyof Deployment["contracts"]]]
     : deploymentTokens(d).map((t) =>
         owner === "IWrapperAdapter" ? t.adapter : t.address,
@@ -111,9 +125,24 @@ export function projection(
   if (event === "TokenListed") return null;
   let table = tables[event];
   let a: any = { ...json(args) };
+  // Column names: `from`/`to`/`user` are SQL keywords; CrossFilled's `fee` is the dark_crosses fee_amount.
+  if (event === "Converted") {
+    a.fromToken = a.from;
+    a.toToken = a.to;
+    delete a.from;
+    delete a.to;
+  }
+  if (event === "CrossFilled") {
+    a.feeAmount = a.fee;
+    delete a.fee;
+  }
+  if (event === "ResidualFilled" || event === "Unfilled") {
+    a.trader = a.user;
+    delete a.user;
+  }
   if (
     event === "EligibilityDenied" &&
-    ![d.contracts.parityHook, d.contracts.darkCrossHook].some(
+    ![d.contracts.parityHook, ...darkHooks(d)].some(
       (x) => x.toLowerCase() === a.caller.toLowerCase(),
     )
   )

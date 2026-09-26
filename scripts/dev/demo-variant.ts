@@ -1,7 +1,7 @@
 // Regenerates the INTERFACES.md §10 live-network variant from the deployment itself; the figures are never hand-typed.
 // Seed block N = the block before the first ParityHook fill on the §10 pool after the hook's deploy block. At N it reads
 // the seed inventory (stored as `seedInventory`; a live deploy may seed differently from the anvil narrative), adapter
-// ratios, the NYSE clock and ParityHook.quote for the §10 parity fill, and requires the on-chain quote to equal the
+// ratios and ParityHook.quote for the §10 parity fill, and requires the on-chain quote to equal the
 // canonical.ts mirror. It then derives the residual and end state with the same arithmetic as
 // packages/types/scripts/verify-demo.ts and rewrites the variant in INTERFACES.md.
 // Usage: NETWORK=unichain-sepolia RPC_URL=… pnpm exec tsx scripts/dev/demo-variant.ts && pnpm types
@@ -9,10 +9,12 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createPublicClient, http, decodeEventLog } from 'viem';
 import { abis, canonical as c, topics } from '@wrapswap/types';
 import { DEMO } from '../../packages/types/src/generated/demo.js';
+import { deployment } from './client.js';
 
 const network = process.env.NETWORK || 'unichain-sepolia';
 if (network === 'anvil') throw Error('the anvil variant is warped and fixed; this script is for live networks');
-const d = JSON.parse(readFileSync(`deployments/${network}.json`, 'utf8'));
+// The typed deployment (a minimal manifest is read through its chain-resolved expansion).
+const d: any = deployment();
 const client = createPublicClient({ transport: http(process.env.RPC_URL || 'https://sepolia.unichain.org') });
 const hook = d.contracts.parityHook as `0x${string}`;
 const key = d.pool.key;
@@ -44,10 +46,12 @@ for (const [t, spt] of [[mcbT, DEMO.tokens.mcbAAPL.sharesPerTokenX18], [xT, DEMO
   const onchainSpt = await read('sharesPerToken', [], t.adapter, abis.IWrapperAdapter);
   if (onchainSpt !== spt) throw Error(`${t.symbol} sharesPerToken at ${N} is ${onchainSpt}, §10 says ${spt}`);
 }
-const cal = d.contracts.calendar as `0x${string}`;
-const marketOpen: boolean = await read('isOpen', [block.timestamp], cal, abis.INyseCalendar);
-if (marketOpen) throw Error(`NYSE is open at block ${N}; the live variant is the closed-market seed state`);
-const nextOpen = Number(await read('nextTransition', [block.timestamp], cal, abis.INyseCalendar));
+// The final fee model has no clock input and the manifest no calendar: marketOpen/nextOpen are carried over from the
+// existing variant (generated from the calendar earlier) and do not enter any figure below.
+const docText = readFileSync('INTERFACES.md', 'utf8');
+const prev = docText.slice(docText.indexOf(`"${network}": {`, docText.indexOf('```json wrapswap:demo')));
+const marketOpen = /"marketOpen": true/.test(prev.slice(0, 400));
+const nextOpen = Number(/"nextOpen": (\d+)/.exec(prev)?.[1] ?? 0);
 
 // 3. On-chain quote for the §10 parity fill (mcbAAPL in, exact in) must equal the canonical mirror.
 const mcb = { spt: DEMO.tokens.mcbAAPL.sharesPerTokenX18, decimals: DEMO.tokens.mcbAAPL.decimals };
@@ -56,7 +60,7 @@ const sharesOf = (m: bigint, q: bigint) => ({ mcb: c.toSharesDown(m, mcb.spt, mc
 const pf = DEMO.parityFill;
 const onchain: any = await read('quote', [key, mcbIs0, pf.amountSpecified]);
 let s = sharesOf(invMcb, invX);
-const fee1 = c.tradeFeeBreakdown(s.mcb, s.x, true, pf.shares, false);
+const fee1 = c.tradeFeeBreakdown(s.mcb, s.x, true, pf.shares);
 const q1 = c.parityQuote(mcb, x, pf.amountSpecified, fee1.totalPips);
 if (BigInt(onchain.fee.totalPips) !== fee1.totalPips || onchain.amountOut !== q1.amountOut || onchain.feeAmount !== q1.feeAmount)
   throw Error(`on-chain quote ${onchain.fee.totalPips}/${onchain.amountOut} != mirror ${fee1.totalPips}/${q1.amountOut}`);
@@ -64,11 +68,11 @@ if (BigInt(onchain.fee.totalPips) !== fee1.totalPips || onchain.amountOut !== q1
 // 4. Residual after the parity fill and the §10 dark cross, then the end state (verify-demo arithmetic).
 s = sharesOf(invMcb + pf.amountIn, invX - q1.grossOut);
 const r = DEMO.dark.residual;
-const fee2 = c.tradeFeeBreakdown(s.mcb, s.x, true, r.shares, false);
+const fee2 = c.tradeFeeBreakdown(s.mcb, s.x, true, r.shares);
 const q2 = c.parityQuote(mcb, x, -r.amountIn, fee2.totalPips);
 const variant = {
-  network, chainId: d.chainId, warpTimestamp: null, marketOpen: false, nextOpen,
-  seedBlock: Number(N), label: `Seed state at deploy block ${N}, market closed`,
+  network, chainId: d.chainId, warpTimestamp: null, marketOpen, nextOpen,
+  seedBlock: Number(N), label: `Seed state at deploy block ${N}`,
   seedInventory: { mcbAAPL: invMcb.toString(), mAAPLx: invX.toString() },
   parityFill: { feePips: Number(fee1.totalPips), feeBps: c.pipsToBps(fee1.totalPips), feeAmount: q1.feeAmount.toString(), amountOut: q1.amountOut.toString() },
   residual: { feePips: Number(fee2.totalPips), feeBps: c.pipsToBps(fee2.totalPips), feeAmount: q2.feeAmount.toString(), amountOut: q2.amountOut.toString() },

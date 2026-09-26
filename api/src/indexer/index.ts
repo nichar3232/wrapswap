@@ -1,8 +1,8 @@
 import { keccak256, toHex } from "viem";
 import type { Deployment } from "@wrapswap/types";
-import { db } from "../db/index.js";
+import { db, upsertDarkPairs } from "../db/index.js";
 import { publicClient, loadDeployment, json } from "../chain/client.js";
-import { decode, projection, accepts, deploymentTokens } from "./events.js";
+import { decode, projection, accepts, deploymentTokens, darkHooks } from "./events.js";
 const LOG_ADDRESS_CHUNK = 8;
 export { projection } from "./events.js";
 export class Indexer {
@@ -29,6 +29,8 @@ export class Indexer {
         throw Error("RPC chain mismatch");
       await c.query("BEGIN");
       await c.query("SELECT pg_advisory_xact_lock($1)", [this.d.chainId]);
+      // Views join dark rows through dark_pairs; keep it present even after a dev reset truncated every table.
+      await upsertDarkPairs(this.d, c);
       const d = this.d,
         start = BigInt(d.startBlock);
       const identity = keccak256(
@@ -111,12 +113,15 @@ export class Indexer {
       await c.query("COMMIT");
       const last = head - BigInt(this.confirmations);
       const addresses = [
-        ...new Set([
-          ...Object.values(d.contracts).filter(Boolean),
-          ...deploymentTokens(d).flatMap((t) => [t.address, t.adapter]),
-          ...(d.faucet ? [d.faucet] : []),
-        ]),
-      ];
+        ...new Set(
+          [
+            ...Object.values(d.contracts).filter(Boolean),
+            ...deploymentTokens(d).flatMap((t) => [t.address, t.adapter]),
+            ...(d.faucet ? [d.faucet] : []),
+            ...darkHooks(d),
+          ].map((a) => String(a).toLowerCase()),
+        ),
+      ] as `0x${string}`[];
       for (
         let from = cursor ? BigInt(cursor.last_block) + 1n : start;
         from <= last;

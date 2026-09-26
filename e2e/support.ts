@@ -33,7 +33,8 @@ export async function injectWallet(page:Page) {
 }
 export async function inventoryMatchesChain() {
   const inventory=await api('/inventory','InventoryResponse');
-  for(const token of inventory.tokens)for(const field of ['inventory','inventoryShares','feesAccrued']) {
+  // Fees stay in inventory in the final model (no separate feesAccrued on chain).
+  for(const token of inventory.tokens)for(const field of ['inventory','inventoryShares']) {
     expect(token[field]).toBe((await read('parityHook',field,[token.address],BigInt(inventory.block))).toString());
   }
   return inventory;
@@ -52,7 +53,8 @@ export async function revealBoth() {
   await advanceToReveal();
   for(const [index,name] of [[2,'counterpartyA'],[3,'counterpartyB']] as const) {
     const order=DEMO.dark.orders[name];
-    await write(index,d.contracts.darkCrossHook,abis.IDarkCrossHook,'reveal',[order.sellBase,order.amountIn,order.limitPriceX18,order.routeResidual,`0x${index.toString(16).padStart(64,'0')}`]);
+    // Final DarkCrossHook: reveal(sellBase, amountIn, limit, recipient, salt); the seed commits recipient 0 (the committer).
+    await write(index,d.contracts.darkCrossHook,abis.IDarkCrossHook,'reveal',[order.sellBase,order.amountIn,order.limitPriceX18,'0x0000000000000000000000000000000000000000',`0x${index.toString(16).padStart(64,'0')}`]);
   }
   while((await read('darkCrossHook','currentBatch'))[1]!==2)await rpcCall('anvil_mine',['0x1']);
 }

@@ -6,7 +6,7 @@ Placeholders used in this file: `{{URL:repo-readme-integrations}}`
 - **Voiceover.** Read it in your own voice; AI voiceovers are not allowed. The whole voiceover is 365 words, which is 2:26 at 150 wpm. Every block also fits its own slot at 150 wpm (tightest: B2, 44 words in 20 s = 17.6 s).
 - **Numbers.** Every on-screen number comes from INTERFACES.md §10:
   - Part A uses **Variant ANVIL**: NYSE OPEN, block warped to `1790692200` (Tue 2026-09-29 10:30 EDT).
-  - Part B uses **Variant UNICHAIN-SEPOLIA**: real clock, NYSE CLOSED Sat 2026-09-26 to Mon 2026-09-28 13:30 UTC.
+  - Part B uses **Variant UNICHAIN-SEPOLIA**: the live 1301 pools ("Seed state at deploy block 63586745" in §10; live figures at time of writing). The fee has no market-hours input.
   - If the app shows a different number, stop and re-seed. Don't narrate over a mismatch.
 - **Tokens.** Demo tokens are mocks with issuer-faithful decimals and multipliers:
   - `mcbAAPL` mocks Coinbase tokenized AAPL: 6 decimals, 1.0125 shares per token.
@@ -70,23 +70,23 @@ Start state: a fresh `scripts/dev/record-ready` stack, before any swap.
 
 ## Part B — live Unichain Sepolia, Variant UNICHAIN-SEPOLIA (2:20–3:00)
 
-Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote only**. The pool already holds live swaps, so the numbers below are the live 1301 quote **at time of writing** (block 63581560, Sat 2026-09-26 14:46 UTC). Any later swap moves the skew line, so read the final figures off the screen.
+Show a **quote only**. The fee has no market-hours input. The pool already holds live swaps, so the numbers below are the live 1301 quote **at time of writing** (block 63589883, Sat 2026-09-26 17:05 UTC). Any later swap moves the skew line, so read the final figures off the screen.
 
 ### B1 · 2:20–2:30 — Verified hook on Uniscan
 
-- **Screen:** `https://sepolia.uniscan.xyz/address/0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8#code` → Contract tab, green "verified" check, `beforeSwap` in the source.
+- **Screen:** `https://sepolia.uniscan.xyz/address/0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8#code` → Contract tab, green "verified" check, `beforeSwap` in the source.
 - **Voiceover (23 words):** "Same hook, live on Unichain Sepolia, verified. It gates swaps to non-US wallets via Coinbase's Verified Country attestation; testnet runs a demoMode bypass."
 - **Caption:** `ParityHook · Unichain Sepolia (1301) · verified · non-US gate: Coinbase Verified Country EAS (demoMode on for testnet)`
 
-### B2 · 2:30–2:50 — Live quote, NYSE closed
+### B2 · 2:30–2:50 — Live quote, both directions
 
 - **Screen:**
-  1. `https://nichars-mac-mini.tail43cacc.ts.net/app` (live stack on the mini via Tailscale Funnel; see DEMO.md), Convert tab. The header shows NYSE **CLOSED** · next open Mon 13:30 UTC.
+  1. `https://nichars-mac-mini.tail43cacc.ts.net/app` (live stack on the mini via Tailscale Funnel; see DEMO.md), Convert tab, asset AAPL.
   2. From `mcbAAPL`, To `mAAPLx`, amount `100`.
-  3. AAPL inventory is long mAAPLx (|skew| ≈ 0.20), so 100 mcbAAPL → mAAPLx reduces skew: the breakdown is base 2.00 + **skew 0** = **2.00 bps**; output **101.22975 mAAPLx**.
-  4. Flip the direction (100 mAAPLx → mcbAAPL): it deepens the imbalance, so the skew fee applies: 2.00 + **3.14** (15 bps × post-trade |skew| 0.209) = **5.14 bps**; the deployer proof swap filled exactly this (98.714666 mcbAAPL out).
-- **Voiceover (38 words):** "A same-share swap has no price risk, so the base fee is 2 basis points. Only a trade that deepens the hook's inventory imbalance pays a skew fee: this way 2.00 bps, the other way 5.14. All of it goes to the LP."
-- **Caption:** `cheap direction 2.00 bps (skew fee 0) · imbalance-increasing 5.14 bps (+ 15 bps × |post skew|) · 100% to the LP`
+  3. At time of writing, AAPL inventory is long mAAPLx (|skew| 0.188), so 100 mcbAAPL → mAAPLx reduces skew: the breakdown is base 2.00 + **skew 0** = **2.00 bps**; output **101.22975 mAAPLx**.
+  4. Flip the direction (100 mAAPLx → mcbAAPL): it deepens the imbalance, so the skew fee applies: 2.00 + **2.97** (15 bps × post-trade |skew|) = **4.97 bps**, output 98.716345 mcbAAPL (at time of writing). The deployer's proof swap at deploy time filled this side at 5.14 bps.
+- **Voiceover (38 words):** "A same-share swap has no price risk, so the base fee is 2 basis points. Only a trade that deepens the hook's inventory imbalance pays a skew fee: this way 2.00 bps, the other way 4.97. All of it goes to the LP."
+- **Caption:** `cheap direction 2.00 bps (skew fee 0) · imbalance-increasing 4.97 bps (+ 15 bps × |post skew|) · 100% to the LP` (at time of writing)
 
 ### B3 · 2:50–3:00 — Integration table, close
 
@@ -108,8 +108,7 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 | A 60 mcbAAPL @1.0100, B 50.625 mAAPLx @1.0150, mid 1.0125 | shared | `dark.orders`, `dark.oracleMidX18` |
 | crossed 50 ↔ 50.625; A gets 50.5996875; B gets 49.975 | shared | `dark.crossedBase/crossedQuote`, `dark.crossOut` |
 | residual 10 mcbAAPL → 10.120474125 mAAPLx, 4.47 bps, min 10.1 | ANVIL | `variants.anvil.residual`, `dark.residual.minOut` |
-| 2.00 bps (skew-reducing), out 101.22975; reverse 5.14 bps = 2.00 + 3.14 skew, out 98.714666 mcbAAPL | UNICHAIN-SEPOLIA | live `ParityHook.quote(asset, from, to, amountIn)` on 1301 |
-| next open Mon 2026-09-28 13:30 UTC | UNICHAIN-SEPOLIA | `variants.unichain-sepolia.nextOpen = 1790602200` |
+| 2.00 bps (skew-reducing), out 101.22975; reverse 4.97 bps = 2.00 + 2.97 skew, out 98.716345 mcbAAPL (at time of writing) | UNICHAIN-SEPOLIA | live `ParityHook.quote` on 1301, block 63589883 |
 
 ## Technical claims in the voiceover → source
 
@@ -122,4 +121,3 @@ Record while NYSE is closed (before Mon 2026-09-28 13:30 UTC). Show a **quote on
 | Commit-reveal; settle at the oracle mid (≤ 30 min old); 1 bp on crossed volume to the protocol; residual to ParityHook at base + skew, unfilled part refunded | [`DarkCrossHook.commit` (DarkCrossHook.sol#L185)](../contracts/src/DarkCrossHook.sol#L185), [`DarkCrossHook.reveal` (DarkCrossHook.sol#L212)](../contracts/src/DarkCrossHook.sol#L212); DECISIONS.md "crossing charges 5 bps per side to treasury" |
 | Residual swapped into the ParityHook pool in the same unlock | [`DarkCrossHook.settle` (DarkCrossHook.sol#L246)](../contracts/src/DarkCrossHook.sol#L246); DECISIONS.md "routes residuals into the ParityHook pool inside the same unlock" |
 | Non-US gate via Coinbase Verified Country EAS; demoMode on testnet | [`IEligibility.check` (IEligibility.sol#L21)](../contracts/src/interfaces/IEligibility.sol#L21), [`IEligibility.setDemoMode` (IEligibility.sol#L18)](../contracts/src/interfaces/IEligibility.sol#L18); DECISIONS.md "IEligibility has an EAS implementation (Coinbase Verified Country, restricted country \"US\")… demoMode is owner-set and emits DemoModeSet" |
-| NYSE closed read from the chain clock | [`NyseCalendar.isOpen` (NyseCalendar.sol#L54)](../contracts/src/NyseCalendar.sol#L54); DECISIONS.md "Market-hours logic everywhere reads the latest block timestamp" |

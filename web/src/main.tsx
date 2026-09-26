@@ -22,7 +22,7 @@ const initialTab = (): Tab =>
 const CHAIN = CHAINS[config.network];
 
 // When the API is unreachable the app still knows its contracts from the committed manifest.
-const bundled = import.meta.glob<unknown>("../../deployments/unichain-sepolia.json", {
+const bundled = import.meta.glob<unknown>("../../deployments/unichain-sepolia.resolved.json", {
   eager: true,
   import: "default",
 });

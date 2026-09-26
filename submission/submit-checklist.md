@@ -2,7 +2,7 @@
 
 Placeholders referenced: `{{URL:repo}}`, `{{URL:video}}`, `{{URL:feedback-md}}`, `{{URL:repo-readme-integrations}}`
 
-**Hard deadline: Sun 2026-09-27 09:00 JST = Sat 2026-09-26 24:00 UTC.** Part B must be recorded while NYSE is closed. That window runs from now until Mon 2026-09-28 13:30 UTC, so the deadline is the binding constraint.
+**Hard deadline: Sun 2026-09-27 09:00 JST = Sat 2026-09-26 24:00 UTC.** Part B has no market-hours dependency (the fee has no clock input); record any time before the deadline.
 
 ## 0. Preconditions (5 min)
 
@@ -19,8 +19,8 @@ Placeholders referenced: `{{URL:repo}}`, `{{URL:video}}`, `{{URL:feedback-md}}`,
 
 ## 2. Record Part B on the live site (≈10 min)
 
-- [ ] Open `https://sepolia.uniscan.xyz/address/0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8#code` and confirm the "verified" check shows (block B1).
-- [ ] Run `scripts/dev/live-up` (Funnel serves it, DEMO.md §3) and open `https://nichars-mac-mini.tail43cacc.ts.net/app`, Convert tab. Check the header says NYSE **CLOSED** and chain 1301. The 100 mcbAAPL → mAAPLx quote is **2.00 bps** / **101.22975 mAAPLx** (skew-reducing: base fee only; the reverse direction is 5.14 bps); read the live figures off the screen. **Only quote; don't execute a swap before recording.**
+- [ ] Open `https://sepolia.uniscan.xyz/address/0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8#code` and confirm the "verified" check shows (block B1).
+- [ ] Run `scripts/dev/live-up` (Funnel serves it, DEMO.md §3) and open `https://nichars-mac-mini.tail43cacc.ts.net/app`, Convert tab. Check chain 1301 and asset AAPL. At time of writing the 100 mcbAAPL → mAAPLx quote was **2.00 bps** / **101.22975 mAAPLx** (skew-reducing: base fee only; the reverse direction was 4.97 bps); read the live figures off the screen. **Only quote; don't execute a swap before recording.**
 - [ ] Open `{{URL:repo-readme-integrations}}` (block B3).
 - [ ] Record blocks B1–B3 (2:20–3:00).
 

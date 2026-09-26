@@ -23,6 +23,9 @@ export function fixtures(network: Network) {
     totalPips: v.parityFill.feePips,
     totalBps: v.parityFill.feeBps,
     skewX18: str(DEMO.skewX18.initial),
+    // The §10 parity fill moves skew toward balance (-0.20 → -0.19).
+    postSkewX18: str(DEMO.skewX18.afterParityFill),
+    reducesImbalance: true,
     marketOpen: v.marketOpen,
   };
   const eligibility = {
@@ -109,7 +112,7 @@ export function fixtures(network: Network) {
       poolId: d.pool.id,
       fee,
       maxFeePips: 2500,
-      formula: "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips",
+      formula: "baseFeePips + (|skew| grows ? min(ceil(1500*|postTradeSkew|), 5000) : 0) pips",
     },
     inventory: {
       block: "100",

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { formatUnits } from 'viem';
+import { canonical } from '@wrapswap/types';
 import { mkdirSync,writeFileSync } from 'node:fs';
 import { api,webURL,injectWallet,inventoryMatchesChain,waitHead,revealBoth,deployment,read,chain,account,abis,DEMO } from './support.js';
 
@@ -36,7 +37,12 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   expect(fill?.amountOut).toBe(v.parityFill.amountOut.toString());
   let inv=await inventoryMatchesChain();
   const sign=base.address.toLowerCase()===d.pool.key.currency0.toLowerCase()?1n:-1n;
-  expect(inv.skewX18).toBe((DEMO.skewX18.afterParityFill*sign).toString());
+  // Realised skew: fees stay in inventory, so the hook keeps amountIn and pays out only the net amountOut.
+  const realised=(mcb:bigint,x:bigint)=>canonical.skewX18(
+    canonical.toSharesDown(mcb,DEMO.tokens.mcbAAPL.sharesPerTokenX18,DEMO.tokens.mcbAAPL.decimals),
+    canonical.toSharesDown(x,DEMO.tokens.mAAPLx.sharesPerTokenX18,DEMO.tokens.mAAPLx.decimals));
+  const afterFill={mcb:DEMO.inventory.mcbAAPL+DEMO.parityFill.amountIn,x:DEMO.inventory.mAAPLx-v.parityFill.amountOut};
+  expect(inv.skewX18).toBe((realised(afterFill.mcb,afterFill.x)*sign).toString());
   await page.getByRole('button',{name:'Pool',exact:true}).click();
   await expect(page.getByText(/19(?:\.0+)?\s*%/).first()).toBeVisible(); // header badge and Pool label both show skew
   const [batch]=await read('darkCrossHook','currentBatch');
@@ -56,8 +62,11 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
     expect(cross?.feeAmount).toBe(DEMO.dark.crossFees[name].toString());
   }
   inv=await inventoryMatchesChain();
-  expect(inv.skewX18).toBe((DEMO.skewX18.afterDarkResidual*sign).toString());
-  expect(await read('parityHook','feesAccrued',[quote.address])).toBe(v.end.hookFeesMAAPLx);
+  expect(inv.skewX18).toBe((realised(afterFill.mcb+DEMO.dark.residual.amountIn,afterFill.x-v.residual.amountOut)*sign).toString());
+  // Fees stay in the hook's inventory; the indexed inventory fees (parity fill + residual, in mAAPLx) are the §10 total.
+  await waitHead();
+  const earned=(await api('/stats','StatsResponse')).feesEarned.tokens.find((t:any)=>t.address.toLowerCase()===quote.address.toLowerCase());
+  expect(earned?.amount).toBe(v.end.hookFeesMAAPLx.toString());
   expect((await read('darkCrossHook','balances',[account(2).address,quote.address]))[0]).toBe(v.end.counterpartyAEscrowMAAPLx);
   expect((await read('darkCrossHook','balances',[account(3).address,base.address]))[0]).toBe(v.end.counterpartyBEscrowMcbAAPL);
   expect(await chain.readContract({address:quote.address,abi:abis.IMockIssuerToken,functionName:'balanceOf',args:[account(1).address]})).toBe(v.end.demoMAAPLx);

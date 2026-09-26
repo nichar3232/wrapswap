@@ -32,14 +32,14 @@ WrapSwap is share-for-share conversion, no USDC leg. A Uniswap v4 hook, ParityHo
 
 Users only ever hold real issuer securities; shares are internal accounting. Swaps are gated to non-US users through the Coinbase Verified Country EAS attestation. On testnet, an owner-set `demoMode` bypasses the gate so anyone can try it, and that toggle is public on-chain.
 
-The fee prices only inventory risk: 2 bps base (owner-settable) + a skew fee of min(15 bps × |post-trade skew|, 50 bps) charged only to trades that increase inventory imbalance; the whole fee stays in the hook's inventory (100% to the LP), the protocol takes nothing on Convert. There is no market-hours component and no charge for any price gap between wrappers. AAPL is seeded at |skew| ≈ 0.20, so on Unichain Sepolia 100 mcbAAPL → mAAPLx costs the 2.00 bps base and the reverse costs 5.14 bps (3.14 bps skew fee).
+The fee prices only inventory risk: 2 bps base (owner-settable) + a skew fee of min(15 bps × |post-trade skew|, 50 bps) charged only to trades that increase inventory imbalance; the whole fee stays in the hook's inventory (100% to the LP), the protocol takes nothing on Convert. There is no market-hours component and no charge for any price gap between wrappers. AAPL was seeded at |skew| ≈ 0.20; at time of writing (|skew| 0.188) 100 mcbAAPL → mAAPLx on Unichain Sepolia costs the 2.00 bps base and the reverse costs 4.97 bps (3.14 bps skew fee).
 
 ## How it's made
 
 - **Contracts.** Solidity 0.8.26 (cancun, via-IR) with Foundry, pinned to v4-core `46c6834` and v4-periphery `9969eec` (DECISIONS.md: "Pin compatible current core/periphery commits").
 - **ParityHook** uses the `beforeInitialize | beforeSwap | afterSwap | beforeSwapReturnDelta` permissions, mined into its address through the CREATE2 proxy.
   - `beforeInitialize` accepts only dynamic-fee pools of two registered wrappers of one underlying.
-  - `beforeSwap` computes the fee from pre-swap inventory skew and the on-chain NYSE calendar. It then either returns a full `BeforeSwapDelta` that mints and burns ERC-6909 claims, or returns a zero delta so the swap falls through.
+  - `beforeSwap` computes the fee from the base fee and the trade's post-trade inventory skew (no market-hours input). It then either returns a full `BeforeSwapDelta` that mints and burns ERC-6909 claims, or returns a zero delta so the swap falls through.
   - `afterSwap` enforces the peg guard.
   - Every path returns the fee as a per-swap LP-fee override.
   - Rounding always favours the hook.

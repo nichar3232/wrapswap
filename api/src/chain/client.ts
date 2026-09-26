@@ -8,6 +8,8 @@ import {
   parseDeployment,
   parseNetwork,
   deploymentPath,
+  resolvedDeploymentPath,
+  isMinimalManifest,
   type Deployment,
 } from "@wrapswap/types";
 // Unichain Sepolia (1301) is the default network; NETWORK=anvil selects the offline stack. Set before `rpc` below
@@ -19,9 +21,16 @@ export function loadDeployment(
   root = process.cwd(),
 ): Deployment {
   const n = parseNetwork(network);
-  const d = parseDeployment(
-    JSON.parse(readFileSync(resolve(root, deploymentPath(n)), "utf8")),
-  );
+  const read = (p: string) => JSON.parse(readFileSync(resolve(root, p), "utf8"));
+  let raw = read(deploymentPath(n));
+  // A minimal manifest is expanded from the chain by scripts/dev/resolve-deployment.ts (run by live-up).
+  if (isMinimalManifest(raw))
+    try {
+      raw = read(resolvedDeploymentPath(n));
+    } catch {
+      throw Error(`${deploymentPath(n)} is minimal: run scripts/dev/resolve-deployment.ts first`);
+    }
+  const d = parseDeployment(raw);
   if (d.network !== n) throw Error("Deployment network mismatch");
   return JSON.parse(
     JSON.stringify(d, (_, v) =>
@@ -67,3 +76,34 @@ export function chainReader(d: Deployment, client: any = publicClient) {
       blockNumber,
     });
 }
+
+/** One Deployment view per asset with a DarkCrossHook (its hook, pair, tokens and pool); the whole deployment if the
+ *  manifest is single-asset. The crank runs one worker per view. */
+export function assetViews(d: Deployment): Deployment[] {
+  const assets = (d.assets ?? []).filter((a) => a.darkCrossHook && a.darkBaseToken && a.darkQuoteToken);
+  if (!assets.length) return [d];
+  const eqa = (x: string, y: string) => x.toLowerCase() === y.toLowerCase();
+  return assets.map((a) => ({
+    ...d,
+    contracts: { ...d.contracts, darkCrossHook: a.darkCrossHook! },
+    pool: a.pool,
+    dark: { ...d.dark, baseToken: a.darkBaseToken!, quoteToken: a.darkQuoteToken! },
+    tokens: a.wrappers.map(
+      (w) =>
+        d.tokens.find((t) => eqa(t.address, w.token)) ?? {
+          symbol: w.symbol,
+          name: w.symbol,
+          address: w.token,
+          decimals: w.decimals,
+          issuer: w.platform === "Coinbase" ? "coinbase" : "xstocks",
+          underlying: a.symbol,
+          mock: d.demoMode,
+          adapter: w.adapter,
+          adapterKind: w.platform === "Coinbase" ? "B20Multiplier" : "XStocksMultiplier",
+          sharesPerTokenX18: w.multiplier,
+          darkRole: eqa(w.token, a.darkBaseToken!) ? "base" : "quote",
+        },
+    ),
+  })) as Deployment[];
+}
+

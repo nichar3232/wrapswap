@@ -40,6 +40,8 @@ export function fixture(eventName: string, index = 0, overrides: any = {}) {
   );
   if (eventName === "EligibilityDenied")
     args.caller = deployment.contracts.parityHook;
+  // A dark residual: the DarkCrossHook's ParityHook fill for the trader and ResidualFilled, in one transaction.
+  if (eventName === "InventoryFill") args.sender = deployment.contracts.darkCrossHook;
   Object.assign(args, overrides);
   const owner = Object.keys(topics)
     .find((k) => k.endsWith("." + eventName))!
@@ -69,7 +71,7 @@ export function fixture(eventName: string, index = 0, overrides: any = {}) {
     ),
     blockNumber: 1n,
     blockHash: hash(1),
-    transactionHash: hash(index + 100),
+    transactionHash: ["InventoryFill", "ResidualFilled"].includes(eventName) ? hash(500) : hash(index + 100),
     logIndex: index,
     removed: false,
   };
@@ -107,6 +109,13 @@ export function chainMock() {
       if (fn === "check") return [true, 0];
       if (fn === "demoMode") return true;
       if (fn === "feeBreakdown") return f;
+      if (fn === "quote" && args.length === 4) {
+        // ParityHook.quote(asset, from, to, amountIn) → (sharesOut, baseFee, skewFee, postSkew, reducesImbalance)
+        const shares = (args[3] * 1012500000000000000n) / 10n ** 6n;
+        const baseFee = (shares * BigInt(f.basePips)) / 1_000_000n,
+          skewFee = (shares * BigInt(f.skewPips)) / 1_000_000n;
+        return [shares - baseFee - skewFee, baseFee, skewFee, f.postSkewX18, f.reducesImbalance];
+      }
       if (fn === "quote")
         return {
           fillable: true,
@@ -134,6 +143,9 @@ export function chainMock() {
       if (fn === "participants") return [deployment.deployer];
       if (fn === "getMid") return [1012500000000000000n, 1790692200n];
       if (fn === "ORACLE_MAX_AGE") return 600n;
+      if (fn === "baseFeePips") return 200n;
+      if (fn === "SKEW_FEE_CAP_PIPS") return 5000n;
+      if (fn === "batchOrigin") return 0n;
       if (fn === "settled" || fn === "pegTripped") return false;
       throw Error(`Unmocked ${fn}`);
     },

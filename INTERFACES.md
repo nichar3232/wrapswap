@@ -854,13 +854,13 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
         "poolManager": { "$ref": "Address" },
         "positionManager": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{40}$" },
         "stateView": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{40}$" },
-        "quoter": { "$ref": "Address" },
+        "quoter": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{40}$" },
         "permit2": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{40}$" },
         "universalRouter": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{40}$" },
-        "swapRouter": { "$ref": "Address" },
-        "modifyLiquidityRouter": { "$ref": "Address" },
+        "swapRouter": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{40}$" },
+        "modifyLiquidityRouter": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{40}$" },
         "registry": { "$ref": "Address" },
-        "calendar": { "$ref": "Address" },
+        "calendar": { "type": ["string", "null"], "pattern": "^0x[0-9a-fA-F]{40}$" },
         "eligibility": { "$ref": "Address" },
         "oracle": { "$ref": "Address" },
         "parityHook": { "$ref": "Address" },
@@ -928,6 +928,8 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
     "verification": { "type": "object", "additionalProperties": { "type": "string" } },
     "router": { "$ref": "Address" },
     "faucet": { "$ref": "Address" },
+    "protocolFeeRecipient": { "$ref": "Address" },
+    "deployBlock": { "$ref": "UInt" },
     "assets": {
       "type": "array",
       "items": {
@@ -962,7 +964,11 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
               "initSqrtPriceX96": { "$ref": "UInt" }
             }
           },
-          "darkCross": { "type": "boolean" }
+          "darkCross": { "type": "boolean" },
+          "parityHook": { "$ref": "Address" },
+          "darkCrossHook": { "$ref": "Address" },
+          "darkBaseToken": { "$ref": "Address" },
+          "darkQuoteToken": { "$ref": "Address" }
         }
       }
     },
@@ -978,6 +984,15 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
   }
 }
 ```
+
+On Unichain Sepolia the committed manifest is the minimal deploy output (`chainId`, `deployBlock`, `router`, `faucet`,
+`protocolFeeRecipient`, `assets[{symbol, wrappers[{platform, token, adapter, multiplier}], pool, parityHook,
+darkCross}]`). `scripts/dev/resolve-deployment.ts` expands it to this schema by reading the chain from those addresses
+only (hooks → PoolManager/registry/eligibility/oracle, each DarkCrossHook's `parityPoolKey()` checked against the pool
+id, ERC-20 metadata, the pool's Initialize event) and writes `deployments/unichain-sepolia.resolved.json`, which
+`loadDeployment` reads. Addresses the minimal manifest does not carry and the chain cannot derive (Uniswap periphery,
+test routers, calendar) are null. `tokens`/`pool`/`dark`/`contracts.darkCrossHook` describe the first Dark Cross asset;
+`assets[]` carries every asset with its own `parityHook` and `darkCrossHook`.
 
 Field rules: `startBlock` = first block the indexer scans (the registry deployment block). `blocks` maps each contract
 key of `contracts` that this deployment created to its deployment block, plus `poolInitialized`. `pool.key` must equal
@@ -1153,12 +1168,12 @@ that cannot be read is an error, never a default. Chain-read values carry the `b
   { "name": "nyse", "method": "GET", "path": "/nyse", "query": null, "response": "NyseResponse", "backing": "chain: latest block timestamp, NyseCalendar.isOpen, nextTransition" },
   { "name": "currentBatch", "method": "GET", "path": "/batches/current", "query": "AssetQuery", "response": "CurrentBatchResponse", "backing": "chain: DarkCrossHook.currentBatch, participants, IPriceOracle.getMid" },
   { "name": "batches", "method": "GET", "path": "/batches", "query": "BatchesQuery", "response": "BatchListResponse", "backing": "view: v_dark_batches" },
-  { "name": "batch", "method": "GET", "path": "/batches/:batchId", "query": null, "response": "BatchDetailResponse", "backing": "view: v_dark_batches, v_dark_orders, v_fills; table: dark_forfeits, dark_residual_skips" },
+  { "name": "batch", "method": "GET", "path": "/batches/:batchId", "query": "AssetQuery", "response": "BatchDetailResponse", "backing": "view: v_dark_batches, v_dark_orders, v_fills; table: dark_forfeits, dark_residual_skips" },
   { "name": "orders", "method": "GET", "path": "/orders/:address", "query": "PageQuery", "response": "OrderListResponse", "backing": "view: v_dark_orders" },
   { "name": "fills", "method": "GET", "path": "/fills", "query": "FillsQuery", "response": "FillListResponse", "backing": "view: v_fills" },
   { "name": "eligibility", "method": "GET", "path": "/eligibility/:address", "query": "EligibilityQuery", "response": "EligibilityResponse", "backing": "chain: IEligibility.check, demoMode; table: eligibility_checks (insert), eligibility_denials" },
   { "name": "assets", "method": "GET", "path": "/assets", "query": null, "response": "AssetsResponse", "backing": "file: deployments/${NETWORK}.json (tokens, pool/pools, dark); chain: IWrapperAdapter.ratio, IssuerRegistry.active" },
-  { "name": "poolAsset", "method": "GET", "path": "/pool/:asset", "query": null, "response": "PoolAssetResponse", "backing": "chain: ParityHook.inventory, inventoryShares, quote (both directions); table: parity_fills, parity_fee_quotes" },
+  { "name": "poolAsset", "method": "GET", "path": "/pool/:asset", "query": null, "response": "PoolAssetResponse", "backing": "chain: ParityHook.inventory, inventoryShares, quote (both directions); table: parity_conversions" },
   { "name": "faucet", "method": "GET", "path": "/faucet/:address", "query": null, "response": "FaucetResponse", "backing": "chain: TestShareFaucet.tokens, amountOf, nextClaimAt; table: faucet_claims" },
   { "name": "stats", "method": "GET", "path": "/stats", "query": "StatsQuery", "response": "StatsResponse", "backing": "view: v_fills; table: faucet_claims; chain: IWrapperAdapter.sharesPerToken, TestShareFaucet.nextClaimAt" },
   { "name": "crankStatus", "method": "GET", "path": "/status", "query": null, "response": "CrankStatusResponse", "backing": "crank process on CRANK_HEALTH_PORT (§7), not the API" }
@@ -1243,14 +1258,16 @@ Path parameters: `:batchId` is a `UInt`; `:address` is an `Address`. Pagination:
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["basePips", "skewPips", "closedPips", "totalPips", "totalBps", "skewX18", "marketOpen"],
+  "required": ["basePips", "skewPips", "totalPips", "totalBps", "skewX18", "postSkewX18", "reducesImbalance"],
   "properties": {
     "basePips": { "type": "integer" },
     "skewPips": { "type": "integer" },
-    "closedPips": { "type": "integer" },
     "totalPips": { "type": "integer" },
     "totalBps": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{2}$" },
     "skewX18": { "$ref": "Int" },
+    "postSkewX18": { "$ref": "Int" },
+    "reducesImbalance": { "type": "boolean" },
+    "closedPips": { "type": "integer" },
     "marketOpen": { "type": "boolean" }
   }
 }
@@ -1448,7 +1465,7 @@ reasons visible in the fields (it never 503s). `addresses.tokens` is keyed by sy
     "poolId": { "$ref": "Bytes32" },
     "fee": { "$ref": "FeeBreakdown" },
     "maxFeePips": { "type": "integer" },
-    "formula": { "const": "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips" }
+    "formula": { "const": "baseFeePips + (|skew| grows ? min(ceil(1500*|postTradeSkew|), 5000) : 0) pips" }
   }
 }
 ```
@@ -1481,7 +1498,6 @@ reasons visible in the fields (it never 503s). `addresses.tokens` is keyed by sy
     "sharesOut": { "$ref": "UInt" },
     "baseFee": { "$ref": "UInt" },
     "skewFee": { "$ref": "UInt" },
-    "offHoursFee": { "$ref": "UInt" },
     "youKeep": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{6}$" },
     "preSkewX18": { "$ref": "Int" },
     "postSkewX18": { "$ref": "Int" },
@@ -1972,8 +1988,8 @@ DarkCrossHook pair belongs to it. The UI builds its asset/platform pickers from 
 `?asset=SYMBOL` on `/quote` (with `from`/`to` as wrapper symbols or platform names, e.g. `from=coinbase&to=xstocks`),
 `/batches` and `/batches/current` selects the asset from `GET /assets`; `/quote` still accepts `tokenIn`/`tokenOut`.
 Share figures are 1e18-scaled canonical shares. `youKeep` = sharesOut / sharesIn (6 decimals). Fee splits:
-`baseFee`/`skewFee`/`offHoursFee` divide the fee (in shares) by the quoted pip components; LP fee totals split each
-indexed fill's fee by the `FeeQuoted` breakdown emitted in the same transaction. `protocolFees` are Dark Cross
+`baseFee`/`skewFee` are the on-chain split in shares (ParityHook.quote(asset, from, to, amountIn)); LP fee totals sum
+the `Converted` events' baseFee/skewFee columns. `protocolFees` are Dark Cross
 cross fees (5 bps per side), the only protocol revenue. `secondsRemaining` uses the chain's recent block time.
 
 ```json wrapswap:schema AssetQuery
@@ -2018,12 +2034,11 @@ cross fees (5 bps per side), the only protocol revenue. `secondsRemaining` uses 
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["from", "to", "skewFeePips", "offHoursPips", "totalPips", "totalBps", "reducesImbalance"],
+        "required": ["from", "to", "skewFeePips", "totalPips", "totalBps", "reducesImbalance"],
         "properties": {
           "from": { "type": "string" },
           "to": { "type": "string" },
           "skewFeePips": { "type": "integer" },
-          "offHoursPips": { "type": "integer" },
           "totalPips": { "type": "integer" },
           "totalBps": { "type": "string", "pattern": "^[0-9]+\\.[0-9]{2}$" },
           "reducesImbalance": { "type": "boolean" }
@@ -2039,12 +2054,11 @@ cross fees (5 bps per side), the only protocol revenue. `secondsRemaining` uses 
     "lpFees": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fills", "baseShares", "skewShares", "offHoursShares", "totalShares"],
+      "required": ["fills", "baseShares", "skewShares", "totalShares"],
       "properties": {
         "fills": { "type": "integer" },
         "baseShares": { "$ref": "UInt" },
         "skewShares": { "$ref": "UInt" },
-        "offHoursShares": { "$ref": "UInt" },
         "totalShares": { "$ref": "UInt" }
       }
     }
@@ -2697,7 +2711,7 @@ Machine-readable constants (source of `DEMO` in `@wrapswap/types`; digit strings
       "end": { "demoMAAPLx": "601229750000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60742912500000000000", "counterpartyBEscrowMcbAAPL": "49995000", "hookFeesMAAPLx": "22275000000000000" }
     },
     "unichain-sepolia": {
-      "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200, "seedBlock": 63580006, "label": "Seed state at deploy block 63580006, market closed", "seedInventory": {"mcbAAPL": "8888888889", "mAAPLx": "11000000000000000000000"},
+      "network": "unichain-sepolia", "chainId": 1301, "warpTimestamp": null, "marketOpen": false, "nextOpen": 1790602200, "seedBlock": 63586745, "label": "Seed state at deploy block 63586745", "seedInventory": {"mcbAAPL": "7901234568", "mAAPLx": "12000000000000000000000"},
       "parityFill": { "feePips": 200, "feeBps": "2.00", "feeAmount": "20250000000000000", "amountOut": "101229750000000000000" },
       "residual": { "feePips": 200, "feeBps": "2.00", "feeAmount": "2025000000000000", "amountOut": "10122975000000000000" },
       "end": { "demoMAAPLx": "601229750000000000000", "demoMcbAAPL": "400000000", "counterpartyAEscrowMAAPLx": "60742912500000000000", "counterpartyBEscrowMcbAAPL": "49995000", "hookFeesMAAPLx": "22275000000000000" }

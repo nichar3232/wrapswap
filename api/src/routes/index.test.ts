@@ -64,11 +64,11 @@ it("every §5 API route validates, all decisions, errors, pagination and history
       expect(validators[schema].is(r.json()), url).toBe(true);
     }
     fetchMock.mockRestore();
-    const first = (await app.inject("/inventory/changes?limit=1")).json();
+    const first = (await app.inject("/fills?limit=1")).json();
     expect(first.items).toHaveLength(1);
     expect(first.nextCursor).toBeTruthy();
     const second = (
-      await app.inject("/inventory/changes?limit=1&cursor=" + first.nextCursor)
+      await app.inject("/fills?limit=1&cursor=" + first.nextCursor)
     ).json();
     expect(second.items[0].kind).not.toBe(first.items[0].kind);
     const fills = (await app.inject("/fills")).json().items;
@@ -87,7 +87,7 @@ it("every §5 API route validates, all decisions, errors, pagination and history
         ? [eligible, eligible ? 0 : 7]
         : p.functionName === "active"
           ? healthy
-          : p.functionName === "quote"
+          : p.functionName === "quote" && p.args.length === 3
             ? { ...(await original(p)), fillable }
             : original(p);
     expect((await app.inject(routeUrl)).json().route).toBe("FALL-THROUGH");

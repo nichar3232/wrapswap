@@ -683,7 +683,11 @@ export const schemas = {
             "pattern": "^0x[0-9a-fA-F]{40}$"
           },
           "quoter": {
-            "$ref": "Address"
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^0x[0-9a-fA-F]{40}$"
           },
           "permit2": {
             "type": [
@@ -700,16 +704,28 @@ export const schemas = {
             "pattern": "^0x[0-9a-fA-F]{40}$"
           },
           "swapRouter": {
-            "$ref": "Address"
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^0x[0-9a-fA-F]{40}$"
           },
           "modifyLiquidityRouter": {
-            "$ref": "Address"
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^0x[0-9a-fA-F]{40}$"
           },
           "registry": {
             "$ref": "Address"
           },
           "calendar": {
-            "$ref": "Address"
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^0x[0-9a-fA-F]{40}$"
           },
           "eligibility": {
             "$ref": "Address"
@@ -879,6 +895,12 @@ export const schemas = {
       "faucet": {
         "$ref": "Address"
       },
+      "protocolFeeRecipient": {
+        "$ref": "Address"
+      },
+      "deployBlock": {
+        "$ref": "UInt"
+      },
       "assets": {
         "type": "array",
         "items": {
@@ -954,6 +976,18 @@ export const schemas = {
             },
             "darkCross": {
               "type": "boolean"
+            },
+            "parityHook": {
+              "$ref": "Address"
+            },
+            "darkCrossHook": {
+              "$ref": "Address"
+            },
+            "darkBaseToken": {
+              "$ref": "Address"
+            },
+            "darkQuoteToken": {
+              "$ref": "Address"
             }
           }
         }
@@ -1204,20 +1238,17 @@ export const schemas = {
     "required": [
       "basePips",
       "skewPips",
-      "closedPips",
       "totalPips",
       "totalBps",
       "skewX18",
-      "marketOpen"
+      "postSkewX18",
+      "reducesImbalance"
     ],
     "properties": {
       "basePips": {
         "type": "integer"
       },
       "skewPips": {
-        "type": "integer"
-      },
-      "closedPips": {
         "type": "integer"
       },
       "totalPips": {
@@ -1229,6 +1260,15 @@ export const schemas = {
       },
       "skewX18": {
         "$ref": "Int"
+      },
+      "postSkewX18": {
+        "$ref": "Int"
+      },
+      "reducesImbalance": {
+        "type": "boolean"
+      },
+      "closedPips": {
+        "type": "integer"
       },
       "marketOpen": {
         "type": "boolean"
@@ -1263,7 +1303,7 @@ export const schemas = {
         "type": "integer"
       },
       "formula": {
-        "const": "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips"
+        "const": "baseFeePips + (|skew| grows ? min(ceil(1500*|postTradeSkew|), 5000) : 0) pips"
       }
     }
   },
@@ -1927,7 +1967,6 @@ export const schemas = {
             "from",
             "to",
             "skewFeePips",
-            "offHoursPips",
             "totalPips",
             "totalBps",
             "reducesImbalance"
@@ -1940,9 +1979,6 @@ export const schemas = {
               "type": "string"
             },
             "skewFeePips": {
-              "type": "integer"
-            },
-            "offHoursPips": {
               "type": "integer"
             },
             "totalPips": {
@@ -1981,7 +2017,6 @@ export const schemas = {
           "fills",
           "baseShares",
           "skewShares",
-          "offHoursShares",
           "totalShares"
         ],
         "properties": {
@@ -1992,9 +2027,6 @@ export const schemas = {
             "$ref": "UInt"
           },
           "skewShares": {
-            "$ref": "UInt"
-          },
-          "offHoursShares": {
             "$ref": "UInt"
           },
           "totalShares": {
@@ -2206,9 +2238,6 @@ export const schemas = {
         "$ref": "UInt"
       },
       "skewFee": {
-        "$ref": "UInt"
-      },
-      "offHoursFee": {
         "$ref": "UInt"
       },
       "youKeep": {
@@ -2839,13 +2868,13 @@ export type Deployment = {
     "poolManager": Address;
     "positionManager": `0x${string}` | null;
     "stateView": `0x${string}` | null;
-    "quoter": Address;
+    "quoter": `0x${string}` | null;
     "permit2": `0x${string}` | null;
     "universalRouter": `0x${string}` | null;
-    "swapRouter": Address;
-    "modifyLiquidityRouter": Address;
+    "swapRouter": `0x${string}` | null;
+    "modifyLiquidityRouter": `0x${string}` | null;
     "registry": Address;
-    "calendar": Address;
+    "calendar": `0x${string}` | null;
     "eligibility": Address;
     "oracle": Address;
     "parityHook": Address;
@@ -2888,6 +2917,8 @@ export type Deployment = {
   };
   "router"?: Address;
   "faucet"?: Address;
+  "protocolFeeRecipient"?: Address;
+  "deployBlock"?: UInt;
   "assets"?: Array<{
     "symbol": string;
     "wrappers": Array<{
@@ -2904,6 +2935,10 @@ export type Deployment = {
       "initSqrtPriceX96": UInt;
     };
     "darkCross": boolean;
+    "parityHook"?: Address;
+    "darkCrossHook"?: Address;
+    "darkBaseToken"?: Address;
+    "darkQuoteToken"?: Address;
   }>;
   "proofs"?: Array<{
     "label": string;
@@ -2967,11 +3002,13 @@ export type FaucetResponse = {
 export type FeeBreakdown = {
   "basePips": number;
   "skewPips": number;
-  "closedPips": number;
   "totalPips": number;
   "totalBps": string;
   "skewX18": Int;
-  "marketOpen": boolean;
+  "postSkewX18": Int;
+  "reducesImbalance": boolean;
+  "closedPips"?: number;
+  "marketOpen"?: boolean;
 };
 
 export type FeesResponse = {
@@ -2980,7 +3017,7 @@ export type FeesResponse = {
   "poolId": Bytes32;
   "fee": FeeBreakdown;
   "maxFeePips": number;
-  "formula": "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips";
+  "formula": "baseFeePips + (|skew| grows ? min(ceil(1500*|postTradeSkew|), 5000) : 0) pips";
 };
 
 export type FillKind = "PARITY" | "FALL-THROUGH" | "DARK-CROSS" | "DARK-RESIDUAL";
@@ -3134,7 +3171,6 @@ export type PoolAssetResponse = {
     "from": string;
     "to": string;
     "skewFeePips": number;
-    "offHoursPips": number;
     "totalPips": number;
     "totalBps": string;
     "reducesImbalance": boolean;
@@ -3147,7 +3183,6 @@ export type PoolAssetResponse = {
     "fills": number;
     "baseShares": UInt;
     "skewShares": UInt;
-    "offHoursShares": UInt;
     "totalShares": UInt;
   };
 };
@@ -3204,7 +3239,6 @@ export type QuoteResponse = {
   "sharesOut"?: UInt;
   "baseFee"?: UInt;
   "skewFee"?: UInt;
-  "offHoursFee"?: UInt;
   "youKeep"?: string;
   "preSkewX18"?: Int;
   "postSkewX18"?: Int;
@@ -3412,7 +3446,7 @@ export const routes = [
     "name": "batch",
     "method": "GET",
     "path": "/batches/:batchId",
-    "query": null,
+    "query": "AssetQuery",
     "response": "BatchDetailResponse",
     "backing": "view: v_dark_batches, v_dark_orders, v_fills; table: dark_forfeits, dark_residual_skips"
   },
@@ -3454,7 +3488,7 @@ export const routes = [
     "path": "/pool/:asset",
     "query": null,
     "response": "PoolAssetResponse",
-    "backing": "chain: ParityHook.inventory, inventoryShares, quote (both directions); table: parity_fills, parity_fee_quotes"
+    "backing": "chain: ParityHook.inventory, inventoryShares, quote (both directions); table: parity_conversions"
   },
   {
     "name": "faucet",
@@ -3517,7 +3551,7 @@ export type RouteQueries = {
   "nyse": Record<string, never>;
   "currentBatch": AssetQuery;
   "batches": BatchesQuery;
-  "batch": Record<string, never>;
+  "batch": AssetQuery;
   "orders": PageQuery;
   "fills": FillsQuery;
   "eligibility": EligibilityQuery;

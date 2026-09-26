@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# One Dark Cross batch on any asset of the live manifest, settled by the running crank (scripts/dev/live-up).
+# Counterparty A (index 2) sells 60 base with the residual falling through to ParityHook; B (index 3) sells 50 base
+# worth of quote at the mid, delivering to index 1. The mid is the adapters' parity (what the crank pushes), read on
+# chain; A's limit is 0.2% under it and B's 0.2% over. Both claim from the faucet first if they hold no tokens.
+# Env: DEMO_MNEMONIC, DEPLOYER_PRIVATE_KEY (oracle pusher). Arg: asset symbol (AAPL | NVDA | TSLA).
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+SYM=${1:?asset symbol}
+R=${RPC_URL:-https://sepolia.unichain.org}
+M=deployments/unichain-sepolia.resolved.json
+[[ -f $M ]] || { echo "run scripts/dev/resolve-deployment.ts first" >&2; exit 1; }
+q() { jq -r "$1" $M; }
+DK=$(q ".assets[] | select(.symbol==\"$SYM\") | .darkCrossHook")
+BASE=$(q ".assets[] | select(.symbol==\"$SYM\") | .darkBaseToken"); QUOTE=$(q ".assets[] | select(.symbol==\"$SYM\") | .darkQuoteToken")
+wrap() { q ".assets[] | select(.symbol==\"$SYM\") | .wrappers[] | select((.token|ascii_downcase)==(\"$1\"|ascii_downcase)) | .$2"; }
+DB=$(wrap $BASE decimals); DQ=$(wrap $QUOTE decimals)
+num() { awk '{print $1}'; }
+SB=$(cast call "$(wrap $BASE adapter)" 'sharesPerToken()(uint256)' -r $R | num); SQ=$(cast call "$(wrap $QUOTE adapter)" 'sharesPerToken()(uint256)' -r $R | num)
+read MID A_IN B_IN LA LB <<<"$(python3 -c "
+sb,sq,db,dq=$SB,$SQ,$DB,$DQ
+mid=sb*10**18//sq
+print(mid, 60*10**db, 50*10**db*mid*10**dq//(10**18*10**db), mid*998//1000, mid*1002//1000)")"
+FAUCET=$(q .faucet)
+pk() { cast wallet private-key --mnemonic "$DEMO_MNEMONIC" --mnemonic-index "$1"; }
+addr() { cast wallet address --mnemonic "$DEMO_MNEMONIC" --mnemonic-index "$1"; }
+PK2=$(pk 2); PK3=$(pk 3); A2=$(addr 2); A3=$(addr 3); REC=$(addr 1)
+Z=0x0000000000000000000000000000000000000000; ZB=0x$(printf '0%.0s' {1..64})
+bal() { cast call $1 'balanceOf(address)(uint256)' $2 -r $R | num; }
+lt() { python3 -c "import sys; sys.exit(0 if $1 < $2 else 1)"; }
+# The public RPC's backends lag each other (a just-mined approve can be missing from the next estimate): retry.
+send() {
+  local out
+  for try in 1 2 3 4 5 6; do
+    if out=$(cast send "$@" -r $R --json 2>/dev/null); then jq -r '.status + " " + .transactionHash' <<<"$out"; return 0; fi
+    sleep 2
+  done
+  echo "send failed: $1 $2" >&2; return 1
+}
+echo "$SYM: hook $DK mid $MID; A sells $A_IN base, B sells $B_IN quote"
+for who in 2 3; do a=$(addr $who); t=$([[ $who == 2 ]] && echo $BASE || echo $QUOTE); need=$([[ $who == 2 ]] && echo $A_IN || echo $B_IN)
+  if lt "$(bal $t $a)" "$need"; then echo "faucet claim for index $who: $(send $FAUCET 'claim()' --private-key $(pk $who))"; fi
+done
+avail() { cast call $DK 'balances(address,address)(uint256,uint256)' $1 $2 -r $R | head -1 | num; }
+if lt "$(avail $A2 $BASE)" "$A_IN"; then send $BASE 'approve(address,uint256)' $DK $A_IN --private-key $PK2 >/dev/null; send $DK 'fund(address,uint256)' $BASE $A_IN --private-key $PK2 >/dev/null; fi
+if lt "$(avail $A3 $QUOTE)" "$B_IN"; then send $QUOTE 'approve(address,uint256)' $DK $B_IN --private-key $PK3 >/dev/null; send $DK 'fund(address,uint256)' $QUOTE $B_IN --private-key $PK3 >/dev/null; fi
+echo "escrow A $(avail $A2 $BASE) B $(avail $A3 $QUOTE)"
+phase() { cast call $DK 'currentBatch()(uint256,uint8,uint256)' -r $R | num | tr '\n' ' '; }
+for i in $(seq 1 240); do read b p e <<<"$(phase)"; h=$(cast block-number -r $R); [[ $p == 0 && $((e-h)) -ge 8 ]] && break; sleep 0.5; done
+echo "commit batch $b (commit ends $e, head $h)"
+S2=$(cast to-uint256 2); S3=$(cast to-uint256 3)
+H2=$(cast call $DK 'commitHashOf(uint256,address,bool,uint256,uint256,address,bytes32)(bytes32)' $b $A2 true $A_IN $LA $Z $S2 -r $R)
+H3=$(cast call $DK 'commitHashOf(uint256,address,bool,uint256,uint256,address,bytes32)(bytes32)' $b $A3 false $B_IN $LB $REC $S3 -r $R)
+send $DK 'commit(bytes32,address,uint256,bytes32)' $H2 $BASE $A_IN $ZB --private-key $PK2 & send $DK 'commit(bytes32,address,uint256,bytes32)' $H3 $QUOTE $B_IN $ZB --private-key $PK3 & wait
+for i in $(seq 1 240); do read b2 p e <<<"$(phase)"; [[ $p == 1 ]] && break; sleep 0.3; done
+echo "reveal (phase $p)"
+send $DK 'reveal(bool,uint256,uint256,address,bytes32)' true $A_IN $LA $Z $S2 --private-key $PK2 & send $DK 'reveal(bool,uint256,uint256,address,bytes32)' false $B_IN $LB $REC $S3 --private-key $PK3 & wait
+ORACLE=$(cast call $DK 'oracle()(address)' -r $R)
+echo "oracle mid refresh: $(send $ORACLE 'setMid(address,address,uint256)' $BASE $QUOTE $MID --private-key $DEPLOYER_PRIVATE_KEY)"
+echo "waiting for the crank to settle batch $b"
+for i in $(seq 1 180); do [[ $(cast call $DK 'settled(uint256)(bool)' $b -r $R) == true ]] && break; sleep 2; done
+echo "SETTLED=$(cast call $DK 'settled(uint256)(bool)' $b -r $R) ASSET=$SYM BATCH=$b"

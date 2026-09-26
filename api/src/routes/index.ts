@@ -8,6 +8,7 @@ import {
 } from "@wrapswap/types";
 import {
   getAddress,
+  stringToHex,
   parseAbi,
   keccak256,
   encodeAbiParameters,
@@ -65,12 +66,13 @@ export function output(name: string, v: any) {
   return (validators as any)[name].assert(normalize(v));
 }
 const fee = (f: any) => ({
-  ...f,
   basePips: Number(f.basePips),
   skewPips: Number(f.skewPips),
-  closedPips: Number(f.closedPips),
   totalPips: Number(f.totalPips),
   totalBps: canonical.pipsToBps(f.totalPips),
+  skewX18: f.skewX18,
+  postSkewX18: f.postSkewX18,
+  reducesImbalance: f.reducesImbalance,
 });
 const selectFields = (r: any, fields: string) =>
   Object.fromEntries(fields.split(" ").map((k) => [k, r[k]]));
@@ -171,7 +173,23 @@ export async function routes(
         (x: string) => x.toLowerCase() === String(name).toLowerCase(),
       ),
     );
-  const darkAsset = assetOfToken(d.dark.baseToken);
+  const assetId = (symbol: string) => stringToHex(symbol, { size: 32 }).toLowerCase();
+  // Every asset's DarkCrossHook: `assets[].darkCrossHook` in a multi-asset manifest, else the single `dark` pair.
+  const darkOf = (a: any) =>
+    a?.darkCrossHook
+      ? { hook: getAddress(a.darkCrossHook), base: getAddress(a.darkBaseToken), quote: getAddress(a.darkQuoteToken), asset: a.symbol }
+      : a && a.pool?.id?.toLowerCase() === d.pool.id.toLowerCase()
+        ? { hook: d.contracts.darkCrossHook, base: d.dark.baseToken, quote: d.dark.quoteToken, asset: a.symbol }
+        : null;
+  const darkList = assetList.map(darkOf).filter(Boolean) as { hook: string; base: string; quote: string; asset: string }[];
+  const darkByContract = (contract: string) => darkList.find((x) => eq(x.hook, contract));
+  const darkForQuery = (asset?: string) => {
+    const dk = asset ? darkOf(assetOf(asset)) : darkList[0];
+    if (!dk) throw fault("NOT_FOUND", `No Dark Cross for ${asset}`);
+    return dk;
+  };
+  const darkRead = (hook: string, functionName: string, args: any[], blockNumber: bigint) =>
+    client.readContract({ address: hook, abi: abis.IDarkCrossHook, functionName, args, blockNumber }) as Promise<any>;
   const sharesOfToken = async (address: string, amount: bigint, b: any) => {
     const t = await token(address, b);
     return canonical.toSharesDown(amount, t.sharesPerTokenX18, t.decimals);
@@ -274,29 +292,26 @@ export async function routes(
           "INTERNAL",
           "On-chain quote disagrees with frozen rounding rules",
         );
-    // Share-denominated view: fee split by the quoted pip components; skew before/after from inventory shares.
-    const sharesIn = BigInt(result.shares),
-      sharesOut = canonical.toSharesDown(
-        BigInt(result.amountOut),
-        outputToken.sharesPerTokenX18,
-        outputToken.decimals,
-      ),
-      feeShares = canonical.toSharesDown(
-        BigInt(result.feeAmount),
-        outputToken.sharesPerTokenX18,
-        outputToken.decimals,
-      ),
-      totalPips = BigInt(result.fee.totalPips),
-      baseFee = totalPips ? (feeShares * BigInt(result.fee.basePips)) / totalPips : 0n,
-      offHoursFee = totalPips ? (feeShares * BigInt(result.fee.closedPips)) / totalPips : 0n;
-    const [inv0, inv1] = await Promise.all(
-      [pool.key.currency0, pool.key.currency1].map((c: string) =>
-        read("parityHook", "inventoryShares", [c], b.number),
-      ),
-    );
-    const [post0, post1] = canonical.postTradeShares(inv0, inv1, zeroForOne, sharesIn);
+    // Share-denominated view. Exact input: ParityHook.quote(asset, from, to, amountIn) returns the on-chain split;
+    // exact output: the fee in shares split pro rata to the quoted pips.
+    const sharesIn = BigInt(result.shares);
+    let sharesOut: bigint, baseFee: bigint, skewFee: bigint;
+    if (kind === "exactIn") {
+      [sharesOut, baseFee, skewFee] = await read(
+        "parityHook",
+        "quote",
+        [assetId(asset.symbol), q.tokenIn, q.tokenOut, BigInt(q.amount)],
+        b.number,
+      );
+    } else {
+      sharesOut = canonical.toSharesDown(BigInt(result.amountOut), outputToken.sharesPerTokenX18, outputToken.decimals);
+      const feeShares = sharesIn - sharesOut,
+        totalPips = BigInt(result.fee.totalPips);
+      baseFee = totalPips ? (feeShares * BigInt(result.fee.basePips)) / totalPips : 0n;
+      skewFee = feeShares - baseFee;
+    }
     const preSkewX18 = BigInt(result.fee.skewX18),
-      postSkewX18 = canonical.skewX18(post0, post1);
+      postSkewX18 = BigInt(result.fee.postSkewX18);
     const keep = sharesIn ? (sharesOut * 1_000_000n) / sharesIn : 0n;
     return {
       block: b.number,
@@ -313,37 +328,29 @@ export async function routes(
       sharesIn,
       sharesOut,
       baseFee,
-      skewFee: feeShares - baseFee - offHoursFee,
-      offHoursFee,
+      skewFee,
       youKeep: `${keep / 1_000_000n}.${(keep % 1_000_000n).toString().padStart(6, "0")}`,
       preSkewX18,
       postSkewX18,
-      reducesImbalance: abs(postSkewX18) < abs(preSkewX18),
+      reducesImbalance: Boolean(result.fee.reducesImbalance),
     };
   };
-  const current = async (b: any) => {
-    const [batchId, phase, phaseEndsBlock] = await read(
-      "darkCrossHook",
-      "currentBatch",
-      [],
-      b.number,
-    );
-    const participants = await read(
-      "darkCrossHook",
-      "participants",
-      [batchId],
-      b.number,
-    );
+  const current = async (b: any, dk = darkList[0]) => {
+    const [[batchId, phase, phaseEndsBlock], batchOrigin] = await Promise.all([
+      darkRead(dk.hook, "currentBatch", [], b.number),
+      darkRead(dk.hook, "batchOrigin", [], b.number),
+    ]);
+    const participants = await darkRead(dk.hook, "participants", [batchId], b.number);
     let oracle: any = { midX18: null, updatedAt: null, stale: true };
     try {
       const [mid, age] = await Promise.all([
         rawRead(
           "oracle",
           "getMid",
-          [d.dark.baseToken, d.dark.quoteToken],
+          [dk.base, dk.quote],
           b.number,
         ),
-        read("darkCrossHook", "ORACLE_MAX_AGE", [], b.number),
+        darkRead(dk.hook, "ORACLE_MAX_AGE", [], b.number),
       ]);
       oracle = {
         midX18: mid[0],
@@ -362,55 +369,50 @@ export async function routes(
       phase: phases[Number(phase)],
       phaseEndsBlock,
       blockNumber: b.number,
-      batchOrigin: d.dark.batchOrigin,
+      batchOrigin,
       participants: participants.length,
-      asset: darkAsset?.symbol ?? d.tokens[0].underlying,
+      asset: dk.asset,
       secondsRemaining: Math.ceil((blocksLeft * blockMs) / 1000),
       oracle,
     };
   };
-  // Per-batch share-denominated detail: crossed shares, protocol (cross) fees, residual fills, unfilled refunds.
+  // Per-batch share-denominated detail from the hook's events: Crossed (matched shares, protocol fee), ResidualFilled
+  // with its ParityHook fill, and Unfilled refunds. Items carry `contract` (the DarkCrossHook), stripped here.
   const enrichBatches = async (items: any[], b: any) => {
     if (!items.length) return items;
-    const rows = await sql(
-      "SELECT batch_id::text AS id, kind, account, token_in, token_out, amount_in::text AS amount_in, amount_out::text AS amount_out, fee_amount::text AS fee_amount, tx_hash FROM v_fills WHERE chain_id=$1 AND batch_id = ANY($2::numeric[]) AND kind IN ('DARK-CROSS','DARK-RESIDUAL')",
-      [d.chainId, items.map((i) => String(i.batchId))],
-    );
+    const args = [d.chainId, items.map((i) => String(i.batchId))];
+    const [crosses, residualFees, residualFills, unfilled] = await Promise.all([
+      sql("SELECT contract, batch_id::text AS id, sum(matched_shares)::text AS matched, sum(protocol_fee)::text AS fee FROM dark_batch_crosses WHERE chain_id=$1 AND batch_id = ANY($2::numeric[]) GROUP BY 1,2", args),
+      sql("SELECT contract, batch_id::text AS id, trader, tx_hash, (base_fee + skew_fee)::text AS fee FROM dark_residual_fills WHERE chain_id=$1 AND batch_id = ANY($2::numeric[])", args),
+      sql("SELECT dark_contract AS contract, batch_id::text AS id, account, token_in, amount_in::text AS amount_in, amount_out::text AS amount_out, fee_amount::text AS fee_amount, tx_hash FROM v_fills WHERE chain_id=$1 AND batch_id = ANY($2::numeric[]) AND kind='DARK-RESIDUAL'", args),
+      sql("SELECT contract, batch_id::text AS id, sum(shares_refunded)::text AS shares FROM dark_unfilled WHERE chain_id=$1 AND batch_id = ANY($2::numeric[]) GROUP BY 1,2", args),
+    ]);
     return Promise.all(
-      items.map(async (i) => {
-        const mine = rows.filter((r) => r.id === String(i.batchId));
-        let protocolFeeShares = 0n;
-        for (const r of mine.filter((r) => r.kind === "DARK-CROSS"))
-          protocolFeeShares += await sharesOfToken(r.tokenOut, BigInt(r.feeAmount ?? 0), b);
-        const residualFilled = await Promise.all(
-          mine
-            .filter((r) => r.kind === "DARK-RESIDUAL")
-            .map(async (r) => ({
-              trader: getAddress(r.account),
-              tokenIn: getAddress(r.tokenIn),
-              amountIn: BigInt(r.amountIn),
-              amountOut: BigInt(r.amountOut),
-              feeAmount: BigInt(r.feeAmount ?? 0),
-              feeShares: await sharesOfToken(r.tokenOut, BigInt(r.feeAmount ?? 0), b),
-              txHash: r.txHash,
-            })),
-        );
+      items.map(async ({ contract, ...i }) => {
+        const dk = darkByContract(contract)!;
+        const mine = (r: any) => eq(r.contract, contract) && r.id === String(i.batchId);
+        const cross = crosses.find(mine);
+        const residualFilled = residualFills.filter(mine).map((r) => ({
+          trader: getAddress(r.account),
+          tokenIn: getAddress(r.tokenIn),
+          amountIn: BigInt(r.amountIn),
+          amountOut: BigInt(r.amountOut),
+          feeAmount: BigInt(r.feeAmount ?? 0),
+          feeShares: BigInt(residualFees.find((f) => mine(f) && eq(f.trader, r.account) && f.txHash === r.txHash)?.fee ?? 0),
+          txHash: r.txHash,
+        }));
         const routed = (t: string) =>
           residualFilled.filter((r) => eq(r.tokenIn, t)).reduce((s, r) => s + r.amountIn, 0n);
-        const base = BigInt(i.residualBaseIn ?? 0) - routed(d.dark.baseToken),
-          quoteLeft = BigInt(i.residualQuoteIn ?? 0) - routed(d.dark.quoteToken);
         return {
           ...i,
-          asset: darkAsset?.symbol ?? d.tokens[0].underlying,
-          crossedShares: await sharesOfToken(d.dark.baseToken, BigInt(i.crossedBase ?? 0), b),
-          protocolFeeShares,
+          asset: dk.asset,
+          crossedShares: cross ? BigInt(cross.matched) : await sharesOfToken(dk.base, BigInt(i.crossedBase ?? 0), b),
+          protocolFeeShares: BigInt(cross?.fee ?? 0),
           residualFilled,
           unfilledRefunded: {
-            base,
-            quote: quoteLeft,
-            shares:
-              (await sharesOfToken(d.dark.baseToken, base, b)) +
-              (await sharesOfToken(d.dark.quoteToken, quoteLeft, b)),
+            base: BigInt(i.residualBaseIn ?? 0) - routed(dk.base),
+            quote: BigInt(i.residualQuoteIn ?? 0) - routed(dk.quote),
+            shares: BigInt(unfilled.find(mine)?.shares ?? 0),
           },
         };
       }),
@@ -443,7 +445,7 @@ export async function routes(
       nextCursor: more ? `${last.blockNumber}:${last.logIndex}` : null,
     };
   };
-  const batchSource = `SELECT b.*, p.block_number,p.log_index FROM v_dark_batches b JOIN LATERAL (SELECT block_number,log_index FROM raw_logs r WHERE r.chain_id=b.chain_id AND r.event_name IN ('Committed','BatchSettled') AND r.args->>'batchId'=b.batch_id::text ORDER BY block_number DESC,log_index DESC LIMIT 1) p ON true`;
+  const batchSource = `SELECT b.*, p.block_number,p.log_index FROM v_dark_batches b JOIN LATERAL (SELECT block_number,log_index FROM raw_logs r WHERE r.chain_id=b.chain_id AND r.contract=b.contract AND r.event_name IN ('Committed','BatchSettled') AND r.args->>'batchId'=b.batch_id::text ORDER BY block_number DESC,log_index DESC LIMIT 1) p ON true`;
   const orderMap = (r: any) =>
     selectFields(
       {
@@ -534,8 +536,10 @@ export async function routes(
       fee: fee(
         await read("parityHook", "feeBreakdown", [d.pool.key], b.number),
       ),
-      maxFeePips: 2500,
-      formula: "min(200 + ceil(1300*|skew|) + (closed && |skew| grows ? ceil(1500*|postTradeSkew|) : 0), 2500) pips",
+      maxFeePips:
+        Number(await read("parityHook", "baseFeePips", [], b.number)) +
+        Number(await read("parityHook", "SKEW_FEE_CAP_PIPS", [], b.number)),
+      formula: "baseFeePips + (|skew| grows ? min(ceil(1500*|postTradeSkew|), 5000) : 0) pips",
     };
   });
   get("/inventory", "InventoryResponse", async () => {
@@ -544,8 +548,10 @@ export async function routes(
     const tokens = await Promise.all(
       [d.pool.key.currency0, d.pool.key.currency1].map(async (address) => {
         const t = d.tokens.find((t) => eq(t.address, address))!;
-        const [inventory, inventoryShares, feesAccrued] = await Promise.all(
-          ["inventory", "inventoryShares", "feesAccrued"].map((fn) =>
+        // Fees stay in inventory (100% to the LP), so nothing accrues separately.
+        const feesAccrued = 0n;
+        const [inventory, inventoryShares] = await Promise.all(
+          ["inventory", "inventoryShares"].map((fn) =>
             read("parityHook", fn, [address], b.number),
           ),
         );
@@ -656,10 +662,13 @@ export async function routes(
       result.reason = null;
       if (result.quote.fillable) return { ...result, route: "PARITY" };
       const exact = q.kind !== "exactOut";
+      const routeAsset = assetOfToken(result.quote.tokenIn);
       const quoter = parseAbi([
         `function ${exact ? "quoteExactInputSingle" : "quoteExactOutputSingle"}(((address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,bool zeroForOne,uint128 exactAmount,bytes hookData) params) returns(uint256 amount,uint256 gasEstimate)`,
       ]);
       try {
+        // No Uniswap quoter in the manifest: the fall-through cannot be simulated, so offer the dark route.
+        if (!d.contracts.quoter) throw Object.assign(Error("no quoter"), { noQuoter: true });
         const sim = await client.simulateContract({
           address: d.contracts.quoter,
           abi: [...quoter, ...routeErrors],
@@ -668,7 +677,7 @@ export async function routes(
             : "quoteExactOutputSingle",
           args: [
             {
-              poolKey: d.pool.key,
+              poolKey: routeAsset.pool.key,
               zeroForOne: result.quote.zeroForOne,
               exactAmount: BigInt(q.amount),
               hookData: encodeParityHookData({
@@ -689,11 +698,12 @@ export async function routes(
           },
         };
       } catch (error) {
-        if (!permitsDarkFallback(error))
+        if (!(error as any).noQuoter && !permitsDarkFallback(error))
           throw fault("CHAIN_UNAVAILABLE", String(error));
-        if (q.allowDark === "false")
+        const dk = darkOf(routeAsset);
+        if (q.allowDark === "false" || !dk)
           return { ...result, route: "BLOCKED-PEG", reason: "PEG_GUARD" };
-        const c = await current(b);
+        const c = await current(b, dk);
         return {
           ...result,
           route: "DARK",
@@ -702,7 +712,7 @@ export async function routes(
             phase: c.phase,
             phaseEndsBlock: c.phaseEndsBlock,
             oracleMidX18: c.oracle.midX18,
-            sellBase: eq(q.tokenIn, d.dark.baseToken),
+            sellBase: eq(result.quote.tokenIn, dk.base),
           },
         };
       }
@@ -710,6 +720,8 @@ export async function routes(
     "RouteQuery",
   );
   get("/nyse", "NyseResponse", async () => {
+    // The final fee model has no market-hours component; deployments without a calendar have no NYSE feed.
+    if (!d.contracts.calendar) throw fault("NOT_FOUND", "No NYSE calendar in this deployment");
     const b = await block();
     const [open, nextTransition] = await Promise.all([
       read("calendar", "isOpen", [b.timestamp], b.number),
@@ -722,18 +734,14 @@ export async function routes(
       nextTransition,
       nextState: open ? "CLOSED" : "OPEN",
       secondsUntilTransition: Number(nextTransition - b.timestamp),
-      closedFeePips: Number(canonical.OFF_HOURS_MAX_FEE_PIPS), // max off-hours premium (skew-increasing trades only)
+      closedFeePips: 0, // no off-hours premium in the final fee model
       source: "chain",
     };
   });
   get(
     "/batches/current",
     "CurrentBatchResponse",
-    async (req) => {
-      if (req.query.asset && assetOf(req.query.asset) !== darkAsset)
-        throw fault("NOT_FOUND", `No Dark Cross for ${req.query.asset}`);
-      return current(await block());
-    },
+    async (req) => current(await block(), darkForQuery(req.query.asset)),
     "AssetQuery",
   );
   get(
@@ -741,14 +749,22 @@ export async function routes(
     "BatchListResponse",
     async (req) => {
       const { settled, asset, ...q } = req.query;
-      if (asset && assetOf(asset) !== darkAsset) return { items: [], nextCursor: null };
-      const result = await page(
-        batchSource,
-        q,
-        settled ? " AND settled=$2" : "",
-        settled ? [settled === "true"] : [],
-        (r) => selectFields(r, batchFields),
-      );
+      const args: any[] = [];
+      let extra = "";
+      if (asset) {
+        const dk = darkOf(assetOf(asset));
+        if (!dk) return { items: [], nextCursor: null };
+        args.push(dk.hook.toLowerCase());
+        extra += ` AND contract=$${args.length + 1}`;
+      }
+      if (settled) {
+        args.push(settled === "true");
+        extra += ` AND settled=$${args.length + 1}`;
+      }
+      const result = await page(batchSource, q, extra, args, (r) => ({
+        ...selectFields(r, batchFields),
+        contract: r.contract,
+      }));
       return { ...result, items: await enrichBatches(result.items, await block()) };
     },
     "BatchesQuery",
@@ -831,15 +847,12 @@ export async function routes(
             asset: m.symbol,
             platforms,
             pools: [m.pool].map((p: any) => ({ poolId: p.id, ...p.key })),
-            darkCross:
-              m.darkCross && mine(d.dark.baseToken) && mine(d.dark.quoteToken)
-                ? {
-                    hook: d.contracts.darkCrossHook,
-                    baseToken: d.dark.baseToken,
-                    quoteToken: d.dark.quoteToken,
-                    batchBlocks: d.dark.batchBlocks,
-                  }
-                : null,
+            darkCross: (() => {
+              const dk = m.darkCross ? darkOf(m) : null;
+              return dk && mine(dk.base) && mine(dk.quote)
+                ? { hook: dk.hook, baseToken: dk.base, quoteToken: dk.quote, batchBlocks: d.dark.batchBlocks }
+                : null;
+            })(),
           };
         }),
       ),
@@ -872,36 +885,29 @@ export async function routes(
             const t = allTokens.find((t) => eq(t.address, from.address))!;
             const zeroForOne = eq(from.address, pool.key.currency0);
             const r = await read("parityHook", "quote", [pool.key, zeroForOne, -(10n ** BigInt(t.decimals))], b.number);
-            const [p0, p1] = canonical.postTradeShares(s0, s1, zeroForOne, BigInt(r.shares));
             return {
               from: from.symbol,
               to: to.symbol,
               skewFeePips: Number(r.fee.skewPips),
-              offHoursPips: Number(r.fee.closedPips),
               totalPips: Number(r.fee.totalPips),
               totalBps: canonical.pipsToBps(r.fee.totalPips),
-              reducesImbalance: abs(canonical.skewX18(p0, p1)) < abs(skewX18),
+              reducesImbalance: Boolean(r.fee.reducesImbalance),
             };
           }),
       ),
     );
     const cheap = directions.reduce((m, x) => (x.totalPips < m.totalPips ? x : m));
-    // LP fees: each indexed fill's fee split by the FeeQuoted breakdown emitted earlier in the same transaction.
-    const fills = await sql(
-      "SELECT f.fee_amount::text AS fee, f.token_out, q.base_pips, q.skew_pips, q.closed_pips, q.total_pips FROM parity_fills f LEFT JOIN LATERAL (SELECT base_pips, skew_pips, closed_pips, total_pips FROM parity_fee_quotes q WHERE q.chain_id=f.chain_id AND q.tx_hash=f.tx_hash AND q.pool_id=f.pool_id AND q.log_index<f.log_index ORDER BY q.log_index DESC LIMIT 1) q ON true WHERE f.chain_id=$1 AND f.pool_id=$2",
-      [d.chainId, pool.id.toLowerCase()],
+    // LP fees: every Converted event on this asset (inventory fills and dark residuals); fees stay in inventory.
+    const [conv] = await sql(
+      "SELECT count(*)::int AS n, COALESCE(sum(base_fee),0)::text AS base, COALESCE(sum(skew_fee),0)::text AS skew FROM parity_conversions WHERE chain_id=$1 AND asset=$2",
+      [d.chainId, assetId(a.symbol)],
     );
-    const lp = { fills: fills.length, baseShares: 0n, skewShares: 0n, offHoursShares: 0n, totalShares: 0n };
-    for (const f of fills) {
-      const total = await sharesOfToken(f.tokenOut, BigInt(f.fee), b);
-      lp.totalShares += total;
-      if (!f.totalPips) continue;
-      const base = (total * BigInt(f.basePips)) / BigInt(f.totalPips),
-        off = (total * BigInt(f.closedPips)) / BigInt(f.totalPips);
-      lp.baseShares += base;
-      lp.offHoursShares += off;
-      lp.skewShares += total - base - off;
-    }
+    const lp = {
+      fills: conv.n,
+      baseShares: BigInt(conv.base),
+      skewShares: BigInt(conv.skew),
+      totalShares: BigInt(conv.base) + BigInt(conv.skew),
+    };
     const hundredths = (skewX18 * 10000n) / canonical.ONE;
     return {
       asset: a.symbol,
@@ -1073,36 +1079,29 @@ export async function routes(
     },
     "StatsQuery",
   );
-  get("/batches/:batchId", "BatchDetailResponse", async (req) => {
-    const id = checked("UInt", req.params.batchId),
-      args = [d.chainId, id];
-    const batch = (
-      await sql(
-        "SELECT * FROM v_dark_batches WHERE chain_id=$1 AND batch_id=$2",
-        args,
-      )
-    )[0];
-    if (!batch) throw fault("NOT_FOUND", "Unknown batch");
-    return {
-      batch: (await enrichBatches([selectFields(batch, batchFields)], await block()))[0],
-      orders: (
-        await sql(
-          "SELECT * FROM v_dark_orders WHERE chain_id=$1 AND batch_id=$2",
+  get(
+    "/batches/:batchId",
+    "BatchDetailResponse",
+    async (req) => {
+      const id = checked("UInt", req.params.batchId),
+        dk = darkForQuery(req.query.asset),
+        args = [d.chainId, id, dk.hook.toLowerCase()];
+      const batch = (
+        await sql("SELECT * FROM v_dark_batches WHERE chain_id=$1 AND batch_id=$2 AND contract=$3", args)
+      )[0];
+      if (!batch) throw fault("NOT_FOUND", "Unknown batch");
+      return {
+        batch: (await enrichBatches([{ ...selectFields(batch, batchFields), contract: batch.contract }], await block()))[0],
+        orders: (await sql("SELECT * FROM v_dark_orders WHERE chain_id=$1 AND batch_id=$2 AND contract=$3", args)).map(orderMap),
+        fills: (await sql("SELECT * FROM v_fills WHERE chain_id=$1 AND batch_id=$2 AND dark_contract=$3", args)).map(fillMap),
+        skippedResiduals: await sql(
+          "SELECT trader,reason,tx_hash FROM dark_residual_skips WHERE chain_id=$1 AND batch_id=$2 AND contract=$3",
           args,
-        )
-      ).map(orderMap),
-      fills: (
-        await sql(
-          "SELECT * FROM v_fills WHERE chain_id=$1 AND batch_id=$2",
-          args,
-        )
-      ).map(fillMap),
-      skippedResiduals: await sql(
-        "SELECT trader,reason,tx_hash FROM dark_residual_skips WHERE chain_id=$1 AND batch_id=$2",
-        args,
-      ),
-    };
-  });
+        ),
+      };
+    },
+    "AssetQuery",
+  );
   get(
     "/inventory/changes",
     "InventoryChangesResponse",

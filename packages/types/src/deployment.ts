@@ -30,6 +30,11 @@ export function explorerUrl(network: Network, kind: "address" | "tx", value: str
 
 /** Repo-relative path of a network's deployment file: deployments/${NETWORK}.json. */
 export const deploymentPath = (network: Network) => `deployments/${network}.json` as const;
+/** Expanded manifest written by scripts/dev/resolve-deployment.ts from a minimal manifest plus chain reads. */
+export const resolvedDeploymentPath = (network: Network) => `deployments/${network}.resolved.json` as const;
+/** The minimal deploy output (chainId, deployBlock, assets[{…, parityHook, darkCross}]), not the §4 schema. */
+export const isMinimalManifest = (json: any): boolean =>
+  !!json && typeof json === "object" && !("network" in json) && Array.isArray(json.assets) && !!json.assets[0]?.parityHook;
 
 /** Validates NETWORK; unset or empty resolves to DEFAULT_NETWORK. */
 export function parseNetwork(value: string | undefined): Network {

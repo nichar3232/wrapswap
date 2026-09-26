@@ -37,7 +37,7 @@ it("empty migration, all event projections, replay, restart, reorg cascade and r
     await new Indexer(deployment, client, pool, 0).catchup();
     expect(
       (await pool.query("SELECT count(*)::int AS n FROM raw_logs")).rows[0].n,
-    ).toBe(32);
+    ).toBe(35);
     expect((await pool.query("SELECT * FROM v_dark_orders")).rows).toHaveLength(
       1,
     );

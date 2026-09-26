@@ -9,7 +9,7 @@ export type SuiFile = Record<string, unknown>;
 
 // Globbed so the build passes before either file lands.
 const unichainFiles = import.meta.glob<UnichainFile>(
-  "../../../deployments/unichain-sepolia.json",
+  "../../../deployments/unichain-sepolia.resolved.json",
   { eager: true, import: "default" },
 );
 const suiFiles = import.meta.glob<SuiFile>(
