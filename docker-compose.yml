@@ -20,6 +20,8 @@ x-app: &app
     CRANK_HEALTH_PORT: ${CRANK_HEALTH_PORT:?}
     CRANK_PORT: ${CRANK_HEALTH_PORT:?}
     CRANK_PK: ${CRANK_PK:-}
+    # Anvil never reorgs; with automine and no interval mining a nonzero depth never reaches head.
+    INDEXER_CONFIRMATIONS: ${INDEXER_CONFIRMATIONS:-0}
 services:
   anvil:
     image: ghcr.io/foundry-rs/foundry:stable
