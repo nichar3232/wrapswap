@@ -84,12 +84,12 @@ await guard("F1", "base + skew == total charged", async () => {
   );
 });
 
-// ---------------------------------------------------------------- 4. no off-hours code path
-await guard("H1", "no off-hours code path", async () => {
-  // Same trade from the same state at (a) now, Saturday with NYSE closed and (b) Monday 15:00 UTC with NYSE open: the
+// ---------------------------------------------------------------- 4. the fee has no clock input
+await guard("H1", "fee has no clock input", async () => {
+  // Same trade from the same state at (a) a Saturday and (b) a weekday 15:00 UTC: the
   // fees must be identical. Snapshot/revert keeps the state equal; the Monday leg runs last so time only moves forward.
   const a = AAPL, w = a.wrappers[0], amt = sharesToRaw(w, 80);
-  // Closed: the next Saturday 16:00 UTC; open: the Monday after, 15:00 UTC (NYSE 13:30–20:00 UTC).
+  // (a) the next Saturday 16:00 UTC; (b) the Monday after, 15:00 UTC.
   const now = Number((await pub.getBlock()).timestamp);
   const d = new Date((now + 86400) * 1000);
   const satMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + ((6 - d.getUTCDay() + 7) % 7), 16);
@@ -106,7 +106,7 @@ await guard("H1", "no off-hours code path", async () => {
   convertRecords.push({ ...mon, asset: a.symbol, from: w.symbol, to: a.wrappers[1].symbol });
   check(
     "H1",
-    "no off-hours code path (identical fee closed vs open; deployment has no calendar)",
+    "fee has no clock input (identical fee on a Saturday and a weekday; deployment has no calendar)",
     same && (await import("./chain.js")).resolved.contracts.calendar === null,
     `${satDay}: ${sat.fill.feePips} pips, out ${sat.fill.amountOut}; ${monDay}: ${mon.fill.feePips} pips, out ${mon.fill.amountOut}; contracts.calendar=null`,
   );

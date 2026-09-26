@@ -183,3 +183,21 @@ NETWORK=unichain-sepolia RPC_URL=https://sepolia.unichain.org pnpm exec tsx scri
 
 - Remote endpoint: `https://nichars-mac-mini.tail43cacc.ts.net/mcp` (Streamable HTTP). Run `claude mcp add --transport http unison <url>`, then ask for a quote or a convert.
 - Tools: `list_assets`, `get_pool`, `quote_convert`, `get_batch`, `convert`, `commit_dark_order`. Execution goes through the relay with the MCP budget (20 actions per 10 minutes, 100 shares per action). See [packages/mcp/README.md](packages/mcp/README.md).
+
+### 4.8 Market simulation (simulated, not live)
+
+**Simulated.** External prices are synthetic; the contracts are the real deployment on a local Unichain Sepolia fork
+(blocks 63604933–63606682), never the live pools. 1,500 trades over 380 ticks
+(arb 404, regular 1074, whale 18, Claude agents via MCP 4), with a 40 bps outside
+gap opened at the start and again mid-run. Figures below are copied by script from `web/public/sim/run.json`.
+
+| Asset | Outside gap, bps (start → end) | Ticks to < 15 bps (start / 2nd shock) | Max \|skew\| | Max skew fee (bps) | LP fees (shares) | Protocol fees (shares) | Peg deviation, steady state, bps (mean / p95) |
+|---|---|---|---|---|---|---|---|
+| AAPL | +40.0 → -0.3 | 4 / 3 | 0.992 | 15.00 | 24.047 | 1.724 | 11.0 / 22.8 |
+| NVDA | -40.0 → -5.0 | 6 / 3 | 0.826 | 12.54 | 26.483 | 1.572 | 7.4 / 18.8 |
+| TSLA | +40.0 → +0.2 | 2 / 11 | 0.999 | 15.00 | 18.186 | 2.023 | 11.6 / 25.4 |
+
+Replay: `/sim.html` (linked from `/developers`). Finding from the exploratory run: a persistent one-sided gap larger
+than the skew fee at full skew (15 bps) plus the 2 bps base plus the arb threshold drains the short side of the
+inventory (seen at 10k shares per side). Mitigations: deeper inventory, a steeper skew curve or higher cap, or keeper rebalancing.
+Details: `~/wrapswap-run/status/sim.md`, harness in `packages/sim`.

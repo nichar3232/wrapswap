@@ -1067,6 +1067,9 @@ html {
 }
 .dev-links {
   margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
 }
 .dev-links a {
   color: #8fb0ff;

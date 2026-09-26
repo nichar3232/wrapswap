@@ -51,6 +51,13 @@ pnpm --dir packages/mcp start:stdio                                             
 
 Details and the Claude Desktop config: [packages/mcp/README.md](packages/mcp/README.md).
 
+## Market simulation
+
+[`/sim.html`](https://nichars-mac-mini.tail43cacc.ts.net/sim.html) replays 1,500 simulated trades (arbitrageurs,
+regular users, whales and Claude agents over MCP) against the real contracts on a local Unichain Sepolia fork, with
+synthetic external prices. Results and the harness: [DEMO.md](DEMO.md#48-market-simulation-simulated-not-live),
+[packages/sim](packages/sim).
+
 ## Contracts
 
 <!-- testnet:start -->

@@ -26,6 +26,7 @@ function Developers() {
           <a href={GITHUB} target="_blank" rel="noreferrer">
             Source on GitHub ↗
           </a>
+          <a href="/sim.html">Market simulation: 1,500 trades on a Unichain Sepolia fork ↗</a>
         </p>
       </section>
       <section className="black proof" id="contracts">
