@@ -5,7 +5,6 @@ import { useApi, type Feed } from "../hooks/useApi";
 import { amount, duration, fmtShares } from "../lib/format";
 import { relayAmount, relayDarkCommit, relayStatus } from "../relay";
 import { approve, darkSend, escrowAvailable, verifyOrder } from "../wallet";
-import { RelayLimitNote, useRelayCooldown } from "./relayUi";
 import { toShares, type Asset, type Platform } from "./assets";
 import { pipsToBps } from "./fees";
 import { useTx } from "./tx";
@@ -90,7 +89,6 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
   const [order, setOrderState] = useState<Order>();
   const tx = useTx<unknown>();
   const left = useCountdown(batch);
-  const cooldown = useRelayCooldown(w.relay);
 
   useEffect(() => {
     if (intent) setFromAddr(intent.fromToken);
@@ -273,9 +271,7 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
         ? `Not enough ${a.symbol} on ${from.name}.`
         : b?.oracle.stale
           ? "The oracle midpoint is stale; commits reopen after the next update."
-          : w.relay && toShares(raw, a) > 100n * 10n ** 18n
-            ? "The demo relay moves at most 100 shares per action."
-            : b && b.phase !== "COMMIT" && !w.relay // the relay waits for the next commit window itself
+          : b && b.phase !== "COMMIT" && !w.relay // the relay waits for the next commit window itself
             ? `Commits reopen with the next batch (${left !== undefined ? duration(left) : "—"} left in ${b.phase.toLowerCase()}).`
             : "";
 
@@ -397,7 +393,7 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
               {w.busy === "connect" ? "Connecting…" : "Connect to commit"}
             </button>
           ) : (
-            <button className="primary wide" disabled={!!blocked || tx.busy || !mid || cooldown > 0} aria-busy={tx.busy || undefined} onClick={() => void commit()}>
+            <button className="primary wide" disabled={!!blocked || tx.busy || !mid} aria-busy={tx.busy || undefined} onClick={() => void commit()}>
               {tx.busy && <Spinner />}
               {tx.state.step === "signing"
                 ? w.relay
@@ -410,7 +406,6 @@ export function DarkCross({ d, asset, batch, intent }: { d: Deployment; asset: A
                     : `Commit sealed order · batch #${b?.batchId ?? "—"}`}
             </button>
           )}
-          <RelayLimitNote left={cooldown} />
         </>
       )}
       <TxPanel tx={tx.state} onRetry={() => tx.retry()} />

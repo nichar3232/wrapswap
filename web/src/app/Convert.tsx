@@ -6,7 +6,6 @@ import { useApi, type Feed } from "../hooks/useApi";
 import { amount, fmtShares } from "../lib/format";
 import { relayAmount, relayConvert } from "../relay";
 import { allowance, approve, convertExactIn, convertedOf, waitReceipt } from "../wallet";
-import { RelayLimitNote, useRelayCooldown } from "./relayUi";
 import { toShares, type Asset } from "./assets";
 import { quoteBreakdown, skewPct } from "./fees";
 import { useTx } from "./tx";
@@ -40,7 +39,6 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
   const [approvedKey, setApprovedKey] = useState("");
   const [receipt, setReceipt] = useState<Receipt>();
   const tx = useTx<unknown>();
-  const cooldown = useRelayCooldown(w.relay);
 
   useEffect(() => {
     if (!intent) return;
@@ -107,9 +105,7 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
             ? route.data?.reason || "Paused: the pool is more than 50 bps from NAV parity."
             : activeRoute === "FALL-THROUGH"
               ? "Hook inventory is short for this size. Try a smaller amount."
-              : w.relay && qb && qb.sharesIn > 100n * 10n ** 18n
-                ? "The demo relay moves at most 100 shares per action."
-                : "";
+              : "";
 
   const finish = (hash: Hash | undefined, simulated: boolean, c: ReturnType<typeof convertedOf>, out: bigint) => {
     setApprovedKey("");
@@ -294,13 +290,12 @@ export function Convert({ d, asset, pool, intent }: { d: Deployment; asset: Asse
           {w.busy === "connect" ? "Connecting…" : "Connect to convert"}
         </button>
       ) : (
-        <button className="primary wide" disabled={!!blocked || tx.busy || !qb || cooldown > 0} aria-busy={tx.busy || undefined} onClick={() => void run()}>
+        <button className="primary wide" disabled={!!blocked || tx.busy || !qb} aria-busy={tx.busy || undefined} onClick={() => void run()}>
           {tx.busy && <Spinner />}
           {tx.state.step === "signing" ? "Confirm in wallet…" : tx.busy ? "Converting…" : approvedKey === approvalKey || w.demo ? "Convert" : "Approve and convert"}
         </button>
       )}
       {w.notice && <p className="block-reason">{w.notice}</p>}
-      <RelayLimitNote left={cooldown} />
       <TxPanel tx={tx.state} onRetry={() => void run()} />
     </div>
   );
