@@ -20,7 +20,12 @@ test("Landing: Unison brand, three products; Developers page lists every contrac
   await expect(page.locator("#proof, #developers")).toHaveCount(0); // moved to /developers
   await page.goto("/developers");
   const contracts = page.locator("#contracts");
-  await expect(contracts.getByRole("heading")).toContainText("Live on Unichain Sepolia");
+  await expect(contracts.getByRole("heading")).toContainText("Contracts");
+  for (const path of ["/", "/developers"]) {
+    await page.goto(path);
+    await expect(page.getByText(/Live on|chain 1301/)).toHaveCount(0);
+  }
+  await page.goto("/developers");
   if (d) {
     await expect(contracts.getByRole("link", { name: "Uniscan ↗" }).first()).toHaveAttribute(
       "href",

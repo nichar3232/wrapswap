@@ -2,7 +2,7 @@ import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { Footer, GITHUB, Nav } from "./chrome";
 import { DevDiagram } from "./Flows";
-import { NETWORK_NAME, contractGroups, deployment, proofTxs, short } from "./proof";
+import { contractGroups, deployment, proofTxs, short } from "./proof";
 import "../theme.css";
 import "./landing.css";
 
@@ -29,10 +29,7 @@ function Developers() {
         </p>
       </section>
       <section className="black proof" id="contracts">
-        <h2>
-          Live on {NETWORK_NAME}
-          {deployment?.chainId && <span className="chain">chain {deployment.chainId}</span>}
-        </h2>
+        <h2>Contracts</h2>
         {groups.length === 0 && <p>Deployment addresses are being published.</p>}
         {groups.map((g) => (
           <div className="table-wrap" key={g.title}>
