@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Unison Pay end-to-end demo: Unichain Sepolia deposits -> private Sui payment -> cross-issuer withdrawal.
+# Secrets come from ${SUI_ENV_FILE:-~/wrapswap-run/env/onchain.env}; the keeper ledger lives in ~/wrapswap-run/sui-state/.
+# DEMO_CHECK=1 runs once and exits with the verdict. Output is teed to ~/wrapswap-run/logs/sui-demo.log.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+LOG_DIR="${WRAPSWAP_RUN_DIR:-$HOME/wrapswap-run}/logs"
+mkdir -p "$LOG_DIR"
+exec > >(tee "$LOG_DIR/sui-demo.log") 2>&1
+exec pnpm exec tsx services/crank/sui/demo.ts "$@"

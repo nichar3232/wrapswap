@@ -15,15 +15,29 @@ set -a; source "$HOME/wrapswap-run/env/onchain.env"; source "$HOME/wrapswap-run/
 
 # Stack
 h=$(curl -s 127.0.0.1:18010/health)
-check "api health (chain 1301, lag <= 5)" "$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '{}'); print('ok' if d.get('ok') and d.get('chainId')==1301 and (d.get('lagBlocks') or 99)<=5 else 'ok=%s lag=%s' % (d.get('ok'), d.get('lagBlocks')))" "$h")"
+check "api health (chain 1301, lag <= 5)" "$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '{}'); print('ok' if d.get('ok') and d.get('chainId')==1301 and (99 if d.get('lagBlocks') is None else int(d['lagBlocks']))<=5 else 'ok=%s lag=%s' % (d.get('ok'), d.get('lagBlocks')))" "$h")"
 c=$(curl -s 127.0.0.1:18110/status)
 check "crank" "$(python3 -c "import json,sys; d=json.loads(sys.argv[1] or '{}'); print('ok' if d.get('ok') else 'lastError=%s' % d.get('lastError'))" "$c")"
 check "web (local /app)" "$([[ $(curl -s -o /dev/null -w '%{http_code}' 127.0.0.1:13010/app) == 200 ]] && echo ok || echo down)"
 check "demo relay" "$(curl -sf 127.0.0.1:18210/demo/status >/dev/null && echo ok || echo down)"
-host=${PUBLIC#https://}; ip=$(dig +short @1.1.1.1 "$host" | head -1)
-for p in / /app /api/health /api/assets; do
-  check "public $p" "$([[ $(curl -s -o /dev/null -w '%{http_code}' --resolve "$host:443:$ip" "$PUBLIC$p") == 200 ]] && echo ok || echo 'not 200')"
+# Tailscale Funnel: every public ingress IP (public DNS), pinned with --resolve so the request leaves the tailnet and
+# comes back through Funnel. /mcp is checked with an MCP initialize POST.
+host=${PUBLIC#https://}
+ingress=$(dig +short @1.1.1.1 "$host" | grep -E '^[0-9.]+$')
+check "funnel: public DNS has ingress IPs" "$([[ -n $ingress ]] && echo ok || echo 'no A records')"
+init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"preflight","version":"1"}}}'
+for ip in $ingress; do
+  for p in / /app /api/health /api/assets; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --resolve "$host:443:$ip" "$PUBLIC$p")
+    check "funnel $ip $p" "$([[ $code == 200 ]] && echo ok || echo "HTTP $code")"
+  done
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --resolve "$host:443:$ip" -X POST -H 'content-type: application/json' \
+    -H 'accept: application/json, text/event-stream' -d "$init" "$PUBLIC/mcp")
+  check "funnel $ip /mcp (initialize)" "$([[ $code == 200 ]] && echo ok || echo "HTTP $code")"
 done
+# From another network entirely: an external fetcher loads /api/health.
+ext=$(curl -s --max-time 60 "https://r.jina.ai/$PUBLIC/api/health" -H 'x-respond-with: text' | head -c 400)
+check "funnel: external fetch of /api/health" "$(grep -q '"ok":true' <<<"$ext" && echo ok || echo 'not reachable from outside')"
 
 # Contracts: Dark Cross protocol fee is 1 bp on every asset.
 for a in $(jq -r '.assets[].symbol' $M); do
@@ -50,5 +64,23 @@ for a in $(jq -r '.assets[].symbol' $M); do
   done
 done
 [[ -f /tmp/.preflight-fail.$$ ]] && { fails=$((fails + 1)); rm -f /tmp/.preflight-fail.$$; }
+
+# Demo relay /demo/send (Sui confidential path): its two Sui identities need SUI gas; the MCP budget token must exist.
+st=$(curl -s 127.0.0.1:18210/demo/status)
+for who in A B; do
+  addr=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['sui']['$who'])" "$st" 2>/dev/null)
+  mist=$(sui client balance "$addr" --json 2>/dev/null | python3 -c "
+import json, sys
+def walk(o):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            if k == 'balance' and not isinstance(v, (dict, list)): yield int(v)
+            yield from walk(v)
+    elif isinstance(o, list):
+        for x in o: yield from walk(x)
+print(sum(walk(json.load(sys.stdin))))" 2>/dev/null)
+  check "demo-relay Sui $who ${addr:0:10}… SUI $(python3 -c "print(int('${mist:-0}')/1e9)") >= 0.03" "$(ge "${mist:-0}" 30000000 && echo ok || echo low)"
+done
+check "MCP relay budget token (~/wrapswap-run/env/relay-internal.env)" "$(python3 -c "import json,sys; print('ok' if json.loads(sys.argv[1])['limits'].get('mcpBudgetConfigured') else 'missing')" "$st")"
 echo "preflight: $fails failing check(s)"
 exit $((fails > 0))

@@ -1,6 +1,7 @@
 // Production web server for the live stack: serves the static build (dist/web) with an SPA fallback, and proxies
 // /api → API_PORT, /crank → CRANK_HEALTH_PORT and /rpc → RPC_URL (so a keyed RPC stays server-side).
-// /api/pay/* goes to the Sui pay-api (PAY_API_URL); /mcp to the Unison MCP server (MCP_URL). /api, /crank and /rpc share a fixed-window per-IP rate limit; behind Tailscale Funnel the client IP comes from
+// /api (including /api/pay, mounted in the API) and /api/demo/* (demo relay), /crank, /rpc and /mcp (Unison MCP server)
+// share a fixed-window per-IP rate limit; behind Tailscale Funnel the client IP comes from
 // X-Forwarded-For (only trusted when the socket peer is loopback).
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
@@ -13,8 +14,6 @@ const apiPort = Number(process.env.API_PORT || 18010);
 const crankPort = Number(process.env.CRANK_HEALTH_PORT || 18110);
 const rpcUrl = process.env.RPC_URL;
 const limit = Number(process.env.RATE_LIMIT_PER_MIN || 600);
-// Sui payments API (the Sui keeper's pay-api) until the sui branch mounts /pay routes in the API itself.
-const payUrl = process.env.PAY_API_URL || 'http://127.0.0.1:5402';
 // Demo relay (services/relay): POST /api/demo/* signs with the demo key; it enforces its own per-IP action limit.
 const relayPort = Number(process.env.RELAY_PORT || 18210);
 // Unison MCP server (packages/mcp, Streamable HTTP, stateless JSON) mounted at /mcp.
@@ -36,10 +35,15 @@ async function proxy(req, res, target) {
   try {
     // Upstreams rate-limit per client IP: pass it on (X-Forwarded-For is only trusted from loopback peers).
     const headers = { 'content-type': req.headers['content-type'] ?? 'application/json', 'x-forwarded-for': clientIp(req) };
+    // The MCP server's relay budget token (checked by the relay; useless without the secret).
+    if (req.headers['x-unison-relay-client']) headers['x-unison-relay-client'] = String(req.headers['x-unison-relay-client']);
     if (req.headers.accept) headers.accept = req.headers.accept;
     const r = await fetch(target, { method: req.method, headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : await body(req) });
     const out = Buffer.from(await r.arrayBuffer());
-    res.writeHead(r.status, { 'content-type': r.headers.get('content-type') ?? 'application/json', 'cache-control': 'no-store' }).end(out);
+    const out_headers = { 'content-type': r.headers.get('content-type') ?? 'application/json', 'cache-control': 'no-store' };
+    // The relay's (and API's) 429 carries Retry-After; the UI reads it.
+    if (r.headers.get('retry-after')) out_headers['retry-after'] = r.headers.get('retry-after');
+    res.writeHead(r.status, out_headers).end(out);
   } catch (e) {
     res.writeHead(502, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'upstream unavailable' }));
   }
@@ -76,8 +80,6 @@ createServer(async (req, res) => {
   const p = url.pathname;
   if (p.startsWith('/api/demo/')) {
     if (!limited(req, res)) await proxy(req, res, `http://127.0.0.1:${relayPort}${p.slice(4)}${url.search}`);
-  } else if (p.startsWith('/api/pay/')) {
-    if (!limited(req, res)) await proxy(req, res, `${payUrl}${p.slice(4)}${url.search}`);
   } else if (p === '/api' || p.startsWith('/api/')) {
     if (!limited(req, res)) await proxy(req, res, `http://127.0.0.1:${apiPort}${p.slice(4) || '/'}${url.search}`);
   } else if (p === '/mcp') {

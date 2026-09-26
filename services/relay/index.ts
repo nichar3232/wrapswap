@@ -1,7 +1,8 @@
 // Demo relay: lets a visitor without a wallet trigger real Unichain Sepolia transactions, signed by a dedicated
 // demo key (never the deployer or crank key).
 //   POST /demo/convert      {asset, from, to, amount}             → WrapSwapRouter.swapExactIn to the relay itself
-//   POST /demo/send         {asset, from, to, amount, recipient}  → the same swap delivering to `recipient`
+//   POST /demo/send-unichain {asset, from, to, amount, recipient} → the same swap delivering to `recipient` (Unichain only)
+//   POST /demo/send         the Sui path (ShareVault deposit → confidential pay on Sui → withdraw to the other issuer)
 //   POST /demo/dark-commit  {asset, from, amount}                 → escrow + commit on the asset's DarkCrossHook;
 //                                                                   the relay reveals it in the reveal phase and the
 //                                                                   crank settles (crossed, or residual via ParityHook)
@@ -11,13 +12,15 @@
 // ~/wrapswap-run/env/ only (RELAY_KEY_FILE), never from the environment the stack shares, and is never logged.
 import "dotenv/config";
 import Fastify from "fastify";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
+import { timingSafeEqual } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createWalletClient, http, parseUnits, getAddress, keccak256, toHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { abis, canonical, encodeParityHookData } from "@wrapswap/types";
 import { loadDeployment, publicClient, rpc } from "../../api/src/chain/client.js";
+import { suiSender } from "./sui-send.js";
 
 const d = loadDeployment();
 const envDir = resolve(homedir(), "wrapswap-run/env");
@@ -34,7 +37,18 @@ const wallet = createWalletClient({ account, transport: http(rpc) });
 const client = publicClient;
 
 const MAX_SHARES = 100n * canonical.ONE;
-const WINDOW_MS = 10 * 60_000, ACTIONS = 3;
+const WINDOW_MS = 10 * 60_000, ACTIONS = 3, MCP_ACTIONS = 20;
+// The Unison MCP server (on this machine) calls the relay for all its remote users from one IP, so it gets its own
+// budget: it sends `x-unison-relay-client: <MCP_RELAY_TOKEN>` from ~/wrapswap-run/env/relay-internal.env.
+const tokenFile = resolve(process.env.RELAY_INTERNAL_FILE ?? `${envDir}/relay-internal.env`);
+if (!tokenFile.startsWith(envDir + "/")) throw Error("RELAY_INTERNAL_FILE must be under ~/wrapswap-run/env/");
+const mcpToken = existsSync(tokenFile)
+  ? Buffer.from(/^MCP_RELAY_TOKEN=([0-9a-f]{64})$/m.exec(readFileSync(tokenFile, "utf8"))?.[1] ?? "", "utf8")
+  : Buffer.alloc(0);
+const isMcp = (req: any) => {
+  const h = Buffer.from(String(req.headers["x-unison-relay-client"] ?? ""), "utf8");
+  return mcpToken.length === 64 && h.length === mcpToken.length && timingSafeEqual(h, mcpToken);
+};
 const router = (d.router ?? d.contracts.wrapSwapRouter) as Hex;
 const erc20 = [
   { type: "function", name: "approve", stateMutability: "nonpayable", inputs: [{ name: "s", type: "address" }, { name: "a", type: "uint256" }], outputs: [{ type: "bool" }] },
@@ -73,13 +87,20 @@ const clientIp = (req: any) => {
   const fwd = /^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(peer) && req.headers["x-forwarded-for"];
   return fwd ? String(fwd).split(",")[0].trim() : peer;
 };
-const takeAction = (ip: string) => {
+// Budgets: one shared "mcp" bucket (20 / 10 min) for the MCP server, else 3 / 10 min per client IP.
+const takeAction = (req: any) => {
+  const mcp = isMcp(req),
+    key = mcp ? "mcp" : `ip:${clientIp(req)}`,
+    max = mcp ? MCP_ACTIONS : ACTIONS;
   const now = Date.now(),
-    recent = (hits.get(ip) ?? []).filter((t) => now - t < WINDOW_MS);
-  if (recent.length >= ACTIONS)
-    throw Object.assign(fail(429, "RATE_LIMITED", "3 demo actions per 10 minutes"), { retryAfter: Math.ceil((recent[0] + WINDOW_MS - now) / 1000) });
+    recent = (hits.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
+  if (recent.length >= max)
+    throw Object.assign(fail(429, "RATE_LIMITED", `${max} demo actions per 10 minutes${mcp ? " (MCP budget)" : ""}`), {
+      retryAfter: Math.ceil((recent[0] + WINDOW_MS - now) / 1000),
+    });
   recent.push(now);
-  hits.set(ip, recent);
+  hits.set(key, recent);
+  return mcp;
 };
 
 // One signer: transactions go out one at a time. Nonce = max(latest, pending, last used + 1): the public RPC's
@@ -196,28 +217,54 @@ setInterval(() => {
 const app = Fastify({ logger: false, bodyLimit: 4096 });
 app.setErrorHandler((e: any, _req, reply) => {
   if (e.retryAfter) reply.header("retry-after", String(e.retryAfter));
-  reply.status(e.statusCode ?? 500).send({ error: { code: e.code ?? "INTERNAL", message: e.statusCode ? e.message : "relay error" } });
+  reply.status(e.statusCode ?? 500).send({
+    error: { code: e.code ?? "INTERNAL", message: e.statusCode ? e.message : "relay error" },
+    ...(e.retryAfter ? { retryAfter: e.retryAfter } : {}),
+  });
 });
 const action = (name: string, run: (body: any) => Promise<any>) =>
   app.post(`/demo/${name}`, async (req) => {
     const body = (req.body ?? {}) as any;
-    const ip = clientIp(req.raw);
+
     // Validate before spending the IP's allowance, then queue behind the relay's other transactions.
-    if (name === "send") getAddress(String(body.recipient ?? "")); // throws on a bad address
+    if (name === "send-unichain") getAddress(String(body.recipient ?? "")); // throws on a bad address
     if (name !== "dark-commit") rawAmount(wrapperOf(assetOf(body.asset), body.from), body.amount);
-    takeAction(ip);
+    const viaMcp = takeAction(req.raw);
     const result = await serial(() => run(body));
-    record({ action: name, asset: result.asset, txHash: result.txHash, batchId: result.batchId });
+    record({ action: name, asset: result.asset, txHash: result.txHash, batchId: result.batchId, client: viaMcp ? "mcp" : "web" });
     return result;
   });
 action("convert", (b) => convert(b, account.address));
-action("send", (b) => convert(b, getAddress(String(b.recipient))));
+action("send-unichain", (b) => convert(b, getAddress(String(b.recipient))));
+// /demo/send: the Sui confidential path (ShareVault deposit → sealed pay on Sui → withdraw into the other issuer).
+const sui = suiSender({ evmClient: client, send: (r) => serial(() => send(r)), ensureAllowance: (t, s, a) => serial(() => ensureAllowance(t, s, a)), fail });
+const aapl = () => assetOf("AAPL");
+app.post("/demo/send", async (req) => {
+  const body = (req.body ?? {}) as any;
+  // Validate (asset, wrappers, recipient, 100-share cap) and check the one-at-a-time queue before spending budget.
+  if (String(body.asset ?? "").toUpperCase() !== "AAPL") throw fail(400, "BAD_REQUEST", "Unison Pay (ShareVault) holds AAPL wrappers only");
+  getAddress(String(body.recipient ?? ""));
+  rawAmount(wrapperOf(aapl(), body.from), body.amount);
+  const busy = sui.busy();
+  if (busy) throw fail(409, "BUSY", `a Sui send is in progress (${busy.id}, ${busy.status}); retry in a few minutes`);
+  const viaMcp = takeAction(req.raw);
+  const job = await sui.start(body, (w, amount) => rawAmount(w as any, amount), (token) =>
+    aapl().wrappers.find((w) => w.token.toLowerCase() === token.toLowerCase())!.multiplier);
+  record({ action: "send", asset: "AAPL", txHash: job.depositTx, client: viaMcp ? "mcp" : "web" });
+  return { ...job, txHash: job.depositTx, path: "sui-confidential", track: `/demo/send/${job.id}` };
+});
+app.get("/demo/send/:id", async (req) => {
+  const job = sui.get((req.params as any).id);
+  if (!job) throw fail(404, "NOT_FOUND", "unknown send id");
+  return { ...job, path: "sui-confidential" };
+});
 action("dark-commit", darkCommit);
 app.get("/demo/status", async () => {
   const eth = await client.getBalance({ address: account.address });
   const tokens = await Promise.all(assets.flatMap((a) => a.wrappers.map(async (w) => ({ asset: a.symbol, symbol: w.symbol,
     balance: String(await client.readContract({ address: w.token as Hex, abi: erc20, functionName: "balanceOf", args: [account.address] })) }))));
-  return { ok: eth > 0n, address: account.address, ethWei: eth.toString(), tokens, limits: { actionsPer10Min: ACTIONS, maxShares: "100" },
+  return { ok: eth > 0n, address: account.address, ethWei: eth.toString(), tokens, sui: { ...sui.identities, busy: sui.busy()?.id ?? null },
+    limits: { actionsPer10Min: ACTIONS, mcpActionsPer10Min: MCP_ACTIONS, mcpBudgetConfigured: mcpToken.length === 64, maxShares: "100" },
     pendingReveals: pending.filter((p) => !p.revealTx).map((p) => ({ asset: p.asset, batchId: p.batchId.toString() })), recent };
 });
 await app.listen({ port: Number(process.env.RELAY_PORT ?? 18210), host: "127.0.0.1" });

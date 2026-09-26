@@ -930,6 +930,24 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
     "faucet": { "$ref": "Address" },
     "protocolFeeRecipient": { "$ref": "Address" },
     "deployBlock": { "$ref": "UInt" },
+    "send": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shareVault"],
+      "properties": {
+        "shareVault": { "$ref": "Address" },
+        "deployTx": { "$ref": "Bytes32" },
+        "block": { "$ref": "UInt" },
+        "keeper": { "$ref": "Address" },
+        "suiDeployment": { "type": "string" }
+      }
+    },
+    "demo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relay"],
+      "properties": { "relay": { "$ref": "Address" } }
+    },
     "assets": {
       "type": "array",
       "items": {
@@ -987,7 +1005,7 @@ TypeScript: `parseDeployment(json)` validates, `deploymentPath(network)` returns
 
 On Unichain Sepolia the committed manifest is the minimal deploy output (`chainId`, `deployBlock`, `router`, `faucet`,
 `protocolFeeRecipient`, `assets[{symbol, wrappers[{platform, token, adapter, multiplier}], pool, parityHook,
-darkCross}]`). `scripts/dev/resolve-deployment.ts` expands it to this schema by reading the chain from those addresses
+darkCross}]`, optional `send{shareVault, …}` for the Sui Send vault, passed through unchanged). `scripts/dev/resolve-deployment.ts` expands it to this schema by reading the chain from those addresses
 only (hooks → PoolManager/registry/eligibility/oracle, each DarkCrossHook's `parityPoolKey()` checked against the pool
 id, ERC-20 metadata, the pool's Initialize event) and writes `deployments/unichain-sepolia.resolved.json`, which
 `loadDeployment` reads. Addresses the minimal manifest does not carry and the chain cannot derive (Uniswap periphery,

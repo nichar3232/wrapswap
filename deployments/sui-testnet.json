@@ -1,0 +1,112 @@
+{
+  "network": "sui-testnet",
+  "sui": {
+    "packageId": "0x2f18fa6d27e46235a4dcb9c0de62adbf612e3f60700ffeeac4e13d50ea4f452c",
+    "publishTx": "CNfNqe3P3ni7NkpknM3p1KMhqhV2hBeS2WcoLKo4Ugdt",
+    "upgradeCap": "0xad398dd0183b04d0a095ba2c364ed55bf31c8367d7d4355e8b3b0e339de622f2",
+    "poolId": "0xf414bbcc050bb2c0407d76f482bc830323a6dd93195ef1b5fae855e939a12fe1",
+    "operatorCapId": "0x0c2376ef722f33b53b3df106ea1672bba5e931e8b23f6033506cdcddc145f12c",
+    "firstBatchId": "0xe5fd0bbc978da8c5fa43133879fc9d64d0b1d528975243b83f4da37d0f8de642",
+    "createPoolTx": "gEtujKXzzZxdq8NyjP72U7eHj2UVmAAQp75svpFi9nt",
+    "operator": "0xb07be57ee7e7d5ca43f681c6938cc8698fd892b42d1b33f613909ae585c741c7",
+    "windowMs": 90000,
+    "sealProbePackageId": "0xebb8a7e3ae227d2b3bc9f52934a2b0003ad93da11cc66e018888412aef654d32",
+    "retiredPools": [
+      {
+        "poolId": "0xa1e1a8262c772c99fab34f0a389cfec6ed6f966889d4c9b3674313ccc16007e7",
+        "operatorCapId": "0xc043eba0e30f433e25aae612a2ba202a1e19fa88877e2d12e248b14ee1c880df",
+        "windowMs": 180000,
+        "note": "first pool; never credited, replaced by the 90 s demo pool"
+      },
+      {
+        "poolId": "0xd04f7ee675e0c7c239532a2f59ec070ab3d26bbf8bc987067d4d45c9b049482c",
+        "operatorCapId": "0xe76b61a7344b47dbed90aa617799f2c49b269aa08b94f42ed9a40a00c87d7e78",
+        "windowMs": 90000,
+        "note": "backed by the retired ShareVault 0x275C\u20263187 (pre fee-model AAPL pool); 31.0407853 shares credited, reserves 1:1 at retirement"
+      },
+      {
+        "poolId": "0xcb16556e5c2b4f509aaff5a9a86a99308bbea2fa14447a57a52f9753d53ead53",
+        "operatorCapId": "0xfe4dc7c97f6702742b69864b2e4f431b157f58aa57b13677cc0b4731b1717fa0",
+        "windowMs": 90000,
+        "note": "paired with retired ShareVault 0xd501\u2026f3bC (interim fee-model pool); 1:1 at 7.0214092375 shares"
+      }
+    ]
+  },
+  "seal": {
+    "threshold": 2,
+    "keyServers": [
+      {
+        "name": "mysten-testnet-1",
+        "objectId": "0x73d05d62c18d9374e3ea529e8e0ed6161da1a141a94d3f76ae3fe4e99356db75"
+      },
+      {
+        "name": "mysten-testnet-2",
+        "objectId": "0xf5d14a81a982144ae441cd7d64b09027f116a468bd36e7eca494f750591623c8"
+      },
+      {
+        "name": "rubynodes-open",
+        "objectId": "0x6068c0acb197dddbacd4746a9de7f025b2ed5a5b6c1b1ab44dade4426d141da2"
+      }
+    ]
+  },
+  "walrus": {
+    "publisher": "https://publisher.walrus-testnet.walrus.space",
+    "aggregator": "https://aggregator.walrus-testnet.walrus.space"
+  },
+  "evm": {
+    "network": "unichain-sepolia",
+    "chainId": 1301,
+    "shareVault": "0x76B1661dB3858b5455Ae4371291c954fa248Bd5d",
+    "deployTx": "0xb227e5b1e10323530a5895a00f793e086d4b6d6c561c3c5c4a45e99d1cc97ef3",
+    "setKeeperTx": "0xde50068537818a25343a8775465d0d8e06861f7fb6f81680bd2907a27b485809",
+    "startBlock": "63591954",
+    "keeper": "0xFD42fC43855C9332051e9e2F05a75C8914073F9e",
+    "owner": "0xFD42fC43855C9332051e9e2F05a75C8914073F9e",
+    "verified": "https://sepolia.uniscan.xyz/address/0x76B1661dB3858b5455Ae4371291c954fa248Bd5d#code",
+    "explorer": "https://sepolia.uniscan.xyz",
+    "registry": "0xA5d433FA4E90D21859B325Be34F0B8845F8E9070",
+    "wrapSwapRouter": "0x49d7eA31c619E80785Fa31CBc5bE052ED4EC40Cb",
+    "parityHook": "0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8",
+    "poolKey": {
+      "currency0": "0x433DAfF77AD96b9319957D83d9d422E70c996C45",
+      "currency1": "0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c",
+      "fee": 8388608,
+      "tickSpacing": 10,
+      "hooks": "0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8"
+    },
+    "tokens": [
+      {
+        "symbol": "mcbAAPL",
+        "address": "0xaD46d8fE371EED0F68c90eb8A252C34147C2e23c",
+        "decimals": 6
+      },
+      {
+        "symbol": "mAAPLx",
+        "address": "0x433DAfF77AD96b9319957D83d9d422E70c996C45",
+        "decimals": 18
+      }
+    ],
+    "sourceManifest": "deployments/unichain-sepolia.resolved.json (main ce5bd1c, final fee model)",
+    "retiredShareVaults": [
+      {
+        "address": "0x275C82B932D4703F0e8A104524bC24813a5c3187",
+        "deployTx": "0x060e82bfa3081edacafced07e6582485138719c1cd3954056e7c3c4caf55885f",
+        "parityHook": "0x1D2C9335813B8d3fFDCCC9d43aAf73d7871b20c8",
+        "note": "bound to the pre fee-model AAPL pool (hook 0x1D2C\u202620c8); replaced after onchain b4ef312"
+      },
+      {
+        "address": "0xd5010c7feC51c8765FE46c940A585C0Edd2Df3bC",
+        "deployTx": "0xcbcc826e2dcf5a6dc900daa315db089e4ba08dde693b14eb4a4475d5b52f9476",
+        "parityHook": "0x4142CA2E270A3f94cB8B56b1F6e1C74465a8a0c8",
+        "note": "bound to the interim fee-model AAPL pool (hook 0x4142\u2026a0c8)"
+      }
+    ]
+  },
+  "demoAccounts": {
+    "suiPayer": "0xb07be57ee7e7d5ca43f681c6938cc8698fd892b42d1b33f613909ae585c741c7",
+    "suiPayee": "0x490aca12124d8cc2bdf1eb007a9cca8fa0dfe60ffed4908c3cbf8a990fdfc4c9",
+    "evmDepositor": "0x90d2d9C4966e81D1D8c50f3aaD51b3F9299f7612",
+    "evmWithdrawRecipient": "0x588e53E014c69df42a0adbc5d65009e5CBff0f1A",
+    "keys": "not in the repo: Sui keys in the Sui CLI keystore of the demo machine, EVM keys derive from DEMO_MNEMONIC (indexes 1 and 2) in ~/wrapswap-run/env/onchain.env"
+  }
+}

@@ -65,5 +65,15 @@
       "parityHook": "0x484bc6aa8f6D472AD67F3ce8dD86f1f8A166e0c8",
       "darkCross": "0x223a9d724F5bbF4e76830edDf4858fdD838c3a3c"
     }
-  ]
+  ],
+  "send": {
+    "shareVault": "0x76B1661dB3858b5455Ae4371291c954fa248Bd5d",
+    "deployTx": "0xb227e5b1e10323530a5895a00f793e086d4b6d6c561c3c5c4a45e99d1cc97ef3",
+    "block": "63591954",
+    "keeper": "0xFD42fC43855C9332051e9e2F05a75C8914073F9e",
+    "suiDeployment": "deployments/sui-testnet.json"
+  },
+  "demo": {
+    "relay": "0x8f2e78AbD6E234D7B1CA7047F7502c374C81dA6C"
+  }
 }
