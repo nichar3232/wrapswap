@@ -1,7 +1,8 @@
 // Demo relay: lets a visitor without a wallet trigger real Unichain Sepolia transactions, signed by a dedicated
 // demo key (never the deployer or crank key).
 //   POST /demo/convert      {asset, from, to, amount}             → WrapSwapRouter.swapExactIn to the relay itself
-//   POST /demo/send         {asset, from, to, amount, recipient}  → the same swap delivering to `recipient`
+//   POST /demo/send-unichain {asset, from, to, amount, recipient} → the same swap delivering to `recipient` (Unichain only)
+//   POST /demo/send         the Sui path (ShareVault deposit → confidential pay on Sui → withdraw to the other issuer)
 //   POST /demo/dark-commit  {asset, from, amount}                 → escrow + commit on the asset's DarkCrossHook;
 //                                                                   the relay reveals it in the reveal phase and the
 //                                                                   crank settles (crossed, or residual via ParityHook)
@@ -203,7 +204,7 @@ const action = (name: string, run: (body: any) => Promise<any>) =>
     const body = (req.body ?? {}) as any;
     const ip = clientIp(req.raw);
     // Validate before spending the IP's allowance, then queue behind the relay's other transactions.
-    if (name === "send") getAddress(String(body.recipient ?? "")); // throws on a bad address
+    if (name === "send-unichain") getAddress(String(body.recipient ?? "")); // throws on a bad address
     if (name !== "dark-commit") rawAmount(wrapperOf(assetOf(body.asset), body.from), body.amount);
     takeAction(ip);
     const result = await serial(() => run(body));
@@ -211,7 +212,11 @@ const action = (name: string, run: (body: any) => Promise<any>) =>
     return result;
   });
 action("convert", (b) => convert(b, account.address));
-action("send", (b) => convert(b, getAddress(String(b.recipient))));
+action("send-unichain", (b) => convert(b, getAddress(String(b.recipient))));
+// The Sui path is wired once the ShareVault on the final router/hook is merged (window 10).
+app.post("/demo/send", async () => {
+  throw fail(503, "NOT_WIRED", "Sui send (ShareVault → Sui → withdraw) is not wired yet; use /demo/send-unichain");
+});
 action("dark-commit", darkCommit);
 app.get("/demo/status", async () => {
   const eth = await client.getBalance({ address: account.address });
