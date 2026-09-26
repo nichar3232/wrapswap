@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { test, expect, type Page } from "@playwright/test";
 
-test("Landing: Unison brand, three products; Developers page lists every contract from the manifest", async ({
+test("Landing: Unison brand, four products; no Developers page, contracts in the Verify footer", async ({
   page,
 }) => {
   const file = new URL(
@@ -28,28 +28,9 @@ test("Landing: Unison brand, three products; Developers page lists every contrac
   // One row of four at desktop width.
   const tops = await how.locator(".steps4 li").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
   expect(new Set(tops).size).toBe(1);
-  await expect(page.locator("#proof, #developers")).toHaveCount(0); // moved to /developers
-  await page.goto("/developers");
-  const contracts = page.locator("#contracts");
-  await expect(contracts.getByRole("heading")).toContainText("Contracts");
-  for (const path of ["/", "/developers"]) {
-    await page.goto(path);
-    await expect(page.getByText(/Live on|chain 1301/)).toHaveCount(0);
-  }
-  await page.goto("/developers");
-  if (d) {
-    await expect(contracts.getByRole("link", { name: "Uniscan ↗" }).first()).toHaveAttribute(
-      "href",
-      `https://sepolia.uniscan.xyz/address/${d.contracts.parityHook}`,
-    );
-    for (const a of d.assets) {
-      await expect(contracts.locator("caption", { hasText: a.symbol })).toBeVisible();
-      await expect(contracts.locator(`a[href$="${a.darkCrossHook}"]`)).toHaveCount(1);
-    }
-    await expect(contracts.locator(`a[href$="${d.faucet}"]`)).toHaveCount(1);
-  } else {
-    await expect(contracts.getByText("Deployment addresses are being published.")).toBeVisible();
-  }
+  await expect(page.locator("#proof, #developers, #architecture, #agents")).toHaveCount(0);
+  await expect(page.getByText(/Live on|chain 1301/)).toHaveCount(0);
+  if (!d) await expect(page.locator("#verify")).toContainText("Deployment addresses are being published.");
   await page.getByRole("button", { name: "Toggle color theme" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.reload();
@@ -108,9 +89,7 @@ test.describe("Landing controls all navigate or scroll", () => {
     await page.goto("/");
     await page.getByRole("link", { name: "How it works", exact: true }).click();
     await expectScrolledTo(page, "how-it-works");
-    await page.getByRole("link", { name: "Developers", exact: true }).click();
-    await expect(page).toHaveURL(/\/developers$/);
-    await expect(page.locator("#architecture")).toBeVisible();
+    await expect(page.locator("header").getByRole("link", { name: "Developers" })).toHaveCount(0);
     await page.goto("/");
     await page.evaluate(() => scrollTo(0, 40));
     await page.getByRole("link", { name: "Product", exact: true }).click();
@@ -140,14 +119,6 @@ test.describe("Landing controls all navigate or scroll", () => {
           ["Liquidity", (p) => expectScrolledTo(p, "how-liquidity")],
         ],
       ],
-      [
-        "Developers",
-        [
-          ["Architecture", (p) => expectScrolledTo(p, "architecture")],
-          ["Contracts", (p) => expectScrolledTo(p, "contracts")],
-          ["MCP", (p) => expectScrolledTo(p, "agents")],
-        ],
-      ],
     ];
     for (const [menu, items] of menus) {
       await page.goto("/");
@@ -169,21 +140,6 @@ test.describe("Landing controls all navigate or scroll", () => {
         await check(page);
       }
     }
-    for (const [menu, label, url] of [
-      ["Developers", "GitHub ↗", /github\.com\/nichar3232\/wrapswap/],
-    ] as const) {
-      await page.goto("/");
-      await page.getByRole("button", { name: `${menu} menu` }).click();
-      await expectPopup(
-        page,
-        () =>
-          page
-            .locator(`#menu-${menu.toLowerCase()}`)
-            .getByRole("link", { name: label })
-            .click(),
-        url,
-      );
-    }
   });
 
   test("CTAs, product cards, brand links, theme and footer", async ({
@@ -199,7 +155,7 @@ test.describe("Landing controls all navigate or scroll", () => {
     }
     await page.goto("/");
     await page.getByRole("link", { name: "See it onchain →" }).click();
-    await expectScrolledTo(page, "contracts");
+    await expectScrolledTo(page, "verify");
     for (const [i, tab] of ["Move", "Move", "Send", "Liquidity"].entries()) {
       await page.goto("/");
       await page.locator("#how-it-works .steps4 a").nth(i).click();
@@ -207,7 +163,7 @@ test.describe("Landing controls all navigate or scroll", () => {
       if (i === 1) await expect(page.getByRole("tab", { name: "Dark Cross" })).toHaveAttribute("aria-selected", "true");
     }
     for (const name of ["Unison home", "unison"]) {
-      await page.goto("/developers");
+      await page.goto("/#verify");
       await page.getByRole("link", { name, exact: true }).first().click();
       await expect(page).toHaveURL(/\/$/);
     }
@@ -229,14 +185,12 @@ test.describe("Landing controls all navigate or scroll", () => {
       () => page.locator("footer").getByRole("link", { name: "GitHub ↗" }).click(),
       /github\.com\/nichar3232\/wrapswap/,
     );
-    await page.goto("/developers");
-    await expect(page.locator("#contracts table").first()).toBeVisible();
-    const explorer = page.locator("#contracts").getByRole("link");
+    const explorer = page.locator("#verify [data-line=contracts]").getByRole("link");
     for (let i = 0; i < (await explorer.count()); i++)
-      await expectPopup(page, () => explorer.nth(i).click(), /uniscan\.xyz\/address\//);
+      await expectPopup(page, () => explorer.nth(i).click(), /uniscan\.xyz\/address\/|suiscan\.xyz\/testnet\/object\//);
   });
 
-  test("diagrams: Convert flow (landing + Developers), developer lanes in v4 call order, Unichain node opens its explorer page", async ({ page }) => {
+  test("diagram: the Convert flow on the landing page", async ({ page }) => {
     const file = new URL("../../deployments/unichain-sepolia.resolved.json", import.meta.url);
     const d = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : undefined;
     await page.goto("/");
@@ -255,24 +209,7 @@ test.describe("Landing controls all navigate or scroll", () => {
     expect(await flow.locator("rect").evaluateAll((r) => r.map((x) => x.getAttribute("height")))).toEqual(["56", "56", "56", "56", "56"]);
     expect(await flow.evaluate((e) => e.getBoundingClientRect().width)).toBeLessThanOrEqual(720);
     expect(await flow.locator("svg").innerHTML()).not.toMatch(/Gradient/);
-    await page.goto("/developers");
-    const devFlow = page.locator(".convert-flow.dev");
-    await expect(devFlow.locator(".cf-title")).toHaveText(["Exchange A price", "Exchange B price", ...nodes.map((n) => n[0])]);
-    await expect(devFlow.locator(".cf-sub").first()).toHaveText("mcbAAPL at $200.10");
-    await expect(devFlow.locator(".cf-sub").nth(1)).toHaveText("mAAPLx at $200.00");
-    await expect(devFlow.locator(".cf-arb")).toHaveText("Arb buys the cheap wrapper, converts toward the expensive one at parity, sells it. Profit = price gap − base fee − skew fee.");
-    await page.goto("/developers");
-    const dev = page.locator(".dev-diagram");
-    await expect(dev.locator(".lane-uniswap .dn-contract")).toHaveText(["your wallet", "WrapSwapRouter.swapExactIn", "PoolManager.swap", "ParityHook.beforeSwap", "PoolManager delta settled"]);
-    await expect(dev.getByText("keeper batches every 90 s")).toBeVisible();
-    expect(await dev.locator(".lane-sui").evaluate((e) => getComputedStyle(e).opacity)).toBe("0.7");
-    await expect(dev.getByText(/chainlink/i)).toHaveCount(0);
-    const parity = dev.locator('[data-node="parity"]');
-    if (d?.contracts?.parityHook)
-      await expectPopup(page, () => parity.click(), new RegExp(`sepolia\\.uniscan\\.xyz/address/${d.contracts.parityHook}`, "i"));
-    else await expect(dev.locator('a[data-node="parity"]')).toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(dev).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
 
@@ -292,7 +229,7 @@ test.describe("Landing controls all navigate or scroll", () => {
         const ids = ["product", "one-price", "how-it-works", "flow"];
         const boxes = await page.evaluate(
           (ids) =>
-            [...ids.map((id) => document.getElementById(id)!), document.querySelector("footer.lfoot")!].map((e) => ({
+            [...ids.map((id) => document.getElementById(id)!), document.querySelector("footer#verify")!].map((e) => ({
               h: e.getBoundingClientRect().height,
               snap: getComputedStyle(e).scrollSnapAlign,
             })),
@@ -328,39 +265,54 @@ test.describe("Landing controls all navigate or scroll", () => {
     });
   }
 
-  test("MCP is findable: landing callout, footer link, Developers Agents section with tools, setup and the recorded run", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.locator("#how-it-works .mcp-callout")).toContainText("Agents can use Unison too");
-    await page.locator("#how-it-works .mcp-callout").getByRole("link", { name: "MCP setup →" }).click();
-    await expectScrolledTo(page, "agents");
-    await page.goto("/");
-    await page.locator("footer").getByRole("link", { name: "MCP", exact: true }).click();
-    await expectScrolledTo(page, "agents");
-    const a = page.locator("#agents");
-    // From /developers, the nav's landing links arrive at the section, not the hero.
-    await page.locator("header").getByRole("link", { name: "How it works", exact: true }).click();
-    await expectScrolledTo(page, "how-it-works");
-    await page.goto("/developers#agents");
-    await expect(a.locator(".mcp-endpoint code")).toHaveText("https://nichars-mac-mini.tail43cacc.ts.net/mcp");
-    await expect(a.locator(".mcp-tools li code")).toHaveText([
-      "list_assets()",
-      "get_pool(asset)",
-      "quote_convert(asset, fromWrapper, toWrapper, amount)",
-      "convert(asset, fromWrapper, toWrapper, amount, recipient?)",
-      "get_batch(asset)",
-      "commit_dark_order(asset, side, amount)",
-    ]);
-    await expect(a.locator(".mcp-setup pre")).toHaveText("claude mcp add unison --transport http https://nichars-mac-mini.tail43cacc.ts.net/mcp");
-    await expect(a.locator(".mcp-setup")).toContainText("Settings → Connectors → Add custom connector.");
-    // The transcript comes from the generated file (scripts/gen-mcp-demo.py); check the page against it, not typed values.
+  test("Verify footer on / and /app: contracts from the manifests, MCP endpoint + command, GitHub; /developers lands on it", async ({ page }) => {
+    const read = (f: string) => {
+      const u = new URL(`../../deployments/${f}`, import.meta.url);
+      return existsSync(u) ? JSON.parse(readFileSync(u, "utf8")) : undefined;
+    };
+    const d = read("unichain-sepolia.resolved.json"),
+      sui = read("sui-testnet.json");
+    const uni = (a: string) => `https://sepolia.uniscan.xyz/address/${a}`;
+    const expected: [string, string][] = d
+      ? [
+          ["ParityHook", uni(d.contracts.parityHook)],
+          ...d.assets.map((a: { symbol: string; darkCrossHook: string }) => [`DarkCross ${a.symbol}`, uni(a.darkCrossHook)] as [string, string]),
+          ["Router", uni(d.contracts.wrapSwapRouter)],
+          ["ShareVault", uni(d.send.shareVault)],
+          ...(sui ? [["Sui package", `https://suiscan.xyz/testnet/object/${sui.sui.packageId}`] as [string, string]] : []),
+        ]
+      : [];
+    const cmd = "claude mcp add unison --transport http https://nichars-mac-mini.tail43cacc.ts.net/mcp";
+    for (const path of ["/", "/app?tab=move"]) {
+      await page.goto(path);
+      const v = page.locator("footer#verify");
+      await expect(v.getByRole("heading", { name: "Verify" })).toBeAttached();
+      await expect(v.locator(".verify-line")).toHaveCount(3);
+      const links = v.locator("[data-line=contracts] a");
+      await expect(links).toHaveCount(expected.length);
+      for (const [i, [name, href]] of expected.entries()) {
+        await expect(links.nth(i)).toContainText(name);
+        await expect(links.nth(i)).toHaveAttribute("href", href);
+      }
+      await expect(v.locator("[data-line=mcp] code")).toHaveText(["https://nichars-mac-mini.tail43cacc.ts.net/mcp", cmd]);
+      await expect(v.locator("[data-line=source] a")).toHaveAttribute("href", "https://github.com/nichar3232/wrapswap");
+    }
+    await page.goto("/developers");
+    await expect(page).toHaveURL(/\/#verify$/);
+    await expectScrolledTo(page, "verify");
+  });
+
+  test("landing MCP callout: one line plus the recorded run as prompt → tools chosen → tx", async ({ page }) => {
+    // From the generated file (scripts/gen-mcp-demo.py), not typed values.
     const demo = JSON.parse(readFileSync(new URL("../../deployments/unichain-sepolia.mcp-demo.json", import.meta.url), "utf8"));
-    const t = page.locator("#agent-transcript");
-    await expect(t.locator("blockquote")).toHaveText(demo.prompt);
-    await expect(t.locator(".mcp-steps code")).toHaveText(demo.steps.map((s: { tool: string }) => new RegExp(`^${s.tool}\\(`)));
-    await expect(t.locator(".tx-card")).toHaveAttribute("href", `https://sepolia.uniscan.xyz/tx/${demo.tx}`);
-    await expect(t.locator(".tx-hash")).toHaveText(demo.tx);
-    await page.setViewportSize({ width: 390, height: 844 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.goto("/");
+    const c = page.locator("#how-it-works .mcp-callout");
+    await expect(c.locator("p")).toContainText("Agents can use Unison too");
+    const run = c.getByRole("definition");
+    await expect(run).toHaveText([`“${demo.prompt}”`, demo.steps.map((s: { tool: string }) => s.tool).join(" → "), /^0x[0-9a-f]{8}…[0-9a-f]{6} ↗$/]);
+    await expect(run.nth(2).getByRole("link")).toHaveAttribute("href", `https://sepolia.uniscan.xyz/tx/${demo.tx}`);
+    await c.getByRole("link", { name: "MCP endpoint →" }).click();
+    await expectScrolledTo(page, "verify");
   });
 
   test("mobile menu opens without chevrons and its items scroll", async ({

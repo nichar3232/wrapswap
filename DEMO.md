@@ -41,7 +41,7 @@ scripts/dev/dark-batch-live NVDA                       # one Dark Cross batch (A
 
 Before going on stage, run `pnpm preflight` (`scripts/dev/preflight`). It prints one PASS/FAIL line per check and exits 1 on any failure:
 - stack health: API, crank, local web, relay, and the Sui keeper (live PID and fresh state file)
-- Funnel on every public ingress IP: `/`, `/app`, `/developers`, `/api/health`, `/api/assets`, `/api/pay/reserves`, plus `/mcp` initialize and tools/list, and one external fetch
+- Funnel on every public ingress IP: `/`, `/app`, `/api/health`, `/api/assets`, `/api/pay/reserves`, plus `/mcp` initialize and tools/list, and one external fetch
 - API routes per asset (AAPL, NVDA, TSLA): `/pool`, `/batches`, `/quote`, and the current Dark Cross phase (not stalled, oracle fresh)
 - `CROSS_FEE_PIPS = 100` on every DarkCrossHook
 - ETH balances: crank, deployer, demo relay, and the wallets in `deployments/preflight-wallets.json`
@@ -197,7 +197,7 @@ gap opened at the start and again mid-run. Figures below are copied by script fr
 | NVDA | -40.0 → -5.0 | 6 / 3 | 0.826 | 12.54 | 26.483 | 1.572 | 7.4 / 18.8 |
 | TSLA | +40.0 → +0.2 | 2 / 11 | 0.999 | 15.00 | 18.186 | 2.023 | 11.6 / 25.4 |
 
-Replay: `/sim.html` (linked from `/developers`). Finding from the exploratory run: a persistent one-sided gap larger
+Replay: `/sim.html`. Finding from the exploratory run: a persistent one-sided gap larger
 than the skew fee at full skew (15 bps) plus the 2 bps base plus the arb threshold drains the short side of the
 inventory (seen at 10k shares per side). Mitigations: deeper inventory, a steeper skew curve or higher cap, or keeper rebalancing.
 Details: `~/wrapswap-run/status/sim.md`, harness in `packages/sim`.

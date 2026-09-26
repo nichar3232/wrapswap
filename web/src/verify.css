@@ -1,0 +1,60 @@
+/* Verify footer: the same on the landing page and in the app, dark in both themes. */
+.verify {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: stretch; /* the app's global footer rule centers items */
+  gap: 14px;
+  padding: 40px max(24px, 10%);
+  border-top: 1px solid var(--black-hairline);
+  background: var(--black);
+  color: var(--black-ink-soft);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.6;
+  text-align: left;
+}
+.verify h2 {
+  margin: 0 0 4px;
+  color: var(--black-ink);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.verify-line {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.verify-k {
+  color: var(--black-ink);
+  font-weight: 600;
+}
+.verify-v {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+}
+@media (max-width: 560px) {
+  .verify-line {
+    grid-template-columns: 1fr;
+  }
+}
+.verify a {
+  color: #8fb0ff;
+  text-decoration: none;
+}
+.verify a:hover {
+  text-decoration: underline;
+}
+.verify .mono {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.verify code {
+  color: var(--black-ink);
+  overflow-wrap: anywhere;
+}

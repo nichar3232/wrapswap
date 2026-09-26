@@ -15,6 +15,7 @@ const SendPanel = lazy(() => import("./app/Send").then((m) => ({ default: m.send
 import { Hex, Skeleton, shortHex } from "./app/ui";
 import type { Token } from "./app/assets";
 import { WalletProvider, useWallet } from "./app/wallet";
+import { VerifyFooter } from "./verify";
 import { injected, isDemo, simulatedWallet } from "./wallet";
 import { RelaySend } from "./app/RelaySend";
 import { Boundary } from "./app/Boundary";
@@ -357,6 +358,7 @@ function App() {
           ))}
         </div>
       </main>
+      <VerifyFooter />
     </WalletProvider>
   );
 }

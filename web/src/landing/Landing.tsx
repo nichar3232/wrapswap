@@ -1,9 +1,11 @@
 import { StrictMode, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { ConvertFlow } from "./ConvertFlow";
-import { Footer, Grain, Nav } from "./chrome";
+import { Grain, Nav } from "./chrome";
 import { Halftone } from "./Halftone";
+import { mcpDemo } from "./mcp";
 import { OnePrice } from "./OnePrice";
+import { VerifyFooter } from "../verify";
 import "../theme.css";
 import "./landing.css";
 
@@ -40,7 +42,7 @@ document.documentElement.classList.add("deck");
 
 function Landing() {
   const hero = useRef<HTMLElement>(null);
-  // The page renders after the browser's own jump to /#how-it-works etc. (e.g. from /developers), so jump once it exists.
+  // The page renders after the browser's own jump to /#how-it-works or /#verify, so jump once the target exists.
   useEffect(() => {
     if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView();
   }, []);
@@ -65,7 +67,7 @@ function Landing() {
             <a className="launch" href="/app">
               Move your shares
             </a>
-            <a className="ghost" href="/developers#contracts">
+            <a className="ghost" href="#verify">
               See it onchain →
             </a>
           </div>
@@ -87,16 +89,38 @@ function Landing() {
             </li>
           ))}
         </ol>
-        <p className="mcp-callout">
-          Agents can use Unison too: connect Claude to the MCP server and ask it to convert. <a href="/developers#agents">MCP setup →</a>
-        </p>
+        <div className="mcp-callout" id="mcp">
+          <p>
+            Agents can use Unison too: connect Claude to the MCP server and ask it to convert. <a href="#verify">MCP endpoint →</a>
+          </p>
+          {mcpDemo && (
+            <dl className="mcp-run" aria-label="Recorded agent run">
+              <div>
+                <dt>Prompt</dt>
+                <dd>“{mcpDemo.prompt}”</dd>
+              </div>
+              <div>
+                <dt>Tools chosen</dt>
+                <dd className="mono">{mcpDemo.steps.map((s) => s.tool).join(" → ")}</dd>
+              </div>
+              <div>
+                <dt>Tx</dt>
+                <dd>
+                  <a className="mono" href={mcpDemo.explorer} target="_blank" rel="noreferrer" title={mcpDemo.tx}>
+                    {mcpDemo.tx.slice(0, 10)}…{mcpDemo.tx.slice(-6)} ↗
+                  </a>
+                </dd>
+              </div>
+            </dl>
+          )}
+        </div>
       </section>
 
       <section className="black flow-sec" id="flow" aria-label="Convert flow">
         <ConvertFlow />
       </section>
 
-      <Footer />
+      <VerifyFooter />
     </>
   );
 }

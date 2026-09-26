@@ -44,3 +44,22 @@ fixtures, not chain reads):
   Before, the page rendered after the browser's hash jump and stayed on the hero.
 
 Tests: web unit 40/40 · Playwright mock 23/23 · Playwright live transport 10/10.
+
+## 2026-09-26 · no-wallet Portfolio, Liquidity as the LP screen, /developers retired into a Verify footer
+
+- `/app` with no ?tab= opens Move → Convert when there is no browser wallet (it works through the demo relay), and
+  Portfolio otherwise. Portfolio while disconnected shows one card, "Connect a wallet to see your shares", with a
+  Connect button and "or try a conversion without a wallet →". No asset cards of dashes.
+- Liquidity (the tab name is unchanged) is titled "Pool inventory & LP economics". A "Who supplies inventory" block
+  sits above LP economics, with a disabled "Add inventory · keeper only in v1" button and a tooltip saying why.
+- `/developers` is deleted, along with its nav item, the architecture lanes and the Agents page. The URL redirects to
+  `/#verify` so old links (submission, README) still land on the addresses. Every page (landing and app) ends in
+  the Verify footer:
+  - contracts: ParityHook, DarkCross ×3, Router, ShareVault (Uniscan) and the Sui package (Suiscan), all read from
+    the committed manifests
+  - MCP: the endpoint and the `claude mcp add` command
+  - source: GitHub
+- The recorded agent run is now a 4-line callout in the landing How it works section (intro line, prompt, tools
+  chosen, tx), generated from `deployments/unichain-sepolia.mcp-demo.json`.
+- Dropped with the page: the six-tool list, the Claude.ai connector steps and the market-sim link. `/sim.html` is
+  still served, and DEMO.md links it directly.

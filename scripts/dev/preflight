@@ -44,7 +44,7 @@ check "funnel: public DNS has ingress IPs" "$([[ -n $ingress ]] && echo ok || ec
 init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"preflight","version":"1"}}}'
 mcp() { curl -s --max-time 20 --resolve "$host:443:$1" -X POST -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' "${@:2}" "$PUBLIC/mcp"; }
 for ip in $ingress; do
-  for p in / /app /developers /api/health /api/assets /api/pay/reserves; do
+  for p in / /app /api/health /api/assets /api/pay/reserves; do
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 --resolve "$host:443:$ip" "$PUBLIC$p")
     check "funnel $ip $p" "$([[ $code == 200 ]] && echo ok || echo "HTTP $code")"
   done

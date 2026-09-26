@@ -6,7 +6,7 @@ issuer redeems the other's token. Unison prices both in canonical shares (1e18 =
 multiplier) and fills conversions at parity from inventory held by the hook in a Uniswap v4 pool.
 
 **Live:** https://nichars-mac-mini.tail43cacc.ts.net/app
-- Landing page at `/`, contract list at `/developers`.
+- Landing page at `/`; every page ends in a Verify footer (contract addresses, MCP endpoint, GitHub).
 - Networks: Unichain Sepolia (chain 1301) and Sui testnet.
 - Assets: AAPL, NVDA, TSLA.
 

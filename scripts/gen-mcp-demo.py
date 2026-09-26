@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate deployments/unichain-sepolia.mcp-demo.json (the /developers "Agents" transcript) from the recorded run.
+"""Generate deployments/unichain-sepolia.mcp-demo.json (the landing MCP callout: prompt → tools → tx) from the recorded run.
 
 Source of record: submission/mcp-demo.md (a headless Claude Code agent connected only to the remote Unison MCP
 server). Nothing is typed by hand: the prompt, each tool call's arguments and the first line of its result are
