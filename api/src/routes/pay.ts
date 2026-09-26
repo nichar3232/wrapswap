@@ -35,7 +35,8 @@ export function liveReaders(d: PayDeployment): PayReaders {
   });
   const evm = createPublicClient({
     chain: unichainSepolia,
-    transport: http(process.env.PAY_EVM_RPC_URL ?? process.env.UNICHAIN_SEPOLIA_RPC_URL ?? "https://sepolia.unichain.org"),
+    // publicnode by default: sepolia.unichain.org backends disagree on recent state (see services/crank/sui/config.ts).
+    transport: http(process.env.PAY_EVM_RPC_URL ?? "https://unichain-sepolia-rpc.publicnode.com"),
   });
   return {
     pool: () => readPool(sui, d.sui.poolId),

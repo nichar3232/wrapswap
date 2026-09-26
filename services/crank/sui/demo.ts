@@ -105,9 +105,20 @@ async function ensureEvm(acct: typeof evmA, token: typeof mcb, raw: bigint) {
 
 // ---------------------------------------------------------------- invariant
 
+async function retryRead<T>(f: () => Promise<T>, attempts = 5): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await f();
+    } catch (e) {
+      if (i >= attempts) throw e;
+      await new Promise((r) => setTimeout(r, 1000 * i));
+    }
+  }
+}
+
 async function reserves(label: string) {
   const [pool, block] = await Promise.all([readPool(client, dep.sui.poolId), pc.getBlockNumber()]);
-  const [held, outstanding] = await pc.readContract({ address: evm.shareVault, abi: shareVaultAbi, functionName: 'reserves', blockNumber: block });
+  const [held, outstanding] = await retryRead(() => pc.readContract({ address: evm.shareVault, abi: shareVaultAbi, functionName: 'reserves', blockNumber: block }));
   receipt(`reserves ${label}`, {
     suiTotalShares: formatShares(pool.totalShares, 6),
     vaultSharesOutstanding: formatShares(outstanding, 6),
