@@ -7,7 +7,7 @@ Implementation choices are in `decisions/contracts.md`. Interface gaps are filed
 
 | Condition | Status | Proof |
 |---|---|---|
-| `forge build && forge test` green, no skips | PASS: 214 passed, 0 failed, 0 skipped (17 suites) | `forge build && forge test` |
+| `forge build && forge test` green, no skips | PASS: 219 passed, 0 failed, 0 skipped (22 suites) | `forge build && forge test` |
 | Invariants at ≥256 runs, depth ≥50 | PASS: runs 256, depth 50 (12,800 calls), 0 reverts, fail-on-revert on, both orderings | `forge test --match-path contracts/test/invariant/ParityHookInvariant.t.sol -vv` |
 | `forge coverage` ≥90% lines on both hooks | PASS: ParityHook 97.45% (191/196), DarkCrossHook 99.15% (232/234) | `forge coverage --ir-minimum --report summary` (via-IR needs `--ir-minimum`) |
 | Deploy.s.sol on a fresh anvil writes `deployments/anvil.json` that validates against §4 | PASS: checked with `parseDeployment` from `packages/types` (schema plus cross-field rules) | see "Deploy on a fresh anvil" below |
