@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Read-only Base Sepolia smoke checks against deployments/base-sepolia.json.
+# Env: RPC_URL. Checks code at every address, ParityHook flag bits, pool at parity, seeded inventory.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+: "${RPC_URL:?}"
+m=deployments/base-sepolia.json
+fail=0
+ok() { printf 'PASS %s\n' "$1"; }
+bad() { printf 'FAIL %s\n' "$1"; fail=1; }
+[[ $(cast chain-id --rpc-url "$RPC_URL") == 84532 ]] && ok 'chainId 84532' || bad 'chainId'
+for a in $(jq -r '[.contracts[], .tokens[].address, .tokens[].adapter] | map(select(. != null)) | .[]' "$m"); do
+  [[ $(cast code "$a" --rpc-url "$RPC_URL") != 0x ]] && ok "code $a" || bad "code $a"
+done
+hook=$(jq -r .contracts.parityHook "$m")
+flags=$(printf '0x%04x' $(( $(cast to-dec "$hook") & 0x3fff )))
+[[ $flags == "$(jq -r .hooks.parityHook.flags "$m")" && $flags == 0x20c8 ]] && ok "hook flags $flags" || bad "hook flags $flags"
+pm=$(jq -r .contracts.poolManager "$m"); id=$(jq -r .pool.id "$m")
+slot=$(cast keccak "$(cast concat-hex "$id" "$(cast to-uint256 6)")")
+word=$(cast storage "$pm" "$slot" --rpc-url "$RPC_URL")
+sqrt=$(cast to-dec "0x${word: -40}")
+[[ $sqrt == "$(jq -r .pool.initSqrtPriceX96 "$m")" ]] && ok "pool at parity sqrtPriceX96=$sqrt" || bad "pool sqrtPriceX96=$sqrt"
+for t in $(jq -r '.tokens[] | "\(.symbol):\(.address)"' "$m"); do
+  sym=${t%%:*} addr=${t#*:}
+  inv=$(cast call "$hook" 'inventory(address)(uint256)' "$addr" --rpc-url "$RPC_URL" | awk '{print $1}')
+  want=$([[ $sym == mcbAAPL ]] && echo 8000000000 || echo 12150000000000000000000)
+  [[ $inv == "$want" ]] && ok "inventory $sym $inv" || bad "inventory $sym $inv (want $want)"
+done
+cal=$(jq -r .contracts.calendar "$m")
+ts=$(cast block latest --field timestamp --rpc-url "$RPC_URL")
+open=$(cast call "$cal" 'isOpen(uint256)(bool)' "$ts" --rpc-url "$RPC_URL")
+printf 'INFO NYSE open at chain time %s: %s\n' "$ts" "$open"
+exit $fail
