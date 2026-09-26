@@ -3476,3 +3476,57 @@ button.dir:hover {
   border: 1px solid color-mix(in srgb, var(--good) 50%, transparent);
   vertical-align: 2px;
 }
+
+/* Header: MCP toggle, left of Connect */
+.mcp-wrap {
+  position: relative;
+}
+.mcp-btn {
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+}
+.mcp-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.mcp-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: min(460px, calc(100vw - 32px));
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--popover, var(--bg));
+  box-shadow: 0 20px 60px -20px rgb(0 0 0 / 0.35);
+  text-align: left;
+}
+.mcp-panel-title {
+  margin: 0;
+  font-weight: 600;
+}
+.mcp-panel p {
+  margin: 0;
+}
+.mcp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.mcp-row code {
+  flex: 1;
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}

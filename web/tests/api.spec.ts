@@ -45,15 +45,13 @@ async function toQuote(page: Page) {
   await convert(page).getByLabel("Amount", { exact: true }).fill("100");
 }
 
-test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on every panel", async ({ page }) => {
+test("API down (empty bodies): placeholders, zero raw errors on every panel; no network pill in the header", async ({ page }) => {
   const errors = watchConsole(page);
   await api(page, () => "EMPTY");
   await page.goto("/app?tab=liquidity");
-  const pill = page.getByTestId("status-pill");
-  await expect(pill).toHaveText(/^(Unichain Sepolia|Anvil) · connecting…$/);
-  // After a few failed attempts values settle on "unavailable" while the pill keeps retrying.
+  await expect(page.getByTestId("status-pill")).toHaveCount(0);
+  // After a few failed attempts values settle on "unavailable".
   await expect(page.locator('[data-panel="liquidity"]').getByText("unavailable").first()).toBeVisible({ timeout: 15000 });
-  await expect(pill).toHaveText(/connecting…/);
   for (const [t, text] of [
     ["Liquidity", "unavailable"],
     ["Move", "Same share, converted at parity"], // platforms from the committed manifest
@@ -64,8 +62,6 @@ test("API down (empty bodies): Connecting pill, placeholders, zero raw errors on
     await expect(page.locator(`[data-panel="${t.toLowerCase()}"]`).getByText(text, { exact: false }).first()).toBeVisible();
     await expect(page.locator("main")).not.toContainText(RAW_ERROR);
   }
-  await pill.click();
-  await expect(page.locator("#feed-status")).toContainText("unavailable · retrying");
   expect(errors).toEqual([]);
 });
 
@@ -106,23 +102,20 @@ test("with a browser wallet, /app still opens Portfolio", async ({ page }) => {
   await expect(tab(page, "Portfolio")).toHaveAttribute("aria-current", "page");
 });
 
-test("degraded names only the failing feeds; everything else stays live", async ({ page }) => {
+test("failing feeds degrade only their own panels; everything else stays live", async ({ page }) => {
   await api(page, (name, v) => (["crankStatus", "poolAsset"].includes(name) ? "ERROR" : v));
-  await page.goto("/app?asset=AAPL");
-  const pill = page.getByTestId("status-pill");
-  await expect(pill).toHaveText(/^(Unichain Sepolia|Anvil) · degraded$/, { timeout: 15000 });
-  await expect(pill).toHaveAttribute("title", "Degraded: AAPL pool, Crank");
-  await pill.click();
-  const feeds = page.locator("#feed-status");
-  await expect(feeds.getByRole("listitem").filter({ hasText: "Assets" })).toContainText("live");
-  await expect(feeds.getByRole("listitem").filter({ hasText: "AAPL pool" })).not.toContainText("live");
+  await page.goto("/app?tab=liquidity&asset=AAPL");
+  await expect(page.locator('[data-panel="liquidity"]').getByText("unavailable").first()).toBeVisible({ timeout: 15000 });
+  await tab(page, "Move").click();
+  await expect(convert(page).getByRole("radio", { name: /Coinbase/ })).toBeVisible();
   await expect(page.locator("main")).not.toContainText(RAW_ERROR);
 });
 
-test("all feeds loaded: Live badge; a real wallet turns demo off", async ({ page }) => {
+test("all feeds loaded: a real wallet turns demo off; the header has MCP but no network pill", async ({ page }) => {
   await api(page);
   await page.goto("/app");
-  await expect(page.getByTestId("status-pill")).toHaveText(/^(Unichain Sepolia|Anvil)$/);
+  await expect(page.getByRole("button", { name: "MCP" })).toBeVisible();
+  await expect(page.getByTestId("status-pill")).toHaveCount(0);
   await expect(page.locator("header").getByText("Demo", { exact: true })).toHaveCount(0);
 });
 

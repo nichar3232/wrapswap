@@ -37,7 +37,20 @@ test("nav: Portfolio · Move · Send · Liquidity with the asset picker; no cons
   await expect(panel(page, "portfolio").getByRole("radiogroup", { name: "Asset" })).toHaveCount(0);
   for (const t of ["move", "liquidity"])
     await expect(panel(page, t).locator('.asset-pick [role="radio"]')).toHaveText(["AAPL", "NVDA", "TSLA"]); // inactive panels are aria-hidden
-  await expect(page.locator("header").getByTestId("status-pill")).toHaveText(/^(Unichain Sepolia|Anvil)$/);
+  // Header right: no network pill; the MCP toggle sits just left of the wallet.
+  await expect(page.locator("header").getByTestId("status-pill")).toHaveCount(0);
+  await expect(page.locator("header")).not.toContainText("Unichain Sepolia");
+  const mcp = page.locator("header").getByRole("button", { name: "MCP" });
+  const acct = page.locator("header").getByRole("button", { name: /^Account 0x|Connect wallet/ });
+  const [m, a] = await Promise.all([mcp, acct].map((x) => x.evaluate((e) => e.getBoundingClientRect().toJSON())));
+  expect(m.right).toBeLessThanOrEqual(a.left);
+  await mcp.click();
+  const dlg = page.getByRole("dialog", { name: "Use Unison from Claude (MCP)" });
+  await expect(dlg).toContainText("https://nichars-mac-mini.tail43cacc.ts.net/mcp");
+  await expect(dlg).toContainText("claude mcp add unison --transport http https://nichars-mac-mini.tail43cacc.ts.net/mcp");
+  await expect(dlg.getByRole("button", { name: "Copy MCP endpoint" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dlg).toHaveCount(0);
   await expect(page.locator("header").getByText("Demo", { exact: true })).toBeVisible();
   for (const t of ["Move", "Send", "Liquidity", "Portfolio"]) {
     await tab(page, t).click();

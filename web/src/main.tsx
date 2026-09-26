@@ -12,10 +12,10 @@ import { Portfolio } from "./app/Portfolio";
 import { SendOverview } from "./app/SendOverview";
 // The sui lane's Send panel (Sui SDK, Seal, Walrus) loads only when the Send tab is first opened.
 const SendPanel = lazy(() => import("./app/Send").then((m) => ({ default: m.sendPanel.Panel })));
-import { Hex, Skeleton, shortHex } from "./app/ui";
+import { CopyButton, Hex, Skeleton, shortHex } from "./app/ui";
 import type { Token } from "./app/assets";
 import { WalletProvider, useWallet } from "./app/wallet";
-import { VerifyFooter } from "./verify";
+import { CLAUDE_CODE_CMD, MCP_URL, VerifyFooter } from "./verify";
 import { injected, isDemo, simulatedWallet } from "./wallet";
 import { RelaySend } from "./app/RelaySend";
 import { Boundary } from "./app/Boundary";
@@ -54,43 +54,43 @@ const fallbackDeployment = (() => {
 type FeedRow = { name: string; status: FeedStatus; healthy?: boolean };
 
 /** The one network badge: Unichain Sepolia, with its health as a dot; details on click. */
-function NetworkBadge({ feeds }: { feeds: FeedRow[] }) {
+
+/** MCP: toggles a panel with the endpoint and the Claude Code command, each copyable. */
+function McpButton() {
   const [open, setOpen] = useState(false);
-  const down = feeds.filter((f) => f.status !== "ok" || f.healthy === false);
-  const nothing = feeds.every((f) => f.status === "loading" || f.status === "unavailable");
-  const state = nothing ? "connecting" : down.length ? "degraded" : "live";
-  const word: Record<FeedStatus, string> = {
-    ok: "live",
-    stale: "stale · retrying",
-    loading: "connecting…",
-    unavailable: "unavailable · retrying",
-  };
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => ref.current?.contains(e.target as Node) || setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
   return (
-    <div className="status-wrap">
-      <button
-        type="button"
-        className={`status-pill ${state}`}
-        aria-expanded={open}
-        aria-controls="feed-status"
-        onClick={() => setOpen(!open)}
-        data-testid="status-pill"
-        title={state === "connecting" ? "Connecting…" : state === "degraded" ? `Degraded: ${down.map((f) => f.name).join(", ")}` : "All feeds live"}
-      >
-        <span className="status-dot" aria-hidden="true" />
-        {CHAIN.name}
-        {state === "connecting" ? <span className="muted"> · connecting…</span> : state === "degraded" ? <span> · degraded</span> : null}
+    <div className="mcp-wrap" ref={ref}>
+      <button type="button" className="mcp-btn" aria-expanded={open} aria-controls="mcp-panel" onClick={() => setOpen(!open)}>
+        MCP
       </button>
       {open && (
-        <ul className="feed-list" id="feed-status">
-          {feeds.map((f) => (
-            <li key={f.name}>
-              <span>{f.name}</span>
-              <span className={f.status === "ok" && f.healthy !== false ? "good" : f.status === "loading" ? "muted" : "warn"}>
-                {f.healthy === false && f.status === "ok" ? "reporting unhealthy" : word[f.status]}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <div className="mcp-panel" id="mcp-panel" role="dialog" aria-label="Use Unison from Claude (MCP)">
+          <p className="mcp-panel-title">Use Unison from Claude</p>
+          <p className="muted small">Connect an agent to the MCP server: it can read pools, quote, convert and commit Dark Cross orders.</p>
+          <span className="tile-k">Endpoint</span>
+          <div className="mcp-row">
+            <code className="mono">{MCP_URL}</code>
+            <CopyButton value={MCP_URL} label="Copy MCP endpoint" />
+          </div>
+          <span className="tile-k">Claude Code</span>
+          <div className="mcp-row">
+            <code className="mono">{CLAUDE_CODE_CMD}</code>
+            <CopyButton value={CLAUDE_CODE_CMD} label="Copy claude mcp add command" />
+          </div>
+          <p className="muted small">Claude.ai: Settings → Connectors → Add custom connector, and paste the endpoint.</p>
+        </div>
       )}
     </div>
   );
@@ -331,7 +331,6 @@ function App() {
           <span className={`tab-bar${still ? " still" : ""}`} style={{ transform: `translateX(${bar.left}px)`, width: bar.width }} aria-hidden="true" />
         </nav>
         <div className="wallet">
-          <NetworkBadge feeds={feeds} />
           {demo && (
             <span
               className="badge demo"
@@ -340,6 +339,7 @@ function App() {
               Demo
             </span>
           )}
+          <McpButton />
           <Account tokens={tokens} />
         </div>
       </header>
