@@ -53,6 +53,13 @@ const tables: Record<string, string> = {
   MidUpdated: "oracle_mids",
   Claimed: "faucet_claims",
 };
+/** Pool key for a ParityHook pool id: any `assets[].pool` in a multi-asset manifest, else the single `pool`. */
+export function poolKeyOf(d: Deployment, poolId: string) {
+  const pool = [...(d.assets ?? []).map((a) => a.pool), d.pool].find(
+    (p) => p.id.toLowerCase() === String(poolId).toLowerCase(),
+  );
+  return pool?.key;
+}
 export function accepts(log: any, d: Deployment) {
   if (faucetTopics.has(log.topics[0]))
     return (
@@ -112,8 +119,11 @@ export function projection(
   )
     return null;
   if (event === "InventoryFill") {
-    a.tokenIn = a.zeroForOne ? d.pool.key.currency0 : d.pool.key.currency1;
-    a.tokenOut = a.zeroForOne ? d.pool.key.currency1 : d.pool.key.currency0;
+    // One ParityHook serves every asset's pool: resolve the fill's currencies from its own poolId.
+    const key = poolKeyOf(d, a.poolId);
+    if (!key) return null; // a pool outside the manifest (anyone can initialise a pool on the hook)
+    a.tokenIn = a.zeroForOne ? key.currency0 : key.currency1;
+    a.tokenOut = a.zeroForOne ? key.currency1 : key.currency0;
   }
   if (event === "FeesSwept") {
     a.recipient = a.to;
