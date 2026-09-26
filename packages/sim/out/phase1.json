@@ -25,7 +25,7 @@
     },
     {
       "id": "H1",
-      "check": "no off-hours code path (identical fee closed vs open; deployment has no calendar)",
+      "check": "fee has no clock input (identical fee on a Saturday and a weekday; deployment has no calendar)",
       "ok": true,
       "evidence": "Sat, 10 Oct 2026 16:00:00 GMT: 200 pips, out 79983999312637500000; Mon, 12 Oct 2026 15:00:00 GMT: 200 pips, out 79983999312637500000; contracts.calendar=null"
     },

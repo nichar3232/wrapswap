@@ -108,7 +108,7 @@ numbers require the conversion to precede settlement; see CR-1.
 | 01:10 | Crank settles | Cross 50 mcbAAPL / 50.625 mAAPLx; 500-pip cross fee |
 | 01:20 | Inspect residual | 10 mcbAAPL through ParityHook; 447 pips; output 10.120474125 mAAPLx |
 | 01:35 | Show final balances | Demo 400 / 601.203425; A escrow 60.720161625 mAAPLx; B escrow 49.975 mcbAAPL |
-| 01:45 | Show fees and live-clock contrast | Hook fees 0.051100875 mAAPLx; CLOSED equivalent first fee 4.60 bps (the fill reduces skew: no off-hours premium) |
+| 01:45 | Show fees | Hook fees accrue to the LP; live figures in DEMO.md §4 |
 
 Pool-order skew reverses sign when the base token is currency1; the assertions account
 for this. Live CLOSED outputs are 101.102175 and 10.110349125 mAAPLx, conditional on the
