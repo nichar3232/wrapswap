@@ -8,7 +8,7 @@ test('Part A: issuer conversion, inventory fill, dark cross and residual', async
   const d=deployment(); // Missing/legacy deployment fails before any browser actions.
   const v=DEMO.variants.anvil;
   await injectWallet(page);
-  await page.goto(webURL);
+  await page.goto(webURL+'/app');
   await page.getByRole('button',{name:'Convert',exact:true}).click();
   await page.getByRole('button',{name:/connect wallet/i}).click();
   await page.getByLabel('Conversion amount').fill(formatUnits(DEMO.parityFill.amountIn,DEMO.tokens.mcbAAPL.decimals));
