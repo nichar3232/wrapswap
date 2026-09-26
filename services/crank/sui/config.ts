@@ -14,6 +14,7 @@ if (existsSync(envFile)) loadEnv({ path: envFile, quiet: true });
 export type EvmToken = { symbol: string; address: `0x${string}`; decimals: number };
 export type Deployment = {
   sui: { packageId: string; poolId: string; operatorCapId: string; operator: string; windowMs: number };
+  seal: { threshold: number; keyServers: { name: string; objectId: string }[] };
   evm: null | {
     chainId: number;
     shareVault: `0x${string}`;
